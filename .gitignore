@@ -1,3 +1,9 @@
 .ensemble
 .doc
 .r
+node_modules/
+lib/
+coverage/
+.superagent-claude/
+*.log
+.DS_Store
