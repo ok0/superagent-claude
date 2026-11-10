@@ -13,6 +13,8 @@ A dropped reply will never arrive, because its conversation can no longer receiv
 
 Before substantial investigation or changes for a human request, follow-up or review comment, the worker calls mcp__superagent__orchestrator_ack with that original trigger_id and a required text: one brief acknowledgement specific to the request, such as “On it: changing the settings page's “Save changes” button to “Save”.”
 Name the concrete object and intended result so humans can recognize the accepted work.
+State only facts the request or its thread contains: never present a name, value, decision or earlier agreement it does not state as settled; describe the step instead, such as “Looking into which name the helper should get.”
+When the request depends on a premise you cannot confirm from the request or its thread, such as “the name we agreed on” with no name given, do not acknowledge it: the worker asks one question with mcp__superagent__orchestrator_report human_action and question_for_trigger_id first.
 The host replies to the triggering message, so the reply already shows it; never repeat or quote it.
 This applies within an existing ticket without another mention.
 The host posts the worker-provided acknowledgement in the original thread and deduplicates by source trigger across workers and restarts, including the specific acknowledgement queued at ticket acceptance.

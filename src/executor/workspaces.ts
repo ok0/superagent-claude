@@ -1,4 +1,4 @@
-/** Worker workspaces: git worktrees on agent branches over one shared clone per repository, and scratch directories for fake runs. Clone and fetch get the injected access env (authentication) and errors mask its secrets. Publishing pushes an agent branch without force, adding co-author trailers only to commits not yet pushed. Access errors carry the HTTP status when one is known. */
+/** Worker workspaces: git worktrees on agent branches over one shared clone per repository, and scratch directories for fake runs. Clone and fetch get the injected access env (authentication) and errors mask its secrets. Publishing pushes an agent branch without force, adding co-author trailers only to commits not yet pushed. Access errors carry the HTTP status when one is known. A transient push failure is retried up to 3 times (2 s, 5 s). */
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Ticket } from '../core/index.ts'
@@ -23,6 +23,22 @@ export function accessStatus(error: unknown): number | undefined {
   if (error instanceof CliError && error.code !== undefined && error.code >= 100 && error.code <= 599) return error.code
   const found = /\b(?:HTTP|returned error:)\s*(\d{3})\b/i.exec(error instanceof Error ? error.message : String(error))
   return found ? Number(found[1]) : undefined
+}
+
+/** Attempts for a transient push failure and the waits between them, in milliseconds (ADR-25). */
+export const PUSH_ATTEMPTS = 3
+export const PUSH_BACKOFF_MS: readonly number[] = [2_000, 5_000]
+
+export type PushFailure = { kind: 'rejected' } | { kind: 'access'; status: number | undefined } | { kind: 'transient' }
+
+/** Anything that is not a non-fast-forward or an access failure is transient (ADR-25). */
+export function pushFailure(message: string, status: number | undefined): PushFailure {
+  if (/non-fast-forward|fetch first|\[rejected\]|updates were rejected/i.test(message)) return { kind: 'rejected' }
+  if (status === 401 || status === 403 || status === 404) return { kind: 'access', status }
+  if (/repository not found|repository '[^']*' not found/i.test(message)) return { kind: 'access', status: 404 }
+  if (/permission to \S+ denied|permission denied|access denied/i.test(message)) return { kind: 'access', status: 403 }
+  if (/authentication failed|could not read username|invalid username or password/i.test(message)) return { kind: 'access', status: 401 }
+  return { kind: 'transient' }
 }
 
 export interface WorkspaceProvider {
@@ -64,6 +80,8 @@ export interface WorkspacesOptions {
   commands: Pick<Commands, 'git'>
   repositoryOf(ticket: Ticket): string
   access: RepositoryAccess
+  /** Waits between push attempts; tests pass a fake clock. */
+  sleep?: (ms: number) => Promise<void>
 }
 
 export class Workspaces implements WorkspaceProvider {
@@ -72,6 +90,7 @@ export class Workspaces implements WorkspaceProvider {
   private readonly commands: Pick<Commands, 'git'>
   private readonly repositoryOf: (ticket: Ticket) => string
   private readonly access: RepositoryAccess
+  private readonly sleep: (ms: number) => Promise<void>
   private readonly chains = new Map<string, Promise<unknown>>()
 
   constructor(options: WorkspacesOptions) {
@@ -79,6 +98,7 @@ export class Workspaces implements WorkspaceProvider {
     this.commands = options.commands
     this.repositoryOf = options.repositoryOf
     this.access = options.access
+    this.sleep = options.sleep ?? (ms => new Promise<void>(resolve => setTimeout(resolve, ms)))
     this.hooks = join(options.stateDir, 'empty-hooks')
   }
 
@@ -200,12 +220,19 @@ export class Workspaces implements WorkspaceProvider {
       const remoteExists = await this.git(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/' + branch], cwd).then(() => true, () => false)
       if (list.length === 0 && !remoteExists) throw new Error('There are no commits to publish; commit the change first')
       if (list.length > 0) {
-        try {
-          await this.git(['push', 'origin', 'HEAD:refs/heads/' + branch], cwd, this.access.env(repository))
-        } catch (error) {
-          const message = this.redact(error instanceof Error ? error.message : String(error))
-          if (/non-fast-forward|fetch first|rejected/i.test(message)) throw new Error('The push was rejected without force; the remote branch has commits this worktree lacks: ' + message)
-          throw new RepositoryAccessError(repository, message, accessStatus(error))
+        for (let attempt = 1; ; attempt++) {
+          try {
+            await this.git(['push', 'origin', 'HEAD:refs/heads/' + branch], cwd, this.access.env(repository))
+            break
+          } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') throw error
+            const message = this.redact(error instanceof Error ? error.message : String(error))
+            const failure = pushFailure(message, accessStatus(error))
+            if (failure.kind === 'rejected') throw new Error('The push was rejected without force; the remote branch has commits this worktree lacks: ' + message)
+            if (failure.kind === 'access') throw new RepositoryAccessError(repository, message, failure.status)
+            if (attempt >= PUSH_ATTEMPTS) throw new Error(`The push still failed after ${PUSH_ATTEMPTS} attempts by the host: ${message}`)
+            await this.sleep(PUSH_BACKOFF_MS[attempt - 1] ?? PUSH_BACKOFF_MS.at(-1)!)
+          }
         }
       }
       return { repository, branch, base, head: (await this.git(['rev-parse', 'HEAD'], cwd)).trim(), pushed: list.length, rewritten, uncommitted }

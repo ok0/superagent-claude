@@ -21,10 +21,24 @@ export interface Reply { id: string; status: ReplyStatus; reused: boolean }
 export const REFUSAL_PREFIX = "I can't take this on here: "
 const REFUSAL_FALLBACK = 'it is outside what I can do.'
 const INTERNAL = /\b(?:tickets?|workers?|hand(?:ed|s|ing)?[\s-]?backs?|evals?|triggers?|orchestrator|assignments?)\b|\b[0-9a-f]{16,}\b/i
-/** The refusal a person gets for an explicit request the assessor ignored: the first sentence of its reason, or a fixed phrase when that names internal terms, at most 200 characters (ADR-24). */
+const SENTENCE = /(?<=[.!?。！？])\s+|\n/
+const CLAUSE = /\s*(?:[,;，；()（）]|:(?=\s)|(?<=\s)[-–—](?=\s))\s*/
+const TRIGGER_NOUN = /\b(the|this|that|these|those)\s+trigger(s?)\b/gi
+function readable(sentence: string): string | undefined {
+  const text = sentence.replace(TRIGGER_NOUN, (_m, d: string, s: string) => d + ' message' + s)
+  if (!INTERNAL.test(text)) return text
+  const kept = text.split(CLAUSE).map(c => c.trim()).filter(c => c !== '' && !INTERNAL.test(c) && c.split(/\s+/).length >= 3)
+  if (kept.length === 0) return undefined
+  const joined = kept.join(', ').replace(/[\s.!?。！？]+$/u, '')
+  return joined.charAt(0).toUpperCase() + joined.slice(1) + '.'
+}
+/** The refusal a person gets for an explicit request the assessor ignored: the first sentence of its reason that a person can read: internal terms rewritten (`the trigger` → `the message`) or their clauses dropped; a fixed phrase when nothing is left; at most 200 characters (ADR-24, ADR-25). */
 export function refusalText(reason: string): string {
-  const first = reason.trim().split(/(?<=[.!?。！？])\s+|\n/)[0]?.trim() ?? ''
-  const body = !first || INTERNAL.test(first) ? REFUSAL_FALLBACK : first
+  let body = REFUSAL_FALLBACK
+  for (const sentence of reason.trim().split(SENTENCE)) {
+    const found = sentence.trim() && readable(sentence.trim())
+    if (found) { body = found; break }
+  }
   const text = REFUSAL_PREFIX + body
   return text.length <= 200 ? text : text.slice(0, 199).trimEnd() + '…'
 }

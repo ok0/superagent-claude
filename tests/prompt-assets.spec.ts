@@ -127,4 +127,22 @@ describe('ported prompt and skill assets', () => {
   it('worker prompt points to the GitHub skill resource', () => {
     expect(body(read('prompts/worker.md'))).toContain('mcp__superagent__orchestrator_read skill/github')
   })
+
+  it('the worker prompt renames a changed ticket, waits for host push retries and limits changes to the request', () => {
+    const work = body(read('prompts/work.md'))
+    for (const token of ['pass title with a new short label of at most 200 characters', 'retries a transient push failure up to 3 times', 'only when it still fails after the host\'s retries', 'Change only the files the request needs', '.gitignore']) {
+      expect(work, token).toContain(token)
+    }
+  })
+
+  it('acknowledgements state only facts from the request and a doubtful premise gets a question', () => {
+    const replies = body(read('prompts/replies.md'))
+    for (const token of ['never present a name, value, decision or earlier agreement', 'do not acknowledge it: the worker asks one question']) {
+      expect(replies, token).toContain(token)
+    }
+  })
+
+  it('the router writes an ignore reason in plain words', () => {
+    expect(body(read('prompts/router.md'))).toContain('without internal terms such as ticket, worker, hand back, Eval, trigger or assignment')
+  })
 })

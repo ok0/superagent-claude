@@ -140,6 +140,12 @@ describe('worker delivery tools', () => {
     expect(report).toHaveBeenCalledWith('T1', { state: 'failed', summary: expect.stringContaining('(HTTP 403)') })
   })
 
+  it('a push that still fails after the host retries is a tool error without a failed report', async () => {
+    const { tools, report } = setup({ pushError: new Error('The push still failed after 3 attempts by the host: fatal error in commit_refs') })
+    await expect(find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())).rejects.toThrow(/3 attempts/)
+    expect(report).not.toHaveBeenCalled()
+  })
+
   it('a PR error that is not an access error stays a tool error', async () => {
     const { tools, report } = setup({ failures: { pulls: 422 } })
     await expect(find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())).rejects.toThrow()

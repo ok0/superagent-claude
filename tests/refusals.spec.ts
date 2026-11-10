@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { harness, accepted, trigger, guest } from './fixtures/engine.ts'
-import { refusalText } from '../src/core/replies.ts'
+import { REFUSAL_PREFIX, refusalText } from '../src/core/replies.ts'
 import type { Policy } from '../src/core/index.ts'
 
 const gate: Policy['gate'] = (t, thread) => !t.human ? { admissible: false, reason: 'not human' }
@@ -88,5 +88,39 @@ describe('refusalText', () => {
     expect(text).toHaveLength(200)
     expect(text.startsWith("I can't take this on here: ")).toBe(true)
     expect(text.endsWith('…')).toBe(true)
+  })
+
+  const INTERNAL_TERMS = /\b(?:tickets?|workers?|hand(?:ed|s|ing)?[\s-]?backs?|evals?|triggers?|orchestrator|assignments?)\b|\b[0-9a-f]{16,}\b/i
+  const FALLBACK = "I can't take this on here: it is outside what I can do."
+  const SAMPLES: [string, string][] = [
+    ['Booking a restaurant table is not something this repository covers. Try a booking site.', "I can't take this on here: Booking a restaurant table is not something this repository covers."],
+    ['The trigger asks for weather information, which is outside the repository scope.', "I can't take this on here: The message asks for weather information, which is outside the repository scope."],
+    ['Off-topic: the user asks for cooking recipes; no ticket needed.', "I can't take this on here: The user asks for cooking recipes."],
+    ['Explicit request to order pizza; not a repository task, so no ticket is created.', "I can't take this on here: Explicit request to order pizza, not a repository task."],
+    ['General question about stock prices, unrelated to this repository, no worker needed.', "I can't take this on here: General question about stock prices, unrelated to this repository."],
+    ['No ticket: the request is to translate a poem, which this repository does not cover.', "I can't take this on here: The request is to translate a poem, which this repository does not cover."],
+    ['Ignoring this trigger: it asks to write a wedding speech, not to change code.', "I can't take this on here: Ignoring this message: it asks to write a wedding speech, not to change code."],
+    ['The eval found nothing to change in the code. A wedding speech is not repository work.', "I can't take this on here: A wedding speech is not repository work."],
+    ['Duplicate of ticket a1b2c3d4e5f6a7b8c9d0.', FALLBACK],
+    ['Trigger already handled by an assignment.', FALLBACK],
+  ]
+  it.each(SAMPLES)('reason %s gives the expected refusal', (reason, expected) => {
+    expect(refusalText(reason)).toBe(expected)
+  })
+
+  it('most sample reasons keep their content and none names an internal term', () => {
+    const texts = SAMPLES.map(([reason]) => refusalText(reason))
+    expect(texts.filter(text => text !== FALLBACK).length).toBeGreaterThanOrEqual(8)
+    for (const text of texts) {
+      expect(text.startsWith(REFUSAL_PREFIX)).toBe(true)
+      expect(text.length).toBeLessThanOrEqual(200)
+      expect(INTERNAL_TERMS.test(text.slice(REFUSAL_PREFIX.length))).toBe(false)
+      expect(text.slice(REFUSAL_PREFIX.length).split(/(?<=[.!?])\s+/).length).toBe(1)
+    }
+  })
+
+  it('a reason made only of internal terms falls back', () => {
+    expect(refusalText('Ticket handed back to the worker.')).toBe(FALLBACK)
+    expect(refusalText('Eval: trigger, assignment.')).toBe(FALLBACK)
   })
 })

@@ -55,9 +55,9 @@ const RouteItemSchema = z.object({
   ticket_id: z.string().nullish().describe('attach and stop: the ticket.'),
   title: z.string().nullish().describe('accept: a short label of at most 200 characters describing the original request; no added requirements or implementation advice.'),
   worktree_name: z.string().nullish().describe(`accept: ${WorktreeNameSchema.description ?? ''}`),
-  acknowledgement: z.string().nullish().describe(`accept: one brief sentence of at most ${HUMAN_WORDS} words naming the concrete change and intended result in the source language. It is posted as a reply to the original source on acceptance, so do not quote the source; quote an earlier proposal briefly only when the trigger merely confirms it and the sentence does not already state it. No generic I will handle it.`),
+  acknowledgement: z.string().nullish().describe(`accept: one brief sentence of at most ${HUMAN_WORDS} words naming the concrete change and intended result in the source language. It is posted as a reply to the original source on acceptance, so do not quote the source; quote an earlier proposal briefly only when the trigger merely confirms it and the sentence does not already state it. No generic I will handle it. State only what the source says; never present an unstated name, value or earlier agreement as settled.`),
   note: z.string().nullish().describe(`accept and attach: ${RoutingNoteSchema.description ?? ''}`),
-  reason: z.string().nullish().describe('ignore and stop: why, at most 500 characters; an ignore needs it.'),
+  reason: z.string().nullish().describe('ignore and stop: why, at most 500 characters; an ignore needs it. An ignore of an explicit request may be posted to its sender, so start with one plain sentence about the request, without internal terms or ids.'),
 }).strict()
 type RouteItem = z.infer<typeof RouteItemSchema>
 type Kind = RouteItem['kind']

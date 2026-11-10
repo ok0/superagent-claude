@@ -92,6 +92,7 @@ export function executorTools(host: ExecutorToolsHost, ticket: Pick<Ticket, 'id'
       schema: z.object({
         state: z.enum(['progress', 'ready', 'blocked', 'failed', 'dropped']),
         summary: z.string().min(1),
+        title: z.string().trim().min(1).max(200).optional().describe('A new short label of at most 200 characters when a person\'s message changed what this ticket is for; omit to keep the current title.'),
         human_action: HumanActionSchema.nullish().describe('One concrete question for a person in one sentence of at most 100 words, also with state=progress; omit to keep the pending one, null to clear it.'),
         question_for_trigger_id: z.string().optional().describe('With human_action: the human message that raised the question, which is asked where that person wrote.'),
         reply_to_trigger_id: z.string().optional().describe('The explicit human question this report answers; never for ordinary progress.'),
@@ -102,6 +103,7 @@ export function executorTools(host: ExecutorToolsHost, ticket: Pick<Ticket, 'id'
         const report: WorkerReport = {
           state: args.state,
           summary: args.summary,
+          ...(args.title !== undefined ? { title: args.title } : {}),
           ...(args.human_action !== undefined ? { question: args.human_action } : {}),
           ...(args.question_for_trigger_id ? { askedBy: args.question_for_trigger_id } : {}),
           ...(args.reply_to_trigger_id ? { answers: args.reply_to_trigger_id } : {}),

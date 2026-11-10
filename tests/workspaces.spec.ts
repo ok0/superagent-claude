@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Ticket } from '../src/core/index.ts'
-import { RepositoryAccessError, Workspaces, accessStatus, coAuthorTrailers, worktreeName, type RepositoryAccess } from '../src/executor/workspaces.ts'
+import { PUSH_BACKOFF_MS, RepositoryAccessError, Workspaces, accessStatus, coAuthorTrailers, pushFailure, worktreeName, type RepositoryAccess } from '../src/executor/workspaces.ts'
 import { CliError, Commands, commandError, execProgram } from '../src/infra/commands.ts'
 import { waitUntil } from './fixtures/async.ts'
 import { accepted } from './fixtures/engine.ts'
@@ -292,5 +292,90 @@ describe('git workspaces', () => {
   it('worktreeName uses the execution name with the id prefix, else the id', () => {
     expect(worktreeName({ id: 'c'.repeat(32) })).toBe('c'.repeat(32))
     expect(worktreeName({ id: 'c'.repeat(32), execution: { name: 'Fix Login!', directory: '', assignment: '' } })).toBe('fix-login-cccccccccccc')
+  })
+})
+
+function flaky(commands: Pick<Commands, 'git'>, stderrs: string[]) {
+  const count = { pushes: 0 }
+  const git: Pick<Commands, 'git'>['git'] = async (args, cwd, extra) => {
+    if (args.includes('push')) {
+      count.pushes++
+      const stderr = stderrs.shift()
+      if (typeof stderr === 'string') throw commandError(Object.assign(new Error('x'), { stderr, code: 1 }), 'git')
+    }
+    return commands.git(args, cwd, extra)
+  }
+  return { commands: { git }, count }
+}
+
+const TRANSIENT = " ! [remote rejected] HEAD -> agent/alpha (fatal error in commit_refs)\nerror: failed to push some refs to 'https://host/owner/repo.git'"
+const NFF = " ! [rejected]        HEAD -> agent/alpha (non-fast-forward)\nerror: failed to push some refs"
+const DENIED = "remote: Permission to owner/repo.git denied to ok0-worker.\nfatal: unable to access 'https://host/owner/repo.git/': The requested URL returned error: 403"
+const MISSING = "remote: Repository not found.\nfatal: repository 'https://host/owner/repo.git/' not found"
+
+describe('push retries', () => {
+  async function pushWith(stderrs: string[]) {
+    const { sh, commands, state, origin } = fixture()
+    const f = flaky(commands, stderrs)
+    const delays: number[] = []
+    const ws = new Workspaces({ stateDir: state, commands: f.commands, repositoryOf: () => 'owner/repo', access: local(origin), sleep: async ms => { delays.push(ms) } })
+    const a = await ws.prepare(ticket(idA), 'alpha')
+    commit(sh, a.cwd, 'one.txt', '1', 'c1')
+    return { sh, origin, a, f, delays, ws }
+  }
+
+  it('retries a transient push failure and then pushes', async () => {
+    const { sh, origin, a, f, delays, ws } = await pushWith([TRANSIENT])
+    const result = await ws.push(ticket(idA), {})
+    expect(result.pushed).toBe(1)
+    expect(f.count.pushes).toBe(2)
+    expect(delays).toEqual([2000])
+    expect(sh(['rev-parse', 'refs/heads/agent/alpha'], origin).trim()).toBe(sh(['rev-parse', 'HEAD'], a.cwd).trim())
+  })
+
+  it('returns an error after three transient push failures', async () => {
+    const { f, delays, ws } = await pushWith([TRANSIENT, TRANSIENT, TRANSIENT])
+    const error = await ws.push(ticket(idA), {}).then(() => undefined, (e: unknown) => e) as Error
+    expect(error).toBeInstanceOf(Error)
+    expect(error).not.toBeInstanceOf(RepositoryAccessError)
+    expect(error.message).toContain('fatal error in commit_refs')
+    expect(error.message).toContain('3 attempts')
+    expect(f.count.pushes).toBe(3)
+    expect(delays).toEqual([...PUSH_BACKOFF_MS])
+  })
+
+  it('a non-fast-forward push fails at once', async () => {
+    const { f, delays, ws } = await pushWith([NFF])
+    await expect(ws.push(ticket(idA), {})).rejects.toThrow(/rejected without force/)
+    expect(f.count.pushes).toBe(1)
+    expect(delays).toEqual([])
+  })
+
+  it('a 403 push is a repository access error at once', async () => {
+    const { f, delays, ws } = await pushWith([DENIED])
+    const error = await ws.push(ticket(idA), {}).then(() => undefined, (e: unknown) => e) as RepositoryAccessError
+    expect(error).toBeInstanceOf(RepositoryAccessError)
+    expect(error.status).toBe(403)
+    expect(f.count.pushes).toBe(1)
+    expect(delays).toEqual([])
+  })
+
+  it('a missing repository is a repository access error at once', async () => {
+    const { f, ws } = await pushWith([MISSING])
+    const error = await ws.push(ticket(idA), {}).then(() => undefined, (e: unknown) => e) as RepositoryAccessError
+    expect(error).toBeInstanceOf(RepositoryAccessError)
+    expect(error.status).toBe(404)
+    expect(f.count.pushes).toBe(1)
+  })
+
+  it.each([
+    [TRANSIENT, undefined, 'transient'],
+    [NFF, undefined, 'rejected'],
+    ['x', 401, 'access'],
+    [DENIED, 403, 'access'],
+    ['fatal: Authentication failed for https://host/owner/repo.git', undefined, 'access'],
+    ['The requested URL returned error: 500', 500, 'transient'],
+  ])('pushFailure classifies push errors %# as %s', (message, status, kind) => {
+    expect(pushFailure(message, status).kind).toBe(kind)
   })
 })

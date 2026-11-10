@@ -122,4 +122,22 @@ describe('worker tools', () => {
     const follow = find(executorTools(h, { id: 'T1' }), 'orchestrator_thread_follow')
     await expect(follow.execute({ thread: 'github', reason: 'r' }, new AbortController().signal)).rejects.toThrow()
   })
+
+  it('a report title reaches the engine and omission keeps the title', async () => {
+    const { engine, host: h } = host()
+    const report = find(executorTools(h, { id: 'T1' }), 'orchestrator_report')
+    await report.execute({ state: 'progress', summary: 's', title: '  Add WELCOME.md instead  ' }, new AbortController().signal)
+    expect(engine.report.mock.calls[0]?.[1]).toMatchObject({ title: 'Add WELCOME.md instead' })
+    await report.execute({ state: 'progress', summary: 's' }, new AbortController().signal)
+    expect(engine.report.mock.calls[1]?.[1]).not.toHaveProperty('title')
+    await expect(report.execute({ state: 'progress', summary: 's', title: 'x'.repeat(200) }, new AbortController().signal))
+      .resolves.toEqual({ reported: true })
+  })
+
+  it.each(['', '   ', 'x'.repeat(201)])('report title %# is a tool error', async (title) => {
+    const { engine, host: h } = host()
+    const report = find(executorTools(h, { id: 'T1' }), 'orchestrator_report')
+    await expect(report.execute({ state: 'progress', summary: 's', title }, new AbortController().signal)).rejects.toThrow()
+    expect(engine.report).not.toHaveBeenCalled()
+  })
 })
