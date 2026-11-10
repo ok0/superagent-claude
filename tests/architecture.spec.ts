@@ -254,6 +254,20 @@ describe('sources and cli rules', () => {
     expect(checkFile('src/sources/registry.ts', src).map(v => v.rule)).toContain('sources')
   })
 
+  it.each([
+    "import { WorkerExecutor } from '../../executor/worker-executor.ts'",
+    "import { FakeRuntime } from '../../runtimes/fake/runtime.ts'",
+    "import { Runtime } from '../../app/runtime.ts'",
+    "import { query } from '@anthropic-ai/claude-agent-sdk'",
+  ])('flags %s in src/sources/github as sources', (src) => {
+    expect(checkFile('src/sources/github/source.ts', src).map(v => v.rule)).toContain('sources')
+  })
+
+  it('allows core, policy, infra, sources, app store and KV, zod and node imports in src/sources/github', () => {
+    const src = "import { C } from '../../core/index.ts'\nimport { P } from '../../policy/actors.ts'\nimport { H } from '../../infra/commands.ts'\nimport { K } from '../kind.ts'\nimport { T } from './trigger.ts'\nimport { S } from '../../app/store.ts'\nimport { V } from '../../app/kv.ts'\nimport { z } from 'zod'\nimport { setTimeout } from 'node:timers'"
+    expect(checkFile('src/sources/github/source.ts', src)).toEqual([])
+  })
+
   it('flags the SDK in src/sources as sources and sdk', () => {
     expect(checkFile('src/sources/registry.ts', "import { query } from '@anthropic-ai/claude-agent-sdk'").map(v => v.rule)).toEqual(['sources', 'sdk'])
   })
@@ -314,6 +328,13 @@ describe('scan', () => {
     ])
   })
 
+  it('detects a runtimes import injected into src/sources/github in a temp tree', () => {
+    const root = tempRoot()
+    mkdirSync(join(root, 'src', 'sources', 'github'), { recursive: true })
+    writeFileSync(join(root, 'src', 'sources', 'github', 'sample.ts'), "import { FakeRuntime } from '../../runtimes/fake/runtime.ts'\n")
+    expect(scan(root).violations).toEqual([{ file: 'src/sources/github/sample.ts', specifier: '../../runtimes/fake/runtime.ts', rule: 'sources' }])
+  })
+
   it('returns nothing when src is absent', () => {
     expect(scan(tempRoot())).toEqual({ files: [], violations: [] })
   })
@@ -329,7 +350,7 @@ describe('scan', () => {
     expect(r.files.filter(f => f.startsWith('src/policy/')).length).toBeGreaterThanOrEqual(4)
     for (const p of ['src/app/cache.ts', 'src/app/effects.ts', 'src/app/kv.ts', 'src/app/outbox.ts', 'src/app/passes.ts', 'src/app/store.ts', 'src/app/store-read.ts', 'src/app/versions.ts', 'src/infra/health.ts', 'src/infra/paths.ts', 'src/infra/text.ts']) expect(r.files).toContain(p)
     expect(r.files).not.toContain('src/app/migration.ts')
-    for (const p of ['src/sources/admission-context.ts', 'src/sources/host.ts', 'src/sources/kind.ts', 'src/sources/poll.ts', 'src/sources/registry.ts', 'src/app/config.ts', 'src/app/runtime.ts', 'src/cli/bin.ts', 'src/cli/main.ts']) expect(r.files).toContain(p)
+    for (const p of ['src/sources/admission-context.ts', 'src/sources/host.ts', 'src/sources/kind.ts', 'src/sources/poll.ts', 'src/sources/registry.ts', 'src/app/config.ts', 'src/app/runtime.ts', 'src/cli/bin.ts', 'src/cli/main.ts', 'src/sources/github/trigger.ts', 'src/sources/github/read.ts', 'src/sources/github/pull.ts', 'src/sources/github/channel.ts', 'src/sources/github/source.ts', 'src/infra/commands.ts', 'src/infra/env.ts', 'src/app/sources.ts']) expect(r.files).toContain(p)
   })
 })
 
@@ -339,6 +360,20 @@ describe('vendor names', () => {
       .filter(f => f.startsWith('src/core/') || f.startsWith('src/policy/'))
       .filter(f => /github/i.test(readFileSync(join(ROOT, f), 'utf8')))
     expect(offenders).toEqual([])
+  })
+
+  it('the executor never names the hosting service', () => {
+    const offenders = scan(ROOT).files
+      .filter(f => f.startsWith('src/executor/'))
+      .filter(f => /github/i.test(readFileSync(join(ROOT, f), 'utf8')))
+    expect(offenders).toEqual([])
+  })
+
+  it('outside its Source plugin only the assembly point names the hosting service', () => {
+    const offenders = scan(ROOT).files
+      .filter(f => !f.startsWith('src/sources/github/'))
+      .filter(f => readFileSync(join(ROOT, f), 'utf8').split('\n').some(line => !line.includes('dsh-superagent-prototype') && /github/i.test(line)))
+    expect(offenders).toEqual(['src/app/sources.ts'])
   })
 
   it('the Source framework names no service or host framework outside its port header', () => {

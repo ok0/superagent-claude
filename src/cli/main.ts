@@ -1,12 +1,16 @@
 import { resolve } from 'node:path'
 import pkg from '../../package.json' with { type: 'json' }
 import { CONFIG_FILE, ConfigError, loadConfig, type Config } from '../app/config.ts'
+import { installedSources } from '../app/sources.ts'
 import { jsonLines, Runtime } from '../app/runtime.ts'
-import { FakeRuntime } from '../runtimes/fake/runtime.ts'
+import { FakeRuntime, type FakeScript } from '../runtimes/fake/runtime.ts'
 
 export const VERSION: string = pkg.version
 
 export const EXIT_REFUSED = 2
+
+/** The fake worker reports ready on its first turn, so a fake run answers once. */
+const FAKE_SCRIPT: FakeScript = ({ index }) => index === 0 ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'Done: the fake worker finished' } }] } : {}
 
 export const HELP: string = [
   'Usage: superagent-claude [--help | --version]',
@@ -97,7 +101,7 @@ async function start(argv: readonly string[], io: CliIo): Promise<number> {
 
   let runtime: Runtime
   try {
-    runtime = new Runtime({ config, runtime: new FakeRuntime(() => ({})), log: jsonLines(io.out) })
+    runtime = new Runtime({ config, runtime: new FakeRuntime(FAKE_SCRIPT), log: jsonLines(io.out), ...installedSources(config, io.env) })
   } catch (error) {
     io.err(`superagent-claude: ${messageOf(error)}\n`)
     return EXIT_REFUSED

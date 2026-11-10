@@ -1,11 +1,13 @@
 // Ported from dsh-superagent-prototype (MIT) tests/registry.spec.ts
-/** Source registry cases for kinds without bundled plugins. Changes from the reference: cases that depend on the bundled Source kinds are not ported; the kind has no display fields; configs come from a reader; scope, channel and find cases are added. */
+/** Source registry cases. Changes from the reference: the kind has no display fields; configs come from a reader; scope, channel and find cases are added; the hosting Source cases use the multi-repository kind (Thread keys github:<owner>/<name>#<number>); the instance-list, policy-part and chat-only cases are not ported. */
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import type { OutboundMessage, Trigger } from '../src/core/index.ts'
 import { HealthBoard } from '../src/infra/health.ts'
 import type { SourceKind } from '../src/sources/kind.ts'
+import { githubSource } from '../src/sources/github/source.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
+import { fakeGh } from './fixtures/fake-gh.ts'
 
 const probe: SourceKind<{ interval: number }> = {
   kind: 'probe', schema: z.object({ interval: z.number().int().min(1).default(5) }).strict(),
@@ -93,5 +95,56 @@ describe('Source registry', () => {
     expect(sources.channelAllowed({ source: 'none', address: { room: 'r' } })).toBe(false)
     expect(sources.enabled('probe')).toBe(true)
     expect(sources.find('7')).toEqual({ threads: ['probe:7'], terms: ['7'] })
+  })
+})
+
+describe('with the hosting Source kind', () => {
+  const hosting = () => githubSource({ repositories: ['acme/widgets', 'acme/gadgets'], commands: fakeGh({ repositories: {} }).commands }).kind
+  const trigger: Trigger = { id: 't1', source: 'github', threads: [{ source: 'github', id: 'acme/widgets#7' }], actor: { source: 'github', id: 'alice' },
+    human: true, at: '', text: 'hi', meta: {} }
+
+  it('refuses the kind when its health entry is taken, and gives up its entries at unregister', () => {
+    const taken = new HealthBoard()
+    taken.claim('github')
+    expect(() => new SourceRegistry(() => ({}), taken).register(hosting())).toThrow('declares the health entry github')
+    const board = new HealthBoard()
+    const registry = new SourceRegistry(() => ({}), board)
+    const unregister = registry.register(hosting())
+    const report = registry.reporter('github')
+    report({ state: 'ready', detail: 'ok' })
+    expect(board.all.github).toEqual({ state: 'ready', detail: 'ok' })
+    report({ state: 'ready', detail: 'r' }, 'acme/widgets')
+    expect(board.all['github:acme/widgets']).toEqual({ state: 'ready', detail: 'r' })
+    unregister()
+    expect(() => report({ state: 'error', detail: 'late' })).not.toThrow()
+    expect(board.all.github).toBeUndefined()
+    registry.register(hosting())
+    expect(board.all.github).toEqual({ state: 'starting', detail: '' })
+    report({ state: 'error', detail: 'late' })
+    expect(board.all.github).toEqual({ state: 'starting', detail: '' })
+    registry.reporter('github')({ state: 'ready', detail: 'again' })
+    expect(board.all.github).toEqual({ state: 'ready', detail: 'again' })
+  })
+  it('names no replied-to Trigger for the hosting kind', () => {
+    const registry = new SourceRegistry(() => ({}))
+    registry.register(hosting())
+    expect(registry.repliesTo({ ...trigger, source: 'github' })).toBeUndefined()
+  })
+  it('finds Threads of the configured repositories', () => {
+    const registry = new SourceRegistry(() => ({}))
+    registry.register(hosting())
+    expect(registry.find('#12')).toEqual({ threads: ['github:acme/widgets#12', 'github:acme/gadgets#12'], terms: [] })
+    expect(registry.find('acme/gadgets#12')).toEqual({ threads: ['github:acme/gadgets#12'], terms: [] })
+    expect(registry.find('https://github.com/ACME/widgets/pull/7#issuecomment-3')).toEqual({ threads: ['github:acme/widgets#7'], terms: [] })
+    expect(registry.find('https://github.com/other/repo/issues/7')).toEqual({ threads: [], terms: [] })
+    expect(registry.find('login fails')).toEqual({ threads: [], terms: [] })
+  })
+  it('allows a reply on a configured repository only', () => {
+    const registry = new SourceRegistry(() => ({}))
+    expect(registry.channelAllowed({ source: 'github', address: { repository: 'acme/widgets', number: '7' } })).toBe(false)
+    registry.register(hosting())
+    expect(registry.channelAllowed({ source: 'github', address: { repository: 'acme/widgets', number: '7' } })).toBe(true)
+    expect(registry.channelAllowed({ source: 'github', address: { repository: 'ACME/WIDGETS', number: '7' } })).toBe(true)
+    expect(registry.channelAllowed({ source: 'github', address: { repository: 'other/repo', number: '7' } })).toBe(false)
   })
 })
