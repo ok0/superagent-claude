@@ -2,7 +2,7 @@
 .doc
 .r
 node_modules/
-lib/
+/lib/
 coverage/
 .superagent-claude/
 *.log

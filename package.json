@@ -4,22 +4,35 @@
   "description": "A proactive agent for GitHub repositories. Powered by Claude.",
   "license": "MIT",
   "type": "module",
-  "bin": { "superagent-claude": "lib/cli.js" },
-  "files": ["lib", "LICENSE", "NOTICE", "README.md"],
+  "bin": {
+    "superagent-claude": "lib/cli.js"
+  },
+  "files": [
+    "lib",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsdown && node -e \"require('node:fs').chmodSync('lib/cli.js', 0o755)\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "pnpm typecheck && pnpm test && pnpm build",
     "check:commits": "node scripts/check-commits.ts",
-    "check:branding": "node scripts/check-branding.ts"
+    "check:branding": "node scripts/check-branding.ts",
+    "spike:sdk": "node spikes/sdk/run.ts"
   },
-  "engines": { "node": ">=22.19.0" },
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "packageManager": "pnpm@11.28.11",
   "devDependencies": {
     "@types/node": "22.20.5",
     "tsdown": "0.23.7",
     "typescript": "6.0.3",
     "vitest": "5.1.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.321"
   }
 }
