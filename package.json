@@ -19,6 +19,7 @@
     "build": "tsdown && node -e \"require('node:fs').chmodSync('lib/cli.js', 0o755)\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "check": "pnpm typecheck && pnpm test && pnpm build",
     "check:commits": "node scripts/check-commits.ts",
     "check:branding": "node scripts/check-branding.ts",

@@ -1,4 +1,4 @@
-// Enforces the layer import rules (PAC1): core stays free of Node I/O and the SDK, policy imports only zod, core and itself, the executor imports only core, infra, app effects and store, runtimes import only the runtime contract and infra, the SDK is imported only from src/runtimes/claude, and app/infra import only node:*, zod, proper-lockfile and allowed relative paths; the Source framework imports only core, policy, infra, itself and the app store and KV types (never the executor, runtimes or the SDK); the CLI imports only src/ modules, package.json and node:*.
+// Enforces the layer import rules (PAC1) and that the bypass permission mode is never named under src/: core stays free of Node I/O and the SDK, policy imports only zod, core and itself, the executor imports only core, infra, app effects and store, runtimes import only the runtime contract and infra, the SDK is imported only from src/runtimes/claude, and app/infra import only node:*, zod, proper-lockfile and allowed relative paths; the Source framework imports only core, policy, infra, itself and the app store and KV types (never the executor, runtimes or the SDK); the CLI imports only src/ modules, package.json and node:*.
 import { describe, it, expect, afterEach } from 'vitest'
 import ts from 'typescript'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync, existsSync } from 'node:fs'
@@ -209,6 +209,34 @@ describe('sdk rule', () => {
   it('allows the SDK in src/runtimes/claude', () => {
     expect(checkFile('src/runtimes/claude/adapter.ts', "import { query } from '@anthropic-ai/claude-agent-sdk'")).toEqual([])
   })
+
+  it('flags the SDK in src/policy', () => {
+    expect(checkFile('src/policy/x.ts', "import { query } from '@anthropic-ai/claude-agent-sdk'").map(v => v.rule)).toEqual(['policy', 'sdk'])
+  })
+
+  it('flags the SDK in src/app/tools', () => {
+    expect(checkFile('src/app/tools/executor.ts', "import { query } from '@anthropic-ai/claude-agent-sdk'").map(v => v.rule)).toEqual(['app', 'sdk'])
+  })
+
+  it('allows the SDK in every file of src/runtimes/claude', () => {
+    expect(checkFile('src/runtimes/claude/options.ts', "import type { Options } from '@anthropic-ai/claude-agent-sdk'")).toEqual([])
+  })
+})
+
+describe('permission mode', () => {
+  const bypassNeedle = 'bypass' + 'Permissions'
+  const skipNeedle = 'allowDangerously' + 'SkipPermissions'
+  const names = (source: string): boolean => source.includes(bypassNeedle) || source.includes(skipNeedle)
+
+  it('no source under src/ names the bypass permission mode', () => {
+    const offenders = scan(ROOT).files
+      .filter(f => names(readFileSync(join(ROOT, f), 'utf8')))
+    expect(offenders).toEqual([])
+  })
+
+  it('detects the bypass permission mode in a sample source', () => {
+    expect(names("permissionMode: 'bypass" + "Permissions'")).toBe(true)
+  })
 })
 
 describe('executor and runtimes rules', () => {
@@ -369,11 +397,11 @@ describe('vendor names', () => {
     expect(offenders).toEqual([])
   })
 
-  it('outside its Source plugin only the assembly point names the hosting service', () => {
+  it('outside its Source plugin only the assembly point and the runtime env secret filter name the hosting service', () => {
     const offenders = scan(ROOT).files
       .filter(f => !f.startsWith('src/sources/github/'))
       .filter(f => readFileSync(join(ROOT, f), 'utf8').split('\n').some(line => !line.includes('dsh-superagent-prototype') && /github/i.test(line)))
-    expect(offenders).toEqual(['src/app/prompts.ts', 'src/app/sources.ts'])
+    expect(offenders).toEqual(['src/app/prompts.ts', 'src/app/sources.ts', 'src/runtimes/claude/options.ts'])
   })
 
   it('the Source framework names no service or host framework outside its port header', () => {

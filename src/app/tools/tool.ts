@@ -1,0 +1,43 @@
+// Ported from dsh-superagent-prototype (MIT) src/app/tools/tool.ts
+/**
+ * Shared tool primitives and schemas for the worker tools.
+ * Changes from the reference: tools are the runtime-neutral `ToolSpec` (arguments are parsed with the schema before `execute`);
+ * `readTool` and resources are removed (M14); `IM_WORDS` is replaced by `HUMAN_WORDS` here; the human_action rule is added.
+ */
+import { z } from 'zod'
+import type { ToolSpec } from '../../executor/contract.ts'
+import { wordCount } from '../../infra/text.ts'
+
+export const HUMAN_WORDS = 100
+
+export function tool<S extends z.ZodObject>(definition: {
+  name: string
+  description: string
+  schema: S
+  execute(args: z.infer<S>, signal: AbortSignal): Promise<unknown>
+}): ToolSpec {
+  return {
+    name: definition.name,
+    description: definition.description,
+    schema: definition.schema,
+    execute: async (args, signal) => definition.execute(definition.schema.parse(args), signal),
+  }
+}
+
+export function humanTextProblem(text: string): string | undefined {
+  if (/[\n\r]/.test(text)) return 'Write it on one line.'
+  const sentences = [...new Intl.Segmenter('en', { granularity: 'sentence' }).segment(text)]
+    .filter(segment => /\S/.test(segment.segment))
+  if (sentences.length > 1) return 'Write exactly one sentence.'
+  if ((text.match(/[?？]/g) ?? []).length > 1) return 'Ask exactly one question.'
+  if (wordCount(text) > HUMAN_WORDS) return `Use at most ${HUMAN_WORDS} words.`
+  return undefined
+}
+
+export const AcknowledgementSchema = z.string().trim().min(1)
+  .refine(text => wordCount(text) <= HUMAN_WORDS, `An acknowledgement has at most ${HUMAN_WORDS} words; write one short sentence.`)
+
+export const HumanActionSchema = z.string().trim().min(1).max(1000).superRefine((text, ctx) => {
+  const problem = humanTextProblem(text)
+  if (problem) ctx.addIssue({ code: 'custom', message: `human_action must be one concrete question for a person: ${problem}` })
+})

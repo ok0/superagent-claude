@@ -56,6 +56,8 @@ src/app/passes.ts <- src/app/passes.ts
 src/app/prompts.ts <- src/app/prompts.ts
 src/app/store.ts <- src/app/store.ts
 src/app/store-read.ts <- src/app/store-read.ts
+src/app/tools/executor.ts <- src/app/tools/executor.ts
+src/app/tools/tool.ts <- src/app/tools/tool.ts
 src/app/versions.ts <- src/app/versions.ts
 src/core/assignments.ts <- src/core/assignments.ts
 src/core/engine.ts      <- src/core/engine.ts
