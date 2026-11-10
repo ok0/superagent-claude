@@ -17,7 +17,7 @@ const hold: FakeScript = () => ({ hold: new Promise(() => {}) })
 const ready: FakeScript = ({ index }) => index === 0
   ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'Done: the fake worker finished' } }] }
   : {}
-const mention = trigger('1', { addressed: 'mention' })
+const mention = trigger('1', { addressed: 'mention', meta: { repository: 'owner/repo' } })
 
 const dirs: string[] = []
 const runtimes: Runtime[] = []

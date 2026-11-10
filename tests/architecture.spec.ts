@@ -378,7 +378,13 @@ describe('scan', () => {
     expect(r.files.filter(f => f.startsWith('src/policy/')).length).toBeGreaterThanOrEqual(4)
     for (const p of ['src/app/cache.ts', 'src/app/effects.ts', 'src/app/kv.ts', 'src/app/outbox.ts', 'src/app/passes.ts', 'src/app/store.ts', 'src/app/store-read.ts', 'src/app/versions.ts', 'src/infra/health.ts', 'src/infra/paths.ts', 'src/infra/text.ts']) expect(r.files).toContain(p)
     expect(r.files).not.toContain('src/app/migration.ts')
-    for (const p of ['src/sources/admission-context.ts', 'src/sources/host.ts', 'src/sources/kind.ts', 'src/sources/poll.ts', 'src/sources/registry.ts', 'src/app/config.ts', 'src/app/runtime.ts', 'src/cli/bin.ts', 'src/cli/main.ts', 'src/sources/github/trigger.ts', 'src/sources/github/read.ts', 'src/sources/github/pull.ts', 'src/sources/github/channel.ts', 'src/sources/github/source.ts', 'src/infra/commands.ts', 'src/infra/env.ts', 'src/app/sources.ts']) expect(r.files).toContain(p)
+    for (const p of ['src/sources/admission-context.ts', 'src/sources/host.ts', 'src/sources/kind.ts', 'src/sources/poll.ts', 'src/sources/registry.ts', 'src/app/config.ts', 'src/app/runtime.ts', 'src/cli/bin.ts', 'src/cli/main.ts', 'src/sources/github/trigger.ts', 'src/sources/github/read.ts', 'src/sources/github/pull.ts', 'src/sources/github/channel.ts', 'src/sources/github/source.ts', 'src/infra/commands.ts', 'src/infra/env.ts', 'src/app/sources.ts', 'src/app/credentials.ts', 'src/sources/admission-filter.ts']) expect(r.files).toContain(p)
+  })
+
+  it('allows the auth constants import from the Claude runtime options into app/credentials only as code, never the SDK', () => {
+    expect(checkFile('src/app/credentials.ts', "import { AUTH_ENV, type AuthMode } from '../runtimes/claude/options.ts'\n")).toEqual([])
+    expect(checkFile('src/app/credentials.ts', "import { query } from '@anthropic-ai/claude-agent-sdk'\n").map(v => v.rule)).toContain('sdk')
+    expect(checkFile('src/sources/admission-filter.ts', "import { Runtime } from '../app/runtime.ts'\n").map(v => v.rule)).toContain('sources')
   })
 })
 
@@ -405,7 +411,7 @@ describe('vendor names', () => {
   })
 
   it('the Source framework names no service or host framework outside its port header', () => {
-    const offenders = ['kind', 'host', 'registry', 'poll', 'admission-context']
+    const offenders = ['kind', 'host', 'registry', 'poll', 'admission-context', 'admission-filter']
       .map(n => `src/sources/${n}.ts`)
       .flatMap(f => readFileSync(join(ROOT, f), 'utf8').split('\n')
         .filter(line => !line.includes('dsh-superagent-prototype') && /github|feishu|lark|cordis/i.test(line))

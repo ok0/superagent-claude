@@ -45,7 +45,7 @@ async function boot() {
 }
 
 async function openSession(chat: ReturnType<typeof testSource>, fake: FakeRuntime): Promise<FakeSession> {
-  chat.emit(trigger('1', { addressed: 'mention' }))
+  chat.emit(trigger('1', { addressed: 'mention', meta: { repository: 'owner/repo' } }))
   await waitUntil(() => fake.sessions.length === 1)
   return fake.sessions[0]!
 }
@@ -85,7 +85,7 @@ it('injects changed team sections into a running worker session with its next in
   expect(r.store.db.prepare('SELECT prompt_version FROM worker WHERE ticket_id = ?').get(ticket!.id)?.prompt_version).toBe(workerBefore)
 
   const sentBefore = session.sent.length
-  chat.emit(trigger('2', { addressed: 'mention' }))
+  chat.emit(trigger('2', { addressed: 'mention', meta: { repository: 'owner/repo' } }))
   await waitUntil(() => session.sent.length > sentBefore)
   const followUp = session.sent.at(-1)!
   gate.resolve()

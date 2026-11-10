@@ -1,7 +1,8 @@
 import { dirname, resolve } from 'node:path'
 import pkg from '../../package.json' with { type: 'json' }
-import { CONFIG_FILE, ConfigError, loadConfig, type Config } from '../app/config.ts'
-import { installedSources } from '../app/sources.ts'
+import { CONFIG_FILE, loadConfig, StartupRefused, type Config } from '../app/config.ts'
+import { assertStartupPolicy, resolveCredential, type StartupReport } from '../app/credentials.ts'
+import { installedSources, type InstalledSources } from '../app/sources.ts'
 import { jsonLines, Runtime } from '../app/runtime.ts'
 import { FakeRuntime, type FakeScript } from '../runtimes/fake/runtime.ts'
 import { promptsCommand } from './prompts.ts'
@@ -34,7 +35,11 @@ export interface CliIo {
   err(s: string): void
   cwd: string
   env: Readonly<Record<string, string | undefined>>
-  signals: { once(signal: 'SIGINT' | 'SIGTERM', listener: () => void): unknown }
+  signals: {
+    once(signal: 'SIGINT' | 'SIGTERM', listener: () => void): unknown
+    on?(signal: 'SIGHUP', listener: () => void): unknown
+    off?(signal: 'SIGHUP', listener: () => void): unknown
+  }
 }
 
 export function run(
@@ -91,7 +96,7 @@ async function start(argv: readonly string[], io: CliIo): Promise<number> {
   try {
     config = loadConfig(path, io.env)
   } catch (error) {
-    if (error instanceof ConfigError) {
+    if (error instanceof StartupRefused) {
       io.err(`superagent-claude: ${error.message}\n`)
       return EXIT_REFUSED
     }
@@ -103,9 +108,25 @@ async function start(argv: readonly string[], io: CliIo): Promise<number> {
     return EXIT_REFUSED
   }
 
+  const agent = new FakeRuntime(FAKE_SCRIPT)
+  let report: StartupReport
+  let sources: InstalledSources
+  try {
+    const credential = resolveCredential(config.auth.mode, io.env)
+    report = assertStartupPolicy(config, credential, undefined, await agent.probe())
+    sources = installedSources(config, io.env)
+  } catch (error) {
+    if (error instanceof StartupRefused) {
+      io.err(`superagent-claude: ${error.message}\n`)
+      return EXIT_REFUSED
+    }
+    throw error
+  }
+  for (const warning of report.warnings) io.err(`superagent-claude: warning: ${warning}\n`)
+
   let runtime: Runtime
   try {
-    runtime = new Runtime({ config, configDir: dirname(path), runtime: new FakeRuntime(FAKE_SCRIPT), log: jsonLines(io.out), ...installedSources(config, io.env) })
+    runtime = new Runtime({ config, configDir: dirname(path), configPath: path, env: io.env, runtime: agent, log: jsonLines(io.out), startup: report, ...sources })
   } catch (error) {
     io.err(`superagent-claude: ${messageOf(error)}\n`)
     return EXIT_REFUSED
@@ -119,10 +140,13 @@ async function start(argv: readonly string[], io: CliIo): Promise<number> {
     return EXIT_REFUSED
   }
 
+  const onHup = (): void => { void runtime.reload() }
+  io.signals.on?.('SIGHUP', onHup)
   await new Promise<void>(done => {
     io.signals.once('SIGINT', done)
     io.signals.once('SIGTERM', done)
   })
+  io.signals.off?.('SIGHUP', onHup)
   await runtime.stop()
   return 0
 }

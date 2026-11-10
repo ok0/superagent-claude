@@ -20,6 +20,10 @@ export type DropReason = 'channelGone' | 'channelIgnored'
 export interface Receipt extends OutboundMessage { status: ReplyStatus; dropped?: { at: string; reason: DropReason } }
 /** A dropped outbound message receipt, with the timestamp and reason it was dropped. */
 export type Dropped = Receipt & { dropped: { at: string; reason: DropReason } }
+/** Why the AdmissionFilter refused a Trigger: its actor is not allowed, it is a bot, its repository is not configured, or it names no ticket. */
+export type RejectionReason = 'rejected-actor' | 'rejected-bot' | 'rejected-repo' | 'no-ticket'
+/** A Trigger the AdmissionFilter refused, with its repository (empty when it names none), actor, time and reason. */
+export interface RejectedTrigger { triggerId: string; repository: string; actor: string; at: string; reason: RejectionReason }
 /**
  * Generated columns and partial indexes defining active working sets so passes scan only active rows.
  * `schemaSql` declares them in the version 1 tables, and SQLite computes them from the stored JSON rows.
@@ -65,12 +69,18 @@ function schemaSql(): string {
       since TEXT NOT NULL, PRIMARY KEY (kind, key));
     CREATE TABLE IF NOT EXISTS worker (ticket_id TEXT PRIMARY KEY, assignment_id TEXT NOT NULL, runtime TEXT NOT NULL, session_id TEXT, repository TEXT NOT NULL, cwd TEXT NOT NULL, branch TEXT NOT NULL, push_remote TEXT, turns INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0, prompt_version TEXT, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS prompt_version (hash TEXT PRIMARY KEY, parts_json TEXT NOT NULL, at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS rejected_trigger (trigger_id TEXT PRIMARY KEY, repository TEXT NOT NULL, actor TEXT NOT NULL, at TEXT NOT NULL, reason TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS trigger_at ON trigger(at);
     CREATE INDEX IF NOT EXISTS trigger_thread_at ON trigger_thread(thread, at);
     CREATE INDEX IF NOT EXISTS decision_thread ON decision(thread);
     CREATE INDEX IF NOT EXISTS effect_due ON effect(kind, due, seq);
     ${sets.join('\n    ')}
   `
+}
+
+/** Maps a `rejected_trigger` row to its RejectedTrigger. */
+function toRejected(row: Record<string, SQLInputValue>): RejectedTrigger {
+  return { triggerId: String(row.trigger_id), repository: String(row.repository), actor: String(row.actor), at: String(row.at), reason: String(row.reason) as RejectionReason }
 }
 
 /** Takes the single-writer lock on `path`; a lock held by another process is reported as a clear error. Returns the release function. */
@@ -228,6 +238,16 @@ export class Store implements Repositories {
     get: (id: string): Decision | undefined => { const row = this.db.prepare('SELECT value FROM decision WHERE id=?').get(id); return row ? JSON.parse(String(row.value)) as Decision : undefined },
     save: (decision: Decision): void => { this.db.prepare('INSERT INTO decision VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value, thread=excluded.thread').run(decision.id, decision.threadKey, JSON.stringify(decision)) },
     byThread: (threadKeyValue: string): Decision[] => this.db.prepare('SELECT value FROM decision WHERE thread=? ORDER BY rowid').all(threadKeyValue).map(row => JSON.parse(String(row.value)) as Decision),
+  }
+  /** Triggers the AdmissionFilter refused, one row per Trigger id (recording again is a no-op). */
+  readonly rejected = {
+    record: (entry: RejectedTrigger): boolean => Number(this.db.prepare('INSERT INTO rejected_trigger (trigger_id, repository, actor, at, reason) VALUES (?,?,?,?,?) ON CONFLICT(trigger_id) DO NOTHING').run(entry.triggerId, entry.repository, entry.actor, entry.at, entry.reason).changes) > 0,
+    get: (triggerId: string): RejectedTrigger | undefined => {
+      const row = this.db.prepare('SELECT trigger_id, repository, actor, at, reason FROM rejected_trigger WHERE trigger_id=?').get(triggerId)
+      return row === undefined ? undefined : toRejected(row)
+    },
+    /** Oldest first. */
+    list: (): RejectedTrigger[] => this.db.prepare('SELECT trigger_id, repository, actor, at, reason FROM rejected_trigger ORDER BY rowid').all().map(toRejected),
   }
   /** Read-only queries for management views, orchestrator tools, and source polling (see `storeReads`). */
   readonly read: ReturnType<typeof storeReads>

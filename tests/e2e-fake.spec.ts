@@ -37,7 +37,7 @@ async function boot(mode: 'off' | 'observe' | 'auto' | undefined, script: FakeSc
 const ready: FakeScript = ({ index }) => index === 0
   ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'Done: the fake worker finished' } }] }
   : {}
-const mention = trigger('1', { addressed: 'mention' })
+const mention = trigger('1', { addressed: 'mention', meta: { repository: 'owner/repo' } })
 
 it('auto: an allowed sender\'s mention opens one Ticket whose fake worker reports and replies once', async () => {
   directory = mkdtempSync(join(tmpdir(), 'e2e-'))

@@ -30,7 +30,15 @@ export const GITHUB_STATE = {
   ci: family<{ fingerprint: string; revision: number }, [repository: string, number: number]>('github-ci:', (repository, number) => `${repository}#${number}`),
 }
 
-export interface GithubSourceOptions { repositories: readonly string[]; commands: Commands; timers?: PollTimers; now?: () => number; intervalMs?: number }
+/** Startup checks the app injects; a throw leaves `service.start` and refuses startup. */
+export interface GithubStartupCheck {
+  /** After the agent account lookup: the login, or undefined with the error when it could not be read. */
+  login(login: string | undefined, error?: string): void
+  /** After the access checks: the accessible repositories (possibly none). */
+  access(accessible: readonly string[]): void
+}
+
+export interface GithubSourceOptions { repositories: readonly string[]; commands: Commands; timers?: PollTimers; now?: () => number; intervalMs?: number; check?: GithubStartupCheck }
 
 /** Reports a failed poll with its consecutive count: `ready` until `FAILURES_BEFORE_ERROR` consecutive failures, `error` from then on. */
 export function pollFailure(failures: number, error: unknown): Health {
@@ -282,9 +290,11 @@ export function githubSource(options: GithubSourceOptions): { kind: SourceKind<G
     } catch (error) {
       ctx.report({ state: 'error', detail: `Could not read the agent account: ${String(error)}`, at: iso() })
       ctx.log('error', 'github.account_failed', { error: String(error) })
+      options.check?.login(undefined, String(error))
       return undefined
     }
     login = account
+    options.check?.login(account)
     const accessible: string[] = []
     for (const repository of options.repositories) {
       if (signal.aborted) return undefined
@@ -304,6 +314,7 @@ export function githubSource(options: GithubSourceOptions): { kind: SourceKind<G
     }
     ctx.report({ state: accessible.length ? 'ready' : 'error',
       detail: accessible.length ? `Watching ${accessible.length} of ${options.repositories.length} repositories as @${account}` : 'No configured repository is accessible', at: iso() })
+    options.check?.access(accessible)
     return accessible.length ? { login: account, accessible } : undefined
   }
 

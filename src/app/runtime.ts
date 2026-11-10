@@ -1,21 +1,23 @@
 /**
- * The composition root: Store → Engine (Policy, SourceScope, Assessor, WorkerExecutor, Outbox) → Source kinds → effect handlers → Passes → recovery. `start()` recovers interrupted work and starts the loops and Source services; `stop()` cleans up within STOP_TIMEOUT_MS. The assessor is deterministic and the worker instructions are the assembled prompt; the worker workspace and tools are minimal stand-ins until the model runtime milestones.
+ * The composition root: Store → Engine (Policy, SourceScope, Assessor, WorkerExecutor, Outbox) → Source kinds → AdmissionFilter in front of Passes → effect handlers → recovery. `start()` recovers interrupted work and starts the loops and Source services; `stop()` cleans up within STOP_TIMEOUT_MS. `reload()` re-reads the config file while the runtime runs: the policy part is applied to the next Trigger, startup-only keys are reported and kept, and a refused file keeps the running config. The assessor is deterministic and the worker instructions are the assembled prompt; the worker workspace and tools are minimal stand-ins until the model runtime milestones.
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { Engine, UserError, type Assessor, type Candidate, type DomainEvent, type EngineForExecutor, type Ticket, type WorkerReport } from '../core/index.ts'
+import { Engine, UserError, type Assessor, type Candidate, type DomainEvent, type EngineForExecutor, type Policy, type Ticket, type WorkerReport } from '../core/index.ts'
 import type { AgentRuntime, ToolSpec } from '../executor/contract.ts'
 import { recover } from '../executor/recovery.ts'
 import { Slots } from '../executor/slots.ts'
 import { WorkerExecutor, type WorkerDeps, type WorkerTimers } from '../executor/worker-executor.ts'
 import { WorkerStore } from '../executor/worker-store.ts'
-import { HealthBoard, type HealthEntry } from '../infra/health.ts'
-import { assessmentOutcome, settingsPolicy, type Assessment, type Settings } from '../policy/policy.ts'
+import { HealthBoard, type Health, type HealthEntry } from '../infra/health.ts'
+import { assessmentOutcome, policyEffects, policyVersion, settingsPolicy, type Assessment, type Settings } from '../policy/policy.ts'
+import { AdmissionFilter } from '../sources/admission-filter.ts'
 import { sourceContext, type LogRecord, type LogSink, type SourceContext, type SourceHost, type SourceService } from '../sources/host.ts'
 import type { SourceKind } from '../sources/kind.ts'
 import { SourceRegistry } from '../sources/registry.ts'
-import { settingsOf, type Config } from './config.ts'
+import { loadConfig, settingsOf, StartupRefused, type Config } from './config.ts'
+import { assertStartupPolicy, type StartupReport } from './credentials.ts'
 import { Effects } from './effects.ts'
 import { Outbox, type OutboxChannels } from './outbox.ts'
 import { Passes, type Timers as PassTimers } from './passes.ts'
@@ -23,6 +25,11 @@ import { databasePath, Store } from './store.ts'
 import { PromptVersions, Prompts, ruleLines } from './prompts.ts'
 
 export const STOP_TIMEOUT_MS = 10_000
+
+/** The config keys that take effect only on restart; a reload keeps the running value and reports the key. */
+export const RESTART_KEYS = ['auth.mode', 'delivery', 'workers', 'network', 'security', 'retention', 'models', 'stateDir'] as const
+
+export interface ReloadOutcome { applied: boolean; policyChanged: boolean; restartRequired: string[]; warnings: string[]; error?: string }
 
 export function jsonLines(write: (line: string) => void): LogSink {
   return record => { write(JSON.stringify(record) + '\n') }
@@ -91,6 +98,14 @@ export interface RuntimeOptions {
   config: Config
   /** Directory of the config file; team sections are read from <configDir>/prompts/team. */
   configDir?: string
+  /** The config file that `reload` re-reads. */
+  configPath?: string
+  /** Environment for loading the config on reload (default process.env). */
+  env?: Readonly<Record<string, string | undefined>>
+  /** The startup report of the credential and policy checks; its warnings and consent are recorded in health and logs. */
+  startup?: StartupReport
+  /** The agent account login once the Source read it; reload checks it against policy.allowed. */
+  agentLogin?: () => string | undefined
   runtime: AgentRuntime
   kinds?: readonly SourceKind[]
   services?: readonly SourceService[]
@@ -115,8 +130,20 @@ function within(work: Promise<unknown>, ms: number): Promise<boolean> {
   return Promise.race([work.then(() => true, () => true), timeout]).finally(() => { clearTimeout(timer) })
 }
 
+function authState(mode: Config['auth']['mode'], report: StartupReport | undefined, at: string): Health {
+  return {
+    state: 'ready',
+    detail: report?.warnings.length ? report.warnings.join(' ') : `Authentication mode ${mode}`,
+    at,
+    values: { mode, ...(report?.consent ? { consentAt: report.consent.at, allowedHash: report.consent.allowedHash } : {}) },
+  }
+}
+
+function pick(config: Config, key: string): unknown {
+  return key.split('.').reduce<unknown>((value, part) => (value as Record<string, unknown> | undefined)?.[part], config)
+}
+
 export class Runtime implements SourceHost {
-  readonly config: Config
   readonly store: Store
   readonly board: HealthBoard
   readonly sources: SourceRegistry
@@ -126,15 +153,26 @@ export class Runtime implements SourceHost {
   readonly engine: Engine
   readonly passes: Passes
   readonly prompts: Prompts
+  private current: Config
+  get config(): Config { return this.current }
   private readonly agent: AgentRuntime
   private readonly log: LogSink
   private readonly now: () => number
-  private readonly settings: Settings
+  private settings: Settings
+  private policy!: Policy
+  private readonly admission: AdmissionFilter
   private readonly services: readonly SourceService[]
   private readonly running: SourceService[] = []
   private readonly disposers: (() => void)[] = []
   private readonly lifetime = new AbortController()
   private readonly health: HealthEntry
+  private readonly authHealth: HealthEntry
+  private readonly configHealth: HealthEntry
+  private consentHash?: string
+  private reloads: Promise<unknown> = Promise.resolve()
+  private readonly configPath: string | undefined
+  private readonly env: Readonly<Record<string, string | undefined>>
+  private readonly agentLogin: (() => string | undefined) | undefined
   private readonly stopTimeoutMs: number
   private closing = false
   private started = false
@@ -142,10 +180,13 @@ export class Runtime implements SourceHost {
 
   constructor(options: RuntimeOptions) {
     const { config, timers } = options
-    this.config = config
+    this.current = config
     this.agent = options.runtime
     this.log = options.log ?? (() => {})
     this.now = options.now ?? Date.now
+    this.configPath = options.configPath
+    this.env = options.env ?? process.env
+    this.agentLogin = options.agentLogin
     this.services = options.services ?? []
     this.stopTimeoutMs = options.stopTimeoutMs ?? STOP_TIMEOUT_MS
     const now = this.now
@@ -158,22 +199,25 @@ export class Runtime implements SourceHost {
       const board = new HealthBoard()
       this.board = board
       this.health = board.claim('runtime', { state: 'starting', detail: 'Starting' })
+      this.configHealth = board.claim('config', { state: 'ready', detail: 'Config loaded' })
+      this.authHealth = board.claim('auth', authState(config.auth.mode, options.startup, this.stamp()))
+      this.recordAuth(options.startup)
       const effects = new Effects(store, board, now)
       this.effects = effects
       const settings = settingsOf(config)
       this.settings = settings
-      this.prompts = new Prompts({ versions: new PromptVersions(store, now), ...(options.configDir === undefined ? {} : { teamDir: join(options.configDir, 'prompts', 'team') }), rules: () => ruleLines(settings.policy.rules) })
+      this.prompts = new Prompts({ versions: new PromptVersions(store, now), ...(options.configDir === undefined ? {} : { teamDir: join(options.configDir, 'prompts', 'team') }), rules: () => ruleLines(this.settings.policy.rules) })
       this.prompts.baseline('worker')
       const sources = new SourceRegistry(() => ({}), board)
       this.sources = sources
       for (const kind of options.kinds ?? []) this.disposers.push(sources.register(kind))
-      const policy = settingsPolicy(settings, sources)
+      this.policy = settingsPolicy(settings, sources)
       const channels: OutboxChannels = {
         enabled: source => sources.enabled(source),
         allowed: channel => sources.channelAllowed(channel),
         send: message => sources.send(message),
       }
-      this.outbox = new Outbox({ store, effects, channels, paused: () => policy.paused })
+      this.outbox = new Outbox({ store, effects, channels, paused: () => this.policy.paused })
       const deps: WorkerDeps = {
         prepare: async ticket => {
           const origin = store.triggers.get(ticket.origin.triggerId)
@@ -189,21 +233,29 @@ export class Runtime implements SourceHost {
       }
       this.executor = new WorkerExecutor({
         store, effects, engine: () => this.engine, runtime: options.runtime, slots: new Slots(config.workers.max), workers: new WorkerStore(store, now), deps,
-        limits: { maxTurns: config.workers.maxTurns, maxBudgetUsd: config.workers.maxBudgetUsd }, now, paused: () => policy.paused,
+        limits: { maxTurns: config.workers.maxTurns, maxBudgetUsd: config.workers.maxBudgetUsd }, now, paused: () => this.policy.paused,
         health: board.claim('executor'), ...(timers ? { timers } : {}),
       })
       effects.handle('notice', async payload => {
         const { target, ticketId, id, text } = payload.value
         if (target === 'worker' && typeof ticketId === 'string' && typeof id === 'string' && typeof text === 'string') this.executor.notify(ticketId, { id, text })
       })
-      const assessor = new GateAssessor({ effects, engine: () => this.engine, settings: () => settings })
+      const assessor = new GateAssessor({ effects, engine: () => this.engine, settings: () => this.settings })
       this.engine = new Engine({
-        repo: store, policy: () => policy, scope: sources, assessor, executor: this.executor, outbox: this.outbox,
+        repo: store, policy: () => this.policy, scope: sources, assessor, executor: this.executor, outbox: this.outbox,
         now: () => new Date(now()).toISOString(), emit: event => { this.log(eventRecord(event)) },
       })
       this.passes = new Passes({
         engine: this.engine, effects, health: this.health, lifetime: this.lifetime.signal, now, configured: () => true,
         closing: () => this.closing, ...(timers ? { timers } : {}),
+      })
+      this.admission = new AdmissionFilter({
+        next: trigger => this.passes.receive(trigger),
+        store,
+        rule: () => ({ allowed: this.current.policy.allowed, repositories: this.current.repositories }),
+        rejected: entry => {
+          this.log({ level: 'info', at: this.stamp(), event: 'admission.rejected', triggerId: entry.triggerId, repository: entry.repository, actor: entry.actor, reason: entry.reason })
+        },
       })
     } catch (error) {
       store.close()
@@ -214,7 +266,7 @@ export class Runtime implements SourceHost {
   context(kind: string): SourceContext {
     return sourceContext({
       store: this.store, outbox: this.outbox, engine: this.engine, sources: this.sources, log: this.log, now: this.now,
-      receive: trigger => this.passes.receive(trigger),
+      receive: trigger => this.admission.receive(trigger),
     }, kind)
   }
 
@@ -237,6 +289,13 @@ export class Runtime implements SourceHost {
     this.passes.request()
   }
 
+  /** Re-reads the config file and applies it: the policy part from the next Trigger on (a changed policy version is an input to open tickets), startup-only keys are kept and reported. A refused file changes nothing. Calls are serialised. */
+  reload(): Promise<ReloadOutcome> {
+    const next = this.reloads.then(() => this.reloadOnce())
+    this.reloads = next.catch(() => undefined)
+    return next
+  }
+
   /** Reassembles the worker prompt; when its team sections or rules changed, queues a notice with the changed sections for every open worker session (same key per ticket: only the latest is delivered). Returns the number queued. M10 calls it on reload. */
   refreshPrompts(): number {
     const change = this.prompts.refresh('worker')
@@ -256,6 +315,78 @@ export class Runtime implements SourceHost {
 
   private stamp(): string {
     return new Date(this.now()).toISOString()
+  }
+
+  private recordAuth(report?: StartupReport): void {
+    const mode = this.current.auth.mode
+    for (const detail of report?.warnings ?? []) this.log({ level: 'warn', at: this.stamp(), event: 'auth.warning', detail })
+    if (report?.consent && report.consent.allowedHash !== this.consentHash) {
+      this.log({ level: 'warn', at: this.stamp(), event: 'auth.consent', mode, consentAt: report.consent.at, allowedHash: report.consent.allowedHash })
+      this.consentHash = report.consent.allowedHash
+    }
+    if (!report?.consent) this.consentHash = undefined
+    this.authHealth.set(authState(mode, report, this.stamp()))
+  }
+
+  private fail(message: string): ReloadOutcome {
+    const at = this.stamp()
+    this.log({ level: 'error', at, event: 'config.reload_failed', detail: message })
+    this.configHealth.set({ state: 'error', detail: message, at })
+    return { applied: false, policyChanged: false, restartRequired: [], warnings: [], error: message }
+  }
+
+  private async reloadOnce(): Promise<ReloadOutcome> {
+    if (this.closing) return this.fail('The runtime is stopping')
+    if (this.configPath === undefined) return this.fail('No config file to reload')
+    const path = this.configPath
+    let next: Config
+    try {
+      next = loadConfig(path, this.env)
+    } catch (error) {
+      if (error instanceof StartupRefused) return this.fail(error.message)
+      throw error
+    }
+    const effective: Config = {
+      ...this.current,
+      repositories: next.repositories,
+      policy: next.policy,
+      auth: {
+        mode: this.current.auth.mode,
+        acceptSubscriptionSharedUseRisk: next.auth.acceptSubscriptionSharedUseRisk,
+        ...(next.auth.owner === undefined ? {} : { owner: next.auth.owner }),
+      },
+    }
+    const restartRequired = RESTART_KEYS.filter(key => JSON.stringify(pick(next, key)) !== JSON.stringify(pick(this.current, key)))
+    let report: StartupReport
+    try {
+      report = assertStartupPolicy(effective, { mode: this.current.auth.mode }, this.agentLogin?.(), await this.agent.probe(), this.now)
+    } catch (error) {
+      if (error instanceof StartupRefused) return this.fail(error.message)
+      throw error
+    }
+    const configWarnings: string[] = []
+    const beforeRepositories = new Set(this.current.repositories.map(repository => repository.toLowerCase()))
+    const afterRepositories = new Set(next.repositories.map(repository => repository.toLowerCase()))
+    if (beforeRepositories.size !== afterRepositories.size || [...afterRepositories].some(repository => !beforeRepositories.has(repository))) {
+      configWarnings.push('Repository list changes apply to admission now; polling targets change on restart')
+    }
+    const before = this.settings
+    const after = settingsOf(effective)
+    const from = policyVersion(before)
+    const to = policyVersion(after)
+    this.current = effective
+    this.settings = after
+    this.policy = settingsPolicy(after, this.sources)
+    if (from !== to) this.engine.policyChanged(from, to, policyEffects(this.store.tickets.open(), before, after, () => this.sources))
+    const at = this.stamp()
+    this.recordAuth(report)
+    if (restartRequired.length) this.log({ level: 'warn', at, event: 'config.restart_required', keys: restartRequired })
+    for (const detail of configWarnings) this.log({ level: 'warn', at, event: 'config.warning', detail })
+    this.log({ level: 'info', at, event: 'config.reloaded', policyChanged: from !== to })
+    this.configHealth.set({ state: 'ready', detail: 'Config reloaded', at })
+    this.refreshPrompts()
+    this.passes.request()
+    return { applied: true, policyChanged: from !== to, restartRequired: [...restartRequired], warnings: [...report.warnings, ...configWarnings] }
   }
 
   private async shutdown(): Promise<void> {

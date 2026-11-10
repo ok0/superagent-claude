@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { ConfigSchema } from '../src/app/config.ts'
+import { ConfigSchema, StartupRefused } from '../src/app/config.ts'
 import { Runtime } from '../src/app/runtime.ts'
 import { installedSources } from '../src/app/sources.ts'
 import { FakeRuntime, type FakeScript } from '../src/runtimes/fake/runtime.ts'
@@ -64,9 +64,14 @@ it('auto: a mentioned issue gets one reply in its own repository, and re-polling
   expect(gh.posted).toHaveLength(1)
 })
 
-it('installs no Source without the token', () => {
+it('refuses startup without the token', () => {
   directory = mkdtempSync(join(tmpdir(), 'github-runtime-'))
   const config = ConfigSchema.parse({ repositories: [A], policy: { allowed: ['alice'] }, stateDir: directory })
-  expect(installedSources(config, {})).toEqual({ kinds: [], services: [] })
-  expect(installedSources(config, { SUPERAGENT_CLAUDE_GITHUB_TOKEN: '  ' })).toEqual({ kinds: [], services: [] })
+  expect(() => installedSources(config, {})).toThrow(StartupRefused)
+  expect(() => installedSources(config, { SUPERAGENT_CLAUDE_GITHUB_TOKEN: '  ' })).toThrow(StartupRefused)
+  try {
+    installedSources(config, {})
+  } catch (error) {
+    expect((error as StartupRefused).rule).toBe('agent-token')
+  }
 })

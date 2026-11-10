@@ -4,8 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { main, type CliIo } from '../src/cli/main.ts'
+import { main } from '../src/cli/main.ts'
 import { waitUntil } from './fixtures/async.ts'
+import { cliEnv, cliIo } from './fixtures/cli.ts'
 
 const dirs: string[] = []
 const children: ChildProcess[] = []
@@ -28,24 +29,12 @@ function writeConfig(dir: string, extra: Record<string, unknown> = {}): string {
 }
 
 function io(cwd: string) {
-  const out: string[] = []
-  const err: string[] = []
-  const listeners: Partial<Record<'SIGINT' | 'SIGTERM', () => void>> = {}
-  const handle: CliIo = {
-    out: s => { out.push(s) },
-    err: s => { err.push(s) },
-    cwd,
-    env: { HOME: '/home/test' },
-    signals: {
-      once: (signal, listener) => { listeners[signal] = listener },
-    },
-  }
-  return { io: handle, out, err, listeners }
+  return cliIo(cwd, cliEnv(cwd))
 }
 
-function spawnCli(args: string[]) {
+function spawnCli(args: string[], dir: string) {
   const entry = process.env.SUPERAGENT_CLAUDE_CLI ?? fileURLToPath(new URL('../src/cli/bin.ts', import.meta.url))
-  const child = spawn(process.execPath, [entry, ...args], { stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(process.execPath, [entry, ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...cliEnv(dir) } as NodeJS.ProcessEnv })
   children.push(child)
   const state = { out: '', err: '', code: undefined as number | null | undefined }
   child.stdout.setEncoding('utf8').on('data', (chunk: string) => { state.out += chunk })
@@ -130,10 +119,10 @@ describe('start as a child process', () => {
   it('the entry logs JSON on stdout, refuses a second daemon on the same stateDir with exit code 2, and exits 0 on SIGINT', async () => {
     const dir = tempDir()
     const cfg = writeConfig(dir)
-    const first = spawnCli(['start', '--fake', '--config', cfg])
+    const first = spawnCli(['start', '--fake', '--config', cfg], dir)
     await waitUntil(() => hasEvent(first.state.out, 'runtime.started'), 15_000)
 
-    const second = spawnCli(['start', '--fake', '--config', cfg])
+    const second = spawnCli(['start', '--fake', '--config', cfg], dir)
     await waitUntil(() => second.state.code !== undefined, 15_000)
     expect(second.state.code).toBe(2)
     expect(second.state.err).toContain('Another superagent-claude process')
@@ -145,7 +134,7 @@ describe('start as a child process', () => {
 
   it('the entry exits 2 on an invalid config', async () => {
     const dir = tempDir()
-    const child = spawnCli(['start', '--fake', '--config', writeConfig(dir, { policy: { allowed: [] } })])
+    const child = spawnCli(['start', '--fake', '--config', writeConfig(dir, { policy: { allowed: [] } })], dir)
     await waitUntil(() => child.state.code !== undefined, 15_000)
     expect(child.state.code).toBe(2)
   }, 30_000)
