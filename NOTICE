@@ -57,6 +57,7 @@ src/core/reasons.ts     <- src/core/reasons.ts
 src/core/replies.ts     <- src/core/replies.ts
 src/core/stage.ts       <- src/core/stage.ts
 src/core/tickets.ts     <- src/core/tickets.ts
+src/executor/recovery.ts <- src/executor/dsh.ts (restart recovery)
 src/infra/health.ts <- src/infra/health.ts
 src/infra/paths.ts <- src/infra/paths.ts
 src/infra/text.ts <- src/infra/text.ts

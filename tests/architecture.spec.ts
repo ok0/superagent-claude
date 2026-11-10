@@ -1,4 +1,4 @@
-// Enforces the layer import rules (PAC1): core stays free of Node I/O and the SDK, policy imports only zod, core and itself, and the SDK is imported only from src/runtimes/claude, and app/infra import only node:*, zod, proper-lockfile and allowed relative paths.
+// Enforces the layer import rules (PAC1): core stays free of Node I/O and the SDK, policy imports only zod, core and itself, the executor imports only core, infra, app effects and store, runtimes import only the runtime contract and infra, the SDK is imported only from src/runtimes/claude, and app/infra import only node:*, zod, proper-lockfile and allowed relative paths.
 import { describe, it, expect, afterEach } from 'vitest'
 import ts from 'typescript'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync, existsSync } from 'node:fs'
@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const NON_LITERAL = '<non-literal>'
 
-type RuleId = 'core' | 'policy' | 'app' | 'infra' | 'sdk'
+type RuleId = 'core' | 'policy' | 'app' | 'infra' | 'executor' | 'runtimes' | 'sdk'
 type Violation = { file: string; specifier: string; rule: RuleId }
 
 const SDK = '@anthropic-ai/claude-agent-sdk'
@@ -66,6 +66,18 @@ function checkFile(file: string, source: string): Violation[] {
       const r = rel ? resolves(file, spec) : ''
       const allowed = rel ? (r.startsWith('src/') && !r.startsWith('src/cli/')) : external(spec)
       if (!allowed) violations.push({ file, specifier: spec, rule: 'app' })
+    }
+    if (file.startsWith('src/executor/')) {
+      const r = rel ? resolves(file, spec) : ''
+      const allowed = rel ? (r.startsWith('src/core/') || r.startsWith('src/executor/') || r.startsWith('src/infra/') || r === 'src/app/effects.ts' || r === 'src/app/store.ts')
+        : spec.startsWith('node:') || spec === 'zod'
+      if (!allowed) violations.push({ file, specifier: spec, rule: 'executor' })
+    }
+    if (file.startsWith('src/runtimes/')) {
+      const r = rel ? resolves(file, spec) : ''
+      const allowed = rel ? (r.startsWith('src/runtimes/') || r === 'src/executor/contract.ts' || r.startsWith('src/infra/'))
+        : spec.startsWith('node:') || spec === 'zod' || spec === SDK || spec.startsWith(SDK + '/')
+      if (!allowed) violations.push({ file, specifier: spec, rule: 'runtimes' })
     }
     if ((spec === SDK || spec.startsWith(SDK + '/')) && !file.startsWith('src/runtimes/claude/')) {
       violations.push({ file, specifier: spec, rule: 'sdk' })
@@ -180,11 +192,42 @@ describe('sdk rule', () => {
   })
 
   it('flags the SDK outside src/runtimes/claude', () => {
-    expect(checkFile('src/executor/worker.ts', "import { query } from '@anthropic-ai/claude-agent-sdk'")).toEqual([{ file: 'src/executor/worker.ts', specifier: SDK, rule: 'sdk' }])
+    expect(checkFile('src/sources/x.ts', "import { query } from '@anthropic-ai/claude-agent-sdk'")).toEqual([{ file: 'src/sources/x.ts', specifier: SDK, rule: 'sdk' }])
   })
 
   it('allows the SDK in src/runtimes/claude', () => {
     expect(checkFile('src/runtimes/claude/adapter.ts', "import { query } from '@anthropic-ai/claude-agent-sdk'")).toEqual([])
+  })
+})
+
+describe('executor and runtimes rules', () => {
+  it('flags the SDK in src/executor as executor and sdk', () => {
+    expect(checkFile('src/executor/worker-executor.ts', "import { query } from '@anthropic-ai/claude-agent-sdk'").map(v => v.rule)).toEqual(['executor', 'sdk'])
+  })
+
+  it('flags a runtime implementation imported into src/executor', () => {
+    expect(checkFile('src/executor/worker-executor.ts', "import { FakeRuntime } from '../runtimes/fake/runtime.ts'").map(v => v.rule)).toEqual(['executor'])
+  })
+
+  it('flags app modules other than effects and store, and other packages, in src/executor', () => {
+    expect(checkFile('src/executor/x.ts', "import { o } from '../app/outbox.ts'").map(v => v.rule)).toEqual(['executor'])
+    expect(checkFile('src/executor/x.ts', "import _ from 'lodash'").map(v => v.rule)).toEqual(['executor'])
+    expect(checkFile('src/executor/x.ts', "import { lockSync } from 'proper-lockfile'").map(v => v.rule)).toEqual(['executor'])
+  })
+
+  it('allows core, infra, app effects and store, sibling, zod and node imports in src/executor', () => {
+    const src = "import { C } from '../core/index.ts'\nimport { H } from '../infra/health.ts'\nimport { E } from '../app/effects.ts'\nimport { S } from '../app/store.ts'\nimport { R } from './contract.ts'\nimport { z } from 'zod'\nimport { join } from 'node:path'"
+    expect(checkFile('src/executor/x.ts', src)).toEqual([])
+  })
+
+  it('allows only the runtime contract and infra from src/runtimes', () => {
+    expect(checkFile('src/runtimes/fake/runtime.ts', "import type { AgentRuntime } from '../../executor/contract.ts'")).toEqual([])
+    expect(checkFile('src/runtimes/fake/runtime.ts', "import { W } from '../../executor/worker-executor.ts'").map(v => v.rule)).toEqual(['runtimes'])
+    expect(checkFile('src/runtimes/fake/runtime.ts', "import { S } from '../../app/store.ts'").map(v => v.rule)).toEqual(['runtimes'])
+  })
+
+  it('flags the SDK in src/runtimes/fake only through the sdk rule', () => {
+    expect(checkFile('src/runtimes/fake/runtime.ts', "import { query } from '@anthropic-ai/claude-agent-sdk'").map(v => v.rule)).toEqual(['sdk'])
   })
 })
 
@@ -211,6 +254,16 @@ describe('scan', () => {
     expect(r.violations).toEqual([{ file: 'src/core/a.ts', specifier: 'node:fs', rule: 'core' }])
   })
 
+  it('detects an SDK import injected into src/executor in a temp tree', () => {
+    const root = tempRoot()
+    mkdirSync(join(root, 'src', 'executor'), { recursive: true })
+    writeFileSync(join(root, 'src', 'executor', 'sample.ts'), "import { query } from '@anthropic-ai/claude-agent-sdk'\n")
+    expect(scan(root).violations).toEqual([
+      { file: 'src/executor/sample.ts', specifier: SDK, rule: 'executor' },
+      { file: 'src/executor/sample.ts', specifier: SDK, rule: 'sdk' },
+    ])
+  })
+
   it('returns nothing when src is absent', () => {
     expect(scan(tempRoot())).toEqual({ files: [], violations: [] })
   })
@@ -218,6 +271,7 @@ describe('scan', () => {
   it('the repository src tree has no violations', () => {
     const r = scan(ROOT)
     expect(r.violations).toEqual([])
+    for (const p of ['src/executor/contract.ts', 'src/executor/recovery.ts', 'src/executor/slots.ts', 'src/executor/worker-executor.ts', 'src/executor/worker-store.ts', 'src/runtimes/fake/runtime.ts']) expect(r.files).toContain(p)
     for (const p of ['src/core/assignments.ts', 'src/core/engine.ts', 'src/core/errors.ts', 'src/core/evals.ts', 'src/core/ids.ts', 'src/core/index.ts', 'src/core/intake.ts', 'src/core/memory.ts', 'src/core/model.ts', 'src/core/part.ts', 'src/core/ports.ts', 'src/core/reasons.ts', 'src/core/replies.ts', 'src/core/stage.ts', 'src/core/tickets.ts']) {
       expect(r.files).toContain(p)
     }

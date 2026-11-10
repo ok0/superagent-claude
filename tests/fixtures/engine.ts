@@ -1,5 +1,5 @@
 // Ported from dsh-superagent-prototype (MIT) tests/core-engine.spec.ts
-/** Engine test harness (ref core-engine.spec harness): MemoryRepositories plus vi.fn port mocks and a deterministic clock. */
+/** Engine test harness (ref core-engine.spec harness): MemoryRepositories plus vi.fn port mocks and a deterministic clock. A real Executor may replace the double through the executor hook. */
 import { vi } from 'vitest'
 import { Engine, MemoryRepositories, runningAssignment } from '../../src/core/index.ts'
 import type { Assessor, Assignment, Candidate, EngineOptions, Executor, OutboundMessage, Outcome, Policy, Repositories, Ticket, Trigger } from '../../src/core/index.ts'
@@ -13,8 +13,9 @@ interface Hooks {
   emit?: (event: { type: string; data: Record<string, unknown> }) => void
   prepareTicket?: EngineOptions['prepareTicket']
   repo?: Repositories
+  executor?: Executor
 }
-export function harness(policyOverrides: Partial<Policy> = {}, { emit, prepareTicket, repo: given }: Hooks = {}) {
+export function harness(policyOverrides: Partial<Policy> = {}, { emit, prepareTicket, repo: given, executor: givenExecutor }: Hooks = {}) {
   const repo: Repositories = given ?? new MemoryRepositories()
   const outbox: OutboundMessage[] = []
   const withdrawn: string[] = []
@@ -24,7 +25,7 @@ export function harness(policyOverrides: Partial<Policy> = {}, { emit, prepareTi
   const deliveries = new Set<string>()
   /** Inputs the Executor handed to a running assignment, as [ticket id, input id]. */
   const delivered: [string, string][] = []
-  const executor: Executor = {
+  const executor: Executor = givenExecutor ?? {
     start: vi.fn((ticket, assignment) => { launches.push([ticket, assignment]) }), deliver: vi.fn(ticket => { deliveries.add(ticket.id) }), stop: vi.fn(),
   }
   let version = 'v1', paused = false

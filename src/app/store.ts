@@ -1,7 +1,7 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/store.ts
 /**
  * SQLite persistence for domain aggregates, key-value state, and the channel outbox.
- * Changes from the reference: settings methods and the upgrade path for older schemas are removed; the schema is fixed at version 1; the Store takes a single-writer lock on the database file; `databasePath` is added.
+ * Changes from the reference: settings methods and the upgrade path for older schemas are removed; the schema is fixed at version 1; the Store takes a single-writer lock on the database file; `databasePath` is added; a `worker` table for worker session records is added.
  */
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { chmodSync, mkdirSync } from 'node:fs'
@@ -63,6 +63,7 @@ function schemaSql(): string {
     CREATE TABLE IF NOT EXISTS effect (kind TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, seq INTEGER NOT NULL,
       generation INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '', due INTEGER NOT NULL,
       since TEXT NOT NULL, PRIMARY KEY (kind, key));
+    CREATE TABLE IF NOT EXISTS worker (ticket_id TEXT PRIMARY KEY, assignment_id TEXT NOT NULL, runtime TEXT NOT NULL, session_id TEXT, repository TEXT NOT NULL, cwd TEXT NOT NULL, branch TEXT NOT NULL, push_remote TEXT, turns INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0, prompt_version TEXT, updated_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS trigger_at ON trigger(at);
     CREATE INDEX IF NOT EXISTS trigger_thread_at ON trigger_thread(thread, at);
     CREATE INDEX IF NOT EXISTS decision_thread ON decision(thread);
