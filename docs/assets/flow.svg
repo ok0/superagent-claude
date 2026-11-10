@@ -1,41 +1,175 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="220" viewBox="0 0 960 220" role="img" aria-labelledby="t">
-  <rect x="0" y="0" width="100%" height="100%" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="766" viewBox="0 0 960 766" role="img" aria-labelledby="t d">
   <title id="t">superagent-claude flow</title>
+  <desc id="d">Three lanes: GitHub, the superagent-claude daemon on your host, and an isolated session per ticket. An allowed person mentions the agent; the daemon polls, admits, routes and opens a ticket; the ticket's session works in its own git worktree and reaches GitHub only through the daemon's host tools, which post a reply comment or open a pull request.</desc>
+  <style>
+    :root {
+      --bg: #fbfaf8;
+      --lane: #f3f1ed;
+      --node: #ffffff;
+      --ink: #1c1917;
+      --muted: #6b645c;
+      --line: #a8a29e;
+      --accent: #c2410c;
+      --face: system-ui, -apple-system, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #141210;
+        --lane: #1c1a17;
+        --node: #0f0e0c;
+        --ink: #ece8e3;
+        --muted: #a39d95;
+        --line: #57534e;
+        --accent: #fb923c;
+      }
+    }
+    .bg { fill: var(--bg); stroke: var(--line); }
+    .lane { fill: var(--lane); }
+    .sand { fill: var(--lane); stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 7 5; }
+    .rule { stroke: var(--line); stroke-width: 1; }
+    .node { fill: var(--node); stroke: var(--ink); stroke-width: 1.25; }
+    .alt { fill: none; stroke: var(--line); stroke-width: 1.25; stroke-dasharray: 4 3; }
+    .main { fill: none; stroke: var(--accent); stroke-width: 1.75; }
+    .side { fill: none; stroke: var(--line); stroke-width: 1.25; stroke-dasharray: 4 3; }
+    .tip { fill: var(--accent); }
+    .tip-side { fill: var(--line); }
+    .badge { fill: var(--accent); }
+    text { font-family: var(--face); fill: var(--ink); }
+    .lh { font-size: 15px; font-weight: 700; }
+    .ls { font-size: 12px; fill: var(--muted); }
+    .num { font-size: 11px; font-weight: 700; fill: var(--bg); text-anchor: middle; }
+    .h { font-size: 14px; font-weight: 600; }
+    .s { font-size: 12px; fill: var(--muted); }
+    .ah { font-size: 13px; font-weight: 600; fill: var(--muted); }
+    .e { font-size: 12px; fill: var(--accent); }
+    .code { font-family: var(--mono); font-size: 11.5px; fill: var(--muted); }
+    .warn { font-size: 12px; font-weight: 600; fill: var(--accent); }
+  </style>
   <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#57606a"/>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <polygon class="tip" points="0,0 10,5 0,10"/>
+    </marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <polygon class="tip-side" points="0,0 10,5 0,10"/>
     </marker>
   </defs>
-  <g fill="#f6f8fa" stroke="#57606a">
-    <rect x="20" y="70" width="150" height="80" rx="6"/>
-    <rect x="205" y="70" width="150" height="80" rx="6"/>
-    <rect x="390" y="70" width="150" height="80" rx="6"/>
-    <rect x="575" y="70" width="150" height="80" rx="6"/>
-    <rect x="760" y="70" width="150" height="80" rx="6"/>
-  </g>
-  <g stroke="#57606a" stroke-width="2" fill="none">
-    <line x1="170" y1="110" x2="205" y2="110" marker-end="url(#arrow)"/>
-    <line x1="355" y1="110" x2="390" y2="110" marker-end="url(#arrow)"/>
-    <line x1="540" y1="110" x2="575" y2="110" marker-end="url(#arrow)"/>
-    <line x1="725" y1="110" x2="760" y2="110" marker-end="url(#arrow)"/>
-  </g>
-  <g fill="#1f2328" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="14" text-anchor="middle">
-    <text x="95" y="104">
-      <tspan x="95" dy="0">An allowed person</tspan>
-      <tspan x="95" dy="20">mentions the agent</tspan>
-    </text>
-    <text x="280" y="104">
-      <tspan x="280" dy="0">Allowlist</tspan>
-      <tspan x="280" dy="20">admission</tspan>
-    </text>
-    <text x="465" y="114">Ticket</text>
-    <text x="650" y="104">
-      <tspan x="650" dy="0">Own session</tspan>
-      <tspan x="650" dy="20">+ git worktree</tspan>
-    </text>
-    <text x="835" y="104">
-      <tspan x="835" dy="0">Reply comment</tspan>
-      <tspan x="835" dy="20">or pull request</tspan>
-    </text>
-  </g>
+
+  <rect class="bg" x="0" y="0" width="100%" height="100%" rx="8" fill="#fbfaf8"/>
+
+  <!-- Lanes -->
+  <rect class="lane" x="16" y="16" width="288" height="734" rx="4"/>
+  <rect class="lane" x="316" y="16" width="312" height="734" rx="4"/>
+  <rect class="sand" x="640" y="16" width="304" height="734" rx="4"/>
+
+  <text class="lh" x="36" y="44">GitHub</text>
+  <text class="ls" x="36" y="62">threads, branches, pull requests</text>
+  <text class="lh" x="336" y="44">superagent-claude daemon</text>
+  <text class="ls" x="336" y="62">on your host</text>
+  <text class="lh" x="660" y="44">Isolated session</text>
+  <text class="ls" x="660" y="62">sandbox, one per ticket, no GitHub token</text>
+  <line class="rule" x1="36" y1="76" x2="284" y2="76"/>
+  <line class="rule" x1="336" y1="76" x2="608" y2="76"/>
+  <line class="rule" x1="660" y1="76" x2="924" y2="76"/>
+
+  <!-- 1 thread -->
+  <rect class="node" x="36" y="96" width="248" height="56" rx="2"/>
+  <text class="h" x="52" y="120">Issue or PR thread</text>
+  <text class="s" x="52" y="138">an allowed person mentions the agent</text>
+  <circle class="badge" cx="36" cy="96" r="10"/><text class="num" x="36" y="100">1</text>
+
+  <!-- 2 poller -->
+  <rect class="node" x="344" y="96" width="256" height="56" rx="2"/>
+  <text class="h" x="360" y="120">Poller</text>
+  <text class="s" x="360" y="138">fetches new comments every 60 s</text>
+  <circle class="badge" cx="344" cy="96" r="10"/><text class="num" x="344" y="100">2</text>
+  <line class="main" x1="284" y1="124" x2="342" y2="124" marker-end="url(#a)"/>
+
+  <!-- 3 admission -->
+  <rect class="node" x="344" y="192" width="256" height="56" rx="2"/>
+  <text class="h" x="360" y="216">Allowlist admission</text>
+  <text class="s" x="360" y="234">is the author on policy.allowed?</text>
+  <circle class="badge" cx="344" cy="192" r="10"/><text class="num" x="344" y="196">3</text>
+  <line class="main" x1="472" y1="152" x2="472" y2="190" marker-end="url(#a)"/>
+
+  <rect class="alt" x="36" y="192" width="248" height="56" rx="2"/>
+  <text class="ah" x="52" y="216">One-line decline</text>
+  <text class="s" x="52" y="234">allowed, but out of scope</text>
+  <line class="side" x1="344" y1="220" x2="286" y2="220" marker-end="url(#b)"/>
+  <text class="s" x="36" y="270">Not on the list: ignored silently.</text>
+
+  <!-- 4 router -->
+  <rect class="node" x="344" y="288" width="256" height="56" rx="2"/>
+  <text class="h" x="360" y="312">Router</text>
+  <text class="s" x="360" y="330">new ticket, or the one already running</text>
+  <circle class="badge" cx="344" cy="288" r="10"/><text class="num" x="344" y="292">4</text>
+  <line class="main" x1="472" y1="248" x2="472" y2="286" marker-end="url(#a)"/>
+
+  <rect class="alt" x="36" y="288" width="248" height="56" rx="2"/>
+  <text class="ah" x="52" y="312">Follow-up or PR review comment</text>
+  <text class="s" x="52" y="330">steers the same ticket, no new one</text>
+  <line class="side" x1="284" y1="316" x2="342" y2="316" marker-end="url(#b)"/>
+
+  <!-- 5 ticket -->
+  <rect class="node" x="344" y="384" width="256" height="56" rx="2"/>
+  <text class="h" x="360" y="408">Ticket</text>
+  <text class="s" x="360" y="426">waiting, working, done</text>
+  <circle class="badge" cx="344" cy="384" r="10"/><text class="num" x="344" y="388">5</text>
+  <line class="main" x1="472" y1="344" x2="472" y2="382" marker-end="url(#a)"/>
+
+  <rect class="alt" x="36" y="384" width="248" height="56" rx="2"/>
+  <text class="ah" x="52" y="408">One question back</text>
+  <text class="s" x="52" y="426">when the request is ambiguous</text>
+  <line class="side" x1="344" y1="412" x2="286" y2="412" marker-end="url(#b)"/>
+
+  <rect class="node" x="344" y="480" width="256" height="56" rx="2"/>
+  <text class="h" x="360" y="504">State store</text>
+  <text class="s" x="360" y="522">a restart resumes open tickets</text>
+  <line class="side" x1="472" y1="442" x2="472" y2="478" marker-start="url(#b)" marker-end="url(#b)"/>
+
+  <!-- 6 session + worktree -->
+  <rect class="node" x="664" y="288" width="256" height="56" rx="2"/>
+  <text class="h" x="680" y="312">git worktree</text>
+  <text class="s" x="680" y="330">the ticket's own checkout</text>
+
+  <rect class="node" x="664" y="384" width="256" height="56" rx="2"/>
+  <text class="h" x="680" y="408">Claude session</text>
+  <text class="s" x="680" y="426">started by the ticket, edits the worktree</text>
+  <circle class="badge" cx="664" cy="384" r="10"/><text class="num" x="664" y="388">6</text>
+  <line class="main" x1="600" y1="412" x2="662" y2="412" marker-end="url(#a)"/>
+  <line class="main" x1="792" y1="384" x2="792" y2="346" marker-end="url(#a)"/>
+
+  <!-- 7 host tools -->
+  <rect class="node" x="344" y="576" width="256" height="56" rx="2"/>
+  <text class="h" x="360" y="600">Host tools</text>
+  <text class="s" x="360" y="618">the only holder of the GitHub token</text>
+  <circle class="badge" cx="344" cy="576" r="10"/><text class="num" x="344" y="580">7</text>
+  <polyline class="main" points="792,440 792,604 602,604" marker-end="url(#a)"/>
+  <text class="e" x="800" y="520">calls host tools only</text>
+
+  <text class="s" x="490" y="664">no write access:</text>
+  <text class="s" x="490" y="682">reports blocked</text>
+
+  <!-- 8 results -->
+  <rect class="node" x="36" y="576" width="248" height="56" rx="2"/>
+  <text class="h" x="52" y="600">Reply comment</text>
+  <text class="s" x="52" y="618">in the thread the request came from</text>
+  <circle class="badge" cx="36" cy="576" r="10"/><text class="num" x="36" y="580">8</text>
+  <line class="main" x1="344" y1="604" x2="286" y2="604" marker-end="url(#a)"/>
+
+  <rect class="node" x="36" y="672" width="248" height="56" rx="2"/>
+  <text class="h" x="52" y="696">Pull request</text>
+  <text class="s" x="52" y="714">agent branch, body Closes #issue</text>
+  <circle class="badge" cx="36" cy="672" r="10"/><text class="num" x="36" y="676">8</text>
+  <polyline class="main" points="440,632 440,700 286,700" marker-end="url(#a)"/>
+  <text class="e" x="300" y="692">push, open pull request</text>
+
+  <!-- Session guard rails -->
+  <line class="rule" x1="664" y1="636" x2="920" y2="636"/>
+  <text class="code" x="664" y="658">settingSources: []</text>
+  <text class="s" x="664" y="676">repo .claude, hooks, .mcp.json not read</text>
+  <text class="code" x="664" y="698">permissionMode: dontAsk</text>
+  <text class="code" x="664" y="716">guard hook: no git push, no gh</text>
+  <text class="code" x="664" y="734">network.allow only</text>
+
 </svg>
