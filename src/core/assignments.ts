@@ -2,7 +2,7 @@
 /** What the Executor and its workers report about the Assignments that run tickets. */
 import { key } from './ids.ts'
 import { UserError } from './errors.ts'
-import { latestAssignment, latestReport, liveTicket, runningAssignment } from './model.ts'
+import { caughtUp, latestAssignment, latestReport, liveTicket, runningAssignment } from './model.ts'
 import type { ReportState, Ticket } from './model.ts'
 import { EnginePart, type EngineOptions } from './part.ts'
 import type { Replies } from './replies.ts'
@@ -20,6 +20,8 @@ export interface WorkerReport {
   answers?: string
   /** A new ticket title after a person's message changed the request (ADR-25); undefined keeps the current one. */
   title?: string
+  /** Host-only: a turn or budget limit stopped the worker. A `blocked` report with it tells the person once (ADR-32). */
+  limit?: 'turn' | 'budget'
 }
 // Port note: vendor-specific state wording neutralised to "remote state" (charter R11); behavior unchanged.
 const RECOVERY_NOTE = 'The host restarted during this ticket. Inspect the current worktree, git history and remote state before continuing. Do not repeat an already completed external operation. Finish the original assignment and report its status.'
@@ -37,14 +39,16 @@ export class Assignments extends EnginePart {
   // Port note: parameter properties expanded to explicit fields (erasableSyntaxOnly); behavior unchanged.
   constructor(options: EngineOptions, tickets: Tickets, replies: Replies) { super(options); this.tickets = tickets; this.replies = replies }
 
-  /** Marks a non-ended assignment running, queues delivery of waiting undelivered inputs on an open ticket, and emits `assignment.started`. */
+  /** Marks a non-ended assignment running, queues a held accept acknowledgement (ADR-32), queues delivery of waiting undelivered inputs on an open ticket, and emits `assignment.started`. */
   started(ticketId: string, assignmentId: string): void {
     const ticket = this.require(ticketId)
     const assignment = ticket.assignments.find(item => item.id === assignmentId)
     if (!assignment || assignment.state === 'ended') return
     assignment.state = 'running'; assignment.startedAt ??= this.now()
+    const held = ticket.acknowledgement; delete ticket.acknowledgement
     ticket.updatedAt = this.now()
     this.repo.tickets.save(ticket)
+    if (held) { const trigger = this.repo.triggers.get(held.triggerId); if (trigger) this.replies.acknowledgeAccepted(ticketId, trigger, held.text) }
     if (liveTicket(ticket) && ticket.undelivered.length) this.options.executor.deliver(ticket, assignment)
     this.emit('assignment.started', { ticketId, assignmentId })
   }
@@ -103,15 +107,15 @@ export class Assignments extends EnginePart {
   }
   /**
    * Handles a running assignment interrupted by a host restart: restarts it with a recovery note unless its latest report is
-   * `waiting`, `ready`, `blocked`, or `failed` and no input was delivered after that report, in which case it keeps its
-   * session and flushes any waiting undelivered inputs.
+   * `waiting`, `ready`, `blocked`, or `failed` and no input reached its worker after that report that a later finished turn
+   * did not take in (ADR-32), in which case it keeps its session and flushes any waiting undelivered inputs.
    */
   interrupted(ticketId: string, assignmentId: string): void {
     const ticket = this.running(ticketId, assignmentId)
     const running = ticket && runningAssignment(ticket)
     if (!ticket || !running) return
     const report = running.report
-    const busy = !!running.deliveredAt && !!report && running.deliveredAt >= report.at
+    const busy = !!running.deliveredAt && !!report && running.deliveredAt >= report.at && !caughtUp(ticket, running)
     const settled = !!report && ['waiting', 'ready', 'blocked', 'failed'].includes(report.state) && !busy
     if (!settled) this.tickets.restart(ticket, running, 'hostRestarted', RECOVERY_NOTE)
     else if (ticket.undelivered.length) this.options.executor.deliver(ticket, running)
@@ -145,19 +149,31 @@ export class Assignments extends EnginePart {
     else delete ticket.attention
     // A replaced or cleared attention question withdraws any pending unsent reply for the previous question from the outbox.
     if (previous && previous.id !== attention?.id) this.replies.withdrawAttention(previous.id)
-    assignment.report = { state: report.state, summary: report.summary, at }
+    const pull = report.limit && report.state === 'blocked' ? this.ownPullUrl(ticket) : undefined
+    const summary = pull ? `${report.summary}. Work so far: ${pull}` : report.summary
+    assignment.report = { state: report.state, summary, at }
+    if (report.limit && report.state === 'blocked') assignment.limit = report.limit
     ticket.updatedAt = at
     if (report.title !== undefined) ticket.title = report.title
     if (report.answers &&!ticket.answers?.includes(report.answers)) ticket.answers = [...ticket.answers ?? [], report.answers]
     if (report.answers) this.takeUp(ticketId, report.answers)
     if (report.state === 'blocked' || report.state === 'failed') ticket.undelivered = ticket.undelivered.filter(id => !automatic(ticket.inputs.find(input => input.id === id)))
     this.repo.tickets.save(ticket)
+    if (report.limit && report.state === 'blocked') this.replies.limitStopped(ticket, assignment.id, report.limit, pull)
     // A ticket that follows Threads ends with them: a ready report ends it only once followsDone holds, with that outcome.
     const ready = !ticket.follows?.length ? 'completed' : this.tickets.followsDone(ticket)?.outcome
     // A dropped report after a close the ticket deferred ends it as the close did, which its final notice tells.
     const outcome = report.state === 'dropped' ? this.tickets.followsDone(ticket)?.outcome ?? 'dropped' : report.state === 'ready' ? ready : undefined
     if (outcome) this.tickets.end(ticketId, 'executor', outcome, at)
     return this.require(ticketId)
+  }
+  /** The web address of the ticket's own thread, from its last own follow: recorded at bind time, else the thread's own address. */
+  private ownPullUrl(ticket: Ticket): string | undefined {
+    const follow = ticket.follows?.findLast(item => item.own)
+    if (!follow) return undefined
+    if (typeof follow.url === 'string') return follow.url
+    const url = this.repo.threads.get(follow.thread)?.meta.url
+    return typeof url === 'string' ? url : undefined
   }
   /** The ticket, while it is open and `assignmentId` runs it. */
   private running(ticketId: string, assignmentId: string): Ticket | undefined {

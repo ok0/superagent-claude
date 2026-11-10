@@ -115,7 +115,7 @@ export function deliveryTools(host: DeliveryToolsHost, ticketId: string): ToolSp
         } catch (error) {
           throw error instanceof CliError && error.code !== undefined && ACCESS.has(error.code) ? accessFailure(repository, error) : error
         }
-        host.engine().bindThread(ticketId, { source: 'github', id: threadId(repository, pr.number) }, true)
+        host.engine().bindThread(ticketId, { source: 'github', id: threadId(repository, pr.number) }, true, pr.url)
         return {
           published: true, pr: pr.number, url: pr.url, created: pr.created, branch: pushed.branch, pushed_commits: pushed.pushed,
           co_authored_commits: pushed.rewritten, uncommitted_changes: pushed.uncommitted,

@@ -421,6 +421,12 @@ export class Runtime implements SourceHost {
   }
 
   private async startOnce(): Promise<void> {
+    try {
+      const stopped = await this.agent.reap?.() ?? []
+      if (stopped.length) this.log({ level: 'warn', at: this.stamp(), event: 'runtime.children_stopped', pids: stopped })
+    } catch (error) {
+      this.log({ level: 'error', at: this.stamp(), event: 'runtime.children_failed', detail: String(error) })
+    }
     recover({ tickets: this.store.tickets, engine: this.engine, executor: this.executor })
     this.passes.start()
     this.effects.start()

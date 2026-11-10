@@ -400,7 +400,7 @@ export class WorkerExecutor implements Executor {
           let kept = false
           try { kept = this.engine().limitReached(ticketId, assignmentId, limit) } catch (e) { this.problem(e) }
           // A ticket that kept its ready report is done; only one with work under way is blocked (ADR-24).
-          if (!kept) this.report(ticketId, { state: 'blocked', summary: limit })
+          if (!kept) this.report(ticketId, { state: 'blocked', summary: limit, limit: limit === 'turn limit' ? 'turn' : 'budget' })
           await this.release(live)
           return
         }

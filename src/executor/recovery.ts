@@ -1,8 +1,9 @@
 // Ported from dsh-superagent-prototype (MIT) src/executor/dsh.ts
 /**
  * Restart recovery: every Assignment that was running when the host stopped is ended with `Engine.assignmentInterrupted`,
- * whose restart gives the new Assignment the recovery note as its first Input and queues its launch; pending launches are
- * queued again. Tickets are handled oldest first, and launches coalesce per Assignment, so none is queued twice.
+ * whose restart gives the new Assignment the recovery note as its first Input and queues its launch, unless its latest report
+ * settled it (`waiting`, `ready`, `blocked`, `failed`) and its worker caught up with what was delivered since. A settled one keeps
+ * its stored session and takes no slot or turn until an Input for it arrives (ADR-32). Pending launches are queued again. Tickets are handled oldest first, and launches coalesce per Assignment, so none is queued twice.
  * Changes from the reference: rewritten as a function over the core ports and the Executor port; stopping the previous
  * process's sessions and background work is dropped because they ended with that process; the note text stays in core.
  */

@@ -1,5 +1,5 @@
 /** Maps a SessionSpec to the SDK Options: a whitelisted environment, the builtin tool sets, the fixed permission posture (dontAsk, never bypass), the guard and read hooks, the sandbox and the limits. */
-import type { Options, HookCallback, HookCallbackMatcher, McpServerConfig, SandboxSettings } from '@anthropic-ai/claude-agent-sdk'
+import type { Options, HookCallback, HookCallbackMatcher, McpServerConfig, SandboxSettings, SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk'
 import { resolve, relative, isAbsolute } from 'node:path'
 import type { SessionSpec } from '../../executor/contract.ts'
 import { subprocessEnv, INHERITED_ENV } from '../../infra/env.ts'
@@ -32,6 +32,7 @@ export interface OptionsContext {
   trustRepoConfig?: boolean
   /** Called once per guard denial with the tool name and the fixed reason (never the command). */
   onDeny?: (tool: string, reason: string) => void
+  spawn?: (options: SpawnOptions) => SpawnedProcess
 }
 
 const READ_TOOLS = ['Read', 'Glob', 'Grep']
@@ -143,5 +144,6 @@ export function sdkOptions(spec: SessionSpec, ctx: OptionsContext): Options {
     ...(spec.model ? { model: spec.model } : {}),
     ...(spec.resume ? { resume: spec.resume } : ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
     ...(ctx.stderr ? { stderr: ctx.stderr } : {}),
+    ...(ctx.spawn ? { spawnClaudeCodeProcess: ctx.spawn } : {}),
   }
 }

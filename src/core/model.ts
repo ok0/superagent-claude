@@ -231,6 +231,8 @@ export interface Assignment {
    * into a step before, the worker read.
    */
   idleAt?: string
+  /** Set when a turn or budget limit stopped this Assignment and it reported `blocked` (ADR-32). */
+  limit?: 'turn' | 'budget'
 }
 
 export type TicketInput =
@@ -300,6 +302,8 @@ export interface Ticket {
   follows?: Follow[]
   /** People's questions the worker answered, whose answers the main Session may send. */
   answers?: string[]
+  /** The acknowledgement an accept carries. It is held until the ticket's Assignment starts, then queued (ADR-32). */
+  acknowledgement?: { triggerId: string; text: string }
   createdAt: string
   updatedAt: string
   /** The Triggers it was accepted from: the one that started it, and the batch its Eval held. */
@@ -314,7 +318,13 @@ export interface Ticket {
  * closed. `followsDone` holds once no Thread of its own is open, or, when the ticket has no `own` Thread, once every followed
  * Thread closed; the ticket then ends unless its work has not finished (see `Tickets.unfinished`).
  */
-export interface Follow { thread: string; own: boolean; closed?: { at: string; outcome: 'merged' | 'closed' } }
+export interface Follow {
+  thread: string
+  own: boolean
+  /** The thread's web address, recorded when the ticket bound it (ADR-32). */
+  url?: string
+  closed?: { at: string; outcome: 'merged' | 'closed' }
+}
 export interface Execution { name: string; directory: string; assignment: string }
 
 /** Whether a ticket is open: it has not ended. */
@@ -353,4 +363,11 @@ export function waitsForPerson(ticket: Ticket): boolean {
   const report = latestAssignment(ticket)?.report
   if (report?.state !== 'blocked' && report?.state !== 'failed') return false
   return !ticket.inputs.some(input => input.kind === 'trigger' && input.human && !input.context && input.at > report.at)
+}
+/** Whether a running Assignment's worker finished with everything delivered to it: a turn ended (idleAt) at or after the last delivery, and no Trigger Input delivered to it is unread or was read after that turn (ADR-32). */
+export function caughtUp(ticket: Ticket, assignment: Assignment): boolean {
+  const at = assignment.idleAt
+  if (!at || (assignment.deliveredAt ?? '') > at) return false
+  return !ticket.inputs.some(input => input.kind === 'trigger' && (
+    (input.readAt === null && (input.deliveredTo ?? assignment.id) === assignment.id) || (typeof input.readAt === 'string' && input.readAt > at)))
 }

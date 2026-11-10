@@ -9,9 +9,10 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import type { AgentRuntime, AgentSession, RuntimeEvent, RuntimeInput, RuntimeProbe, SessionSpec } from '../../executor/contract.ts'
-import { sdkOptions, type AuthMode } from './options.ts'
+import { sdkOptions, type AuthMode, type OptionsContext } from './options.ts'
 import { EventMapper } from './events.ts'
 import { mcpServer } from './mcp.ts'
+import { ChildRegistry, reapChildren, trackedSpawn } from './children.ts'
 
 export const CLAUDE_SDK_VERSION = '0.3.321'
 export const INJECT_SEPARATOR = '\n\n---\n\n'
@@ -35,6 +36,8 @@ export interface ClaudeRuntimeOptions {
   stderr?: (text: string) => void
   trustRepoConfig?: boolean
   onDeny?: (denial: ToolDenial) => void
+  /** <stateDir>/children.json: track SDK child pids there (ADR-32). */
+  children?: string
 }
 
 export function sandboxAvailable(platform: NodeJS.Platform = process.platform): boolean {
@@ -77,6 +80,7 @@ interface SessionConfig {
   stderr?: (text: string) => void
   trustRepoConfig: boolean
   onDeny?: (denial: ToolDenial) => void
+  spawn?: OptionsContext['spawn']
 }
 
 export class ClaudeSession implements AgentSession {
@@ -112,6 +116,7 @@ export class ClaudeSession implements AgentSession {
       stderr: config.stderr,
       trustRepoConfig: config.trustRepoConfig,
       onDeny: config.onDeny ? (tool, reason) => config.onDeny!({ key: spec.key, tool, reason }) : undefined,
+      spawn: config.spawn,
     })
     this.q = queryFn({ prompt: this.stream, options })
     this.emit({ type: 'session', sessionId: this.id })
@@ -231,9 +236,11 @@ export class ClaudeSession implements AgentSession {
 export class ClaudeRuntime implements AgentRuntime {
   readonly id = 'claude'
   private readonly options: ClaudeRuntimeOptions
+  private registry?: ChildRegistry
 
   constructor(options: ClaudeRuntimeOptions) {
     this.options = options
+    if (options.children) this.registry = new ChildRegistry(options.children)
   }
 
   async open(spec: SessionSpec): Promise<ClaudeSession> {
@@ -245,7 +252,12 @@ export class ClaudeRuntime implements AgentRuntime {
       stderr: this.options.stderr,
       trustRepoConfig: this.options.trustRepoConfig ?? false,
       onDeny: this.options.onDeny,
+      spawn: this.registry ? trackedSpawn(this.registry, this.options.stderr) : undefined,
     }, this.options.query ?? sdkQuery)
+  }
+
+  async reap(): Promise<number[]> {
+    return this.registry ? reapChildren(this.registry) : []
   }
 
   async probe(): Promise<RuntimeProbe> {

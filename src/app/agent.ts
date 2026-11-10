@@ -55,6 +55,7 @@ export function createAgent(o: AgentOptions): Agent {
       configDir,
       env: agentEnv(o.credential, o.env),
       trustRepoConfig: o.config.security.trustRepoConfig,
+      children: join(o.config.stateDir, 'children.json'),
       ...(o.query ? { query: o.query } : {}),
       ...(o.stderr ? { stderr: o.stderr } : {}),
       onDeny: d => o.log?.(toolDeniedRecord(d, new Date().toISOString())),

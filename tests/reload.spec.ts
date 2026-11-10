@@ -10,6 +10,7 @@ import { allowedHash } from '../src/app/credentials.ts'
 import { Runtime } from '../src/app/runtime.ts'
 import { main } from '../src/cli/main.ts'
 import type { Trigger } from '../src/core/index.ts'
+import { ticketStage } from '../src/core/stage.ts'
 import { SettingsSchema } from '../src/policy/policy.ts'
 import { FakeRuntime, type FakeScript } from '../src/runtimes/fake/runtime.ts'
 import type { LogRecord } from '../src/sources/host.ts'
@@ -220,4 +221,18 @@ describe('worker session options on reload', () => {
     expect('model' in fake.sessions[0]!.spec).toBe(false)
     expect(fake.sessions[0]!.spec.network.allow).toEqual([])
   })
+})
+
+it('a reload that lowers the limits leaves existing reports alone', async () => {
+  const { r, records } = await boot()
+  const id = r.store.tickets.open()[0]!.id
+  r.engine.bindThread(id, { source: 'chat', id: 'pr' }, true)
+  r.engine.report(id, { state: 'ready', summary: 'PR opened' })
+  const kept = structuredClone(r.store.tickets.get(id)!.assignments)
+  writeConfig({ workers: { max: 2, maxTurns: 1, maxBudgetUsd: 0.01 } })
+  expect(await r.reload()).toMatchObject({ applied: true })
+  expect(records).toContainEqual(expect.objectContaining({ event: 'config.restart_required', keys: expect.arrayContaining(['workers']) }))
+  expect(r.store.tickets.get(id)!.assignments).toEqual(kept)
+  expect(records.some(record => record.event === 'worker.limit')).toBe(false)
+  expect(ticketStage(r.store.tickets.get(id)!)).toEqual({ stage: 'person', action: 'review' })
 })

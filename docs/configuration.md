@@ -35,6 +35,8 @@ Everything else has a default.
 
 The default `policy.acceptMode` is `observe`. `auto` must be set explicitly.
 
+When a task stops at its turn or budget limit before it is done, the agent posts one comment that says which limit stopped it and links the pull request with the work so far, if there is one. A reply in that conversation continues the task with fresh limits. A finished task that is waiting for review keeps its result.
+
 A minimal config:
 
 ```json

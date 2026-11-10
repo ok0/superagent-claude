@@ -34,7 +34,13 @@ export interface AgentSession {
   close(): Promise<void>
 }
 /** A runtime adapter: opens sessions and reports its probe. */
-export interface AgentRuntime { readonly id: string; open(spec: SessionSpec): Promise<AgentSession>; probe(): Promise<RuntimeProbe> }
+export interface AgentRuntime {
+  readonly id: string
+  open(spec: SessionSpec): Promise<AgentSession>
+  probe(): Promise<RuntimeProbe>
+  /** Stops what an earlier host process on the same state left running, before recovery starts; returns the pids it stopped (ADR-32). */
+  reap?(): Promise<number[]>
+}
 /** Applies inputsRead idempotently: `fresh` returns, in order, the ids it has not returned before (duplicates within one call count once). */
 export class ReadLedger {
   private readonly seen = new Set<string>()

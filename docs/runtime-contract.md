@@ -4,7 +4,7 @@ The host runs agents through one port, `AgentRuntime`, defined in `src/executor/
 
 ## Sessions
 
-`open(spec)` starts a session for `spec.key` in `spec.cwd`, with the host tools in `spec.tools`. When `spec.resume` holds a session id that the runtime knows, the session continues that conversation and keeps the same session id. `probe()` reports whether the runtime enforces its network sandbox and the runtime version.
+`open(spec)` starts a session for `spec.key` in `spec.cwd`, with the host tools in `spec.tools`. When `spec.resume` holds a session id that the runtime knows, the session continues that conversation and keeps the same session id. `probe()` reports whether the runtime enforces its network sandbox and the runtime version. `reap()` is optional. The host calls it once at start, before recovery. An adapter that runs agents as child processes stops the ones an earlier host process on the same state directory left running, and returns their process ids. The Claude adapter records its children in `children.json` in the state directory. At start it stops each recorded process that is still running the Claude CLI: SIGTERM first, then SIGKILL after 5 seconds. It leaves any other process alone.
 
 ## Input modes
 

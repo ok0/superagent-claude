@@ -55,8 +55,8 @@ export class Engine {
    * opened it: the ticket subscribes to it, and a ready report ends it only once `followsDone` holds (see `Tickets.followsDone`).
    * @throws UserError when the ticket is unknown or has ended.
    */
-  bindThread(ticketId: string, thread: ThreadRef, own: boolean): Ticket {
-    return this.repo.atomic(() => this.tickets.bind(ticketId, thread, own))
+  bindThread(ticketId: string, thread: ThreadRef, own: boolean, url?: string): Ticket {
+    return this.repo.atomic(() => this.tickets.bind(ticketId, thread, own, url))
   }
   /**
    * A Source's fact that a Thread closed, such as its pull request's merge, at the time it happened. An open ticket that
@@ -246,8 +246,8 @@ export class Engine {
   limitReached(ticketId: string, assignmentId: string, limit: string): boolean { return this.repo.atomic(() => this.assignments.limited(ticketId, assignmentId, limit)) }
   /**
    * Handles an assignment that was running when the host stopped: restarts it with a recovery note unless its latest report is
-   * `waiting`, `ready`, `blocked`, or `failed` and no Input reached its worker after that report, in which case it keeps its
-   * Session and state and gets the Inputs that wait for it.
+   * `waiting`, `ready`, `blocked`, or `failed` and no Input reached its worker after that report that a later finished turn did
+   * not take in (ADR-32), in which case it keeps its Session and state and gets the Inputs that wait for it.
    */
   assignmentInterrupted(ticketId: string, assignmentId: string): void {
     this.repo.atomic(() => { this.assignments.interrupted(ticketId, assignmentId) })

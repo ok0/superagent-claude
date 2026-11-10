@@ -79,7 +79,7 @@ describe('worker delivery tools', () => {
     expect(first.created).toBe(true)
     expect(second).toMatchObject({ pr: first.pr, created: false })
     expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')).toHaveLength(1)
-    expect(bindThread).toHaveBeenCalledWith('T1', { source: 'github', id: `acme/widgets#${first.pr}` }, true)
+    expect(bindThread).toHaveBeenCalledWith('T1', { source: 'github', id: `acme/widgets#${first.pr}` }, true, expect.stringContaining(`/pull/${first.pr}`))
     expect(push).toHaveBeenCalledWith('T1', { coAuthors: ['Ann <ann@example.com>'] })
   })
 

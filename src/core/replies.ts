@@ -43,6 +43,11 @@ export function refusalText(reason: string): string {
   return text.length <= 200 ? text : text.slice(0, 199).trimEnd() + '…'
 }
 
+/** The note a person gets once a turn or budget limit stopped the work: which limit, the work so far when there is a pull request, and an invitation to reply (ADR-32). */
+export function limitText(limit: 'turn' | 'budget', pull?: string): string {
+  return `I stopped before finishing: the ${limit} limit for this task was reached.` + (pull ? ` Work so far: ${pull}.` : '') + ' Reply here to continue.'
+}
+
 /**
  * Replies writes the Engine's messages to Channels through the Outbox port: an acknowledgement, the answer to a person's
  * question, a ticket's result, and its question for a person, each only when its rule allows it, under a deterministic id
@@ -68,6 +73,11 @@ export class Replies extends EnginePart {
    */
   acknowledgeAccepted(ticketId: string, trigger: Trigger, text: string): void {
     if (trigger.channel && trigger.human) this.options.outbox.send({ id: key('ack', trigger.id), channel: trigger.channel, text, kind: 'acknowledgement', ticketId })
+  }
+  /** Queue, once per Assignment, the note that a turn or budget limit stopped the work, where the latest person's message to the ticket was written (ADR-23), else where it started; id `limit:<assignmentId>` (ADR-32). */
+  limitStopped(ticket: Ticket, assignmentId: string, limit: 'turn' | 'budget', pull?: string): void {
+    const channel = this.replyChannel(ticket)
+    if (channel) this.options.outbox.send({ id: `limit:${assignmentId}`, channel, text: limitText(limit, pull), kind: 'reply', ticketId: ticket.id })
   }
   /** Withdraw a ticket's question for a person from the outbox, unless it went out already. */
   withdrawAttention(attentionId: string): void { this.options.outbox.withdraw(key('attention-reply', attentionId)) }

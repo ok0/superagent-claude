@@ -20,6 +20,7 @@ export const automatic = (input: TicketInput | undefined): boolean => input?.kin
 const readBefore = (input: Extract<TicketInput, { kind: 'trigger' }>, until: string): boolean => input.readAt === undefined
   ? (input.deliveredAt && input.deliveredAt > input.at ? input.deliveredAt : input.at) <= until : !!input.readAt && input.readAt < until
 const STATUS_REQUEST = 'Report the current ticket status with orchestrator_report. This is a status-only request: do not resume implementation or perform external actions.'
+export const LIMIT_CONTINUE_NOTE = 'Your previous run stopped at its turn or budget limit. A person replied, so the limits start over. Inspect the worktree and remote state, continue the assignment where it stopped, and report its status.'
 
 /**
  * Manages each ticket's lifecycle: creates the ticket for an accept decision with its Mandate, Subscriptions, and first
@@ -34,7 +35,7 @@ export class Tickets extends EnginePart {
 
   /**
    * Create the ticket an accept decided, under `mandate`, with the Channels and Threads of the Eval's Triggers, its first
-   * Assignment, and the acknowledgement the accept carries, and queue its launch. Its origin is the admissible Trigger that
+   * Assignment, and the acknowledgement the accept carries, held until its Assignment starts (ADR-32), and queue its launch. Its origin is the admissible Trigger that
    * gave the Eval its strength, or the Eval's last Trigger for an Eval recorded before `primary` existed.
    */
   create(id: string, decisionId: string, mandate: Mandate, evaluation: Pick<Evaluation, 'triggerIds' | 'primary'>,
@@ -51,9 +52,9 @@ export class Tickets extends EnginePart {
     }
     ticket = this.options.prepareTicket?.(ticket, outcome) ?? ticket
     const assignment = this.newAssignment(ticket)
+    if (outcome.acknowledgement && primary?.channel && primary.human) ticket.acknowledgement = { triggerId: primary.id, text: outcome.acknowledgement }
     this.repo.tickets.save(ticket)
     for (const triggerId of triggerIds) for (const ref of this.repo.triggers.get(triggerId)?.threads ?? []) this.subscribe(id, ref)
-    if (outcome.acknowledgement && primary) this.replies.acknowledgeAccepted(id, primary, outcome.acknowledgement)
     this.options.executor.start(this.require(id), assignment)
     this.emit('ticket.created', { ticketId: id, decisionId, strength: mandate.strength })
   }
@@ -61,14 +62,15 @@ export class Tickets extends EnginePart {
    * Subscribes an open ticket to `thread` and records it in `ticket.follows` (`own` when opened by the ticket).
    * @throws UserError when the ticket is unknown or has ended.
    */
-  bind(ticketId: string, thread: ThreadRef, own: boolean): Ticket {
+  bind(ticketId: string, thread: ThreadRef, own: boolean, url?: string): Ticket {
     if (!liveTicket(this.require(ticketId))) throw new UserError('ticketEnded')
     this.subscribe(ticketId, thread)
     const ticket = this.require(ticketId)
     const followed = threadKey(thread)
     const follow = ticket.follows?.find(item => item.thread === followed)
     // Re-binding a thread reopens it if previously closed; `own` remains true once set.
-    if (follow) { follow.own ||= own; delete follow.closed } else ticket.follows = [...ticket.follows ?? [], { thread: followed, own }]
+    if (follow) { follow.own ||= own; delete follow.closed; if (url) follow.url = url }
+    else ticket.follows = [...ticket.follows ?? [], { thread: followed, own, ...(url ? { url } : {}) }]
     ticket.updatedAt = this.now()
     this.repo.tickets.save(ticket)
     return ticket
@@ -246,6 +248,12 @@ export class Tickets extends EnginePart {
     if (!held) ticket.undelivered.push(added.id)
     this.repo.tickets.save(ticket)
     if (!liveTicket(ticket) || held || quiet) return
+    const limited = runningAssignment(ticket)
+    // A person's reply to a ticket a limit stopped continues it under a new Assignment, so its usage starts from zero (ADR-32).
+    if (limited?.limit && limited.report?.state === 'blocked' && added.kind === 'trigger' && added.human && !added.context) {
+      this.restart(ticket, limited, 'limitContinued', LIMIT_CONTINUE_NOTE)
+      return
+    }
     const running = runningAssignment(ticket), latest = latestAssignment(ticket)
     if (running) this.options.executor.deliver(ticket, running)
     else if (latest?.state === 'pending' && !waitsForPerson(ticket)) this.options.executor.start(ticket, latest)
