@@ -34,6 +34,14 @@ Ported files
 Each ported file starts with the header
 "// Ported from dsh-superagent-prototype (MIT) <reference path>".
 
+src/app/cache.ts <- src/app/cache.ts
+src/app/effects.ts <- src/app/effects.ts
+src/app/kv.ts <- src/kv.ts
+src/app/outbox.ts <- src/app/outbox.ts
+src/app/passes.ts <- src/app/passes.ts
+src/app/store.ts <- src/app/store.ts
+src/app/store-read.ts <- src/app/store-read.ts
+src/app/versions.ts <- src/app/versions.ts
 src/core/assignments.ts <- src/core/assignments.ts
 src/core/engine.ts      <- src/core/engine.ts
 src/core/errors.ts      <- src/core/errors.ts
@@ -49,10 +57,19 @@ src/core/reasons.ts     <- src/core/reasons.ts
 src/core/replies.ts     <- src/core/replies.ts
 src/core/stage.ts       <- src/core/stage.ts
 src/core/tickets.ts     <- src/core/tickets.ts
+src/infra/health.ts <- src/infra/health.ts
+src/infra/paths.ts <- src/infra/paths.ts
+src/infra/text.ts <- src/infra/text.ts
 src/policy/admission.ts <- src/admission.ts
 src/policy/limits.ts    <- src/limits.ts
 src/policy/policy.ts    <- src/policy.ts
+tests/cache.spec.ts <- tests/cache.spec.ts
 tests/core-engine.spec.ts <- tests/core-engine.spec.ts
+tests/effects.spec.ts <- tests/effects.spec.ts
+tests/fixtures/async.ts <- tests/fixtures/async.ts
 tests/fixtures/engine.ts <- tests/core-engine.spec.ts (harness)
+tests/outbox.spec.ts <- tests/outbox.spec.ts
+tests/passes.spec.ts <- tests/passes.spec.ts
 tests/policy.spec.ts    <- tests/policy.spec.ts
 tests/stage.spec.ts     <- tests/stage.spec.ts
+tests/store.spec.ts <- tests/store.spec.ts

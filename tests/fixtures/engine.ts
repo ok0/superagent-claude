@@ -2,7 +2,7 @@
 /** Engine test harness (ref core-engine.spec harness): MemoryRepositories plus vi.fn port mocks and a deterministic clock. */
 import { vi } from 'vitest'
 import { Engine, MemoryRepositories, runningAssignment } from '../../src/core/index.ts'
-import type { Assessor, Assignment, Candidate, EngineOptions, Executor, OutboundMessage, Outcome, Policy, Ticket, Trigger } from '../../src/core/index.ts'
+import type { Assessor, Assignment, Candidate, EngineOptions, Executor, OutboundMessage, Outcome, Policy, Repositories, Ticket, Trigger } from '../../src/core/index.ts'
 
 export const member = { source: 'chat', id: 'alice' }
 export const guest = { source: 'chat', id: 'guest' }
@@ -12,9 +12,10 @@ export function trigger(id: string, overrides: Partial<Trigger> = {}): Trigger {
 interface Hooks {
   emit?: (event: { type: string; data: Record<string, unknown> }) => void
   prepareTicket?: EngineOptions['prepareTicket']
+  repo?: Repositories
 }
-export function harness(policyOverrides: Partial<Policy> = {}, { emit, prepareTicket }: Hooks = {}) {
-  const repo = new MemoryRepositories()
+export function harness(policyOverrides: Partial<Policy> = {}, { emit, prepareTicket, repo: given }: Hooks = {}) {
+  const repo: Repositories = given ?? new MemoryRepositories()
   const outbox: OutboundMessage[] = []
   const withdrawn: string[] = []
   const requests: Candidate[] = []

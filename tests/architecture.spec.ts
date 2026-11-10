@@ -1,4 +1,4 @@
-// Enforces the layer import rules (PAC1): core stays free of Node I/O and the SDK, policy imports only zod, core and itself, and the SDK is imported only from src/runtimes/claude.
+// Enforces the layer import rules (PAC1): core stays free of Node I/O and the SDK, policy imports only zod, core and itself, and the SDK is imported only from src/runtimes/claude, and app/infra import only node:*, zod, proper-lockfile and allowed relative paths.
 import { describe, it, expect, afterEach } from 'vitest'
 import ts from 'typescript'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync, existsSync } from 'node:fs'
@@ -9,10 +9,11 @@ import { fileURLToPath } from 'node:url'
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const NON_LITERAL = '<non-literal>'
 
-type RuleId = 'core' | 'policy' | 'sdk'
+type RuleId = 'core' | 'policy' | 'app' | 'infra' | 'sdk'
 type Violation = { file: string; specifier: string; rule: RuleId }
 
 const SDK = '@anthropic-ai/claude-agent-sdk'
+const external = (s: string): boolean => s.startsWith('node:') || s === 'zod' || s === 'proper-lockfile'
 
 function textOf(n: ts.Node | undefined): string {
   return n && ts.isStringLiteralLike(n) ? n.text : NON_LITERAL
@@ -56,6 +57,16 @@ function checkFile(file: string, source: string): Violation[] {
       const allowed = spec === 'zod' || (rel && (r.startsWith('src/policy/') || r.startsWith('src/core/')))
       if (!allowed) violations.push({ file, specifier: spec, rule: 'policy' })
     }
+    if (file.startsWith('src/infra/')) {
+      const r = rel ? resolves(file, spec) : ''
+      const allowed = rel ? (r.startsWith('src/infra/') || r.startsWith('src/core/')) : external(spec)
+      if (!allowed) violations.push({ file, specifier: spec, rule: 'infra' })
+    }
+    if (file.startsWith('src/app/')) {
+      const r = rel ? resolves(file, spec) : ''
+      const allowed = rel ? (r.startsWith('src/') && !r.startsWith('src/cli/')) : external(spec)
+      if (!allowed) violations.push({ file, specifier: spec, rule: 'app' })
+    }
     if ((spec === SDK || spec.startsWith(SDK + '/')) && !file.startsWith('src/runtimes/claude/')) {
       violations.push({ file, specifier: spec, rule: 'sdk' })
     }
@@ -93,6 +104,8 @@ describe('core rule', () => {
     ["import { join } from 'node:path'", 'node:path'],
     ["import { run } from '../cli/main.ts'", '../cli/main.ts'],
     ["import _ from 'lodash'", 'lodash'],
+    ["import { DatabaseSync } from 'node:sqlite'", 'node:sqlite'],
+    ["import { lockSync } from 'proper-lockfile'", 'proper-lockfile'],
     ['const m = await import(name)', NON_LITERAL],
   ])('flags %s', (src, specifier) => {
     expect(checkFile('src/core/sample.ts', src)).toContainEqual({ file: 'src/core/sample.ts', specifier, rule: 'core' })
@@ -107,6 +120,10 @@ describe('core rule', () => {
 describe('policy rule', () => {
   it('flags node:fs in src/policy', () => {
     expect(checkFile('src/policy/policy.ts', "import fs from 'node:fs'")).toEqual([{ file: 'src/policy/policy.ts', specifier: 'node:fs', rule: 'policy' }])
+  })
+
+  it('flags node:sqlite in src/policy', () => {
+    expect(checkFile('src/policy/policy.ts', "import { DatabaseSync } from 'node:sqlite'")).toEqual([{ file: 'src/policy/policy.ts', specifier: 'node:sqlite', rule: 'policy' }])
   })
 
   it('allows core, sibling and zod imports', () => {
@@ -125,6 +142,35 @@ describe('policy rule', () => {
   it('flags relative imports outside policy and core', () => {
     const v = checkFile('src/policy/policy.ts', "import x from '../app/store.ts'")
     expect(v.map((x) => x.rule)).toContain('policy')
+  })
+})
+
+describe('app and infra rules', () => {
+  it('allows node builtins, zod, proper-lockfile, core, policy, infra and app relative imports in src/app', () => {
+    const src = "import { DatabaseSync, type SQLInputValue } from 'node:sqlite'\nimport { mkdirSync } from 'node:fs'\nimport { z } from 'zod'\nimport { lockSync } from 'proper-lockfile'\nimport { A } from '../core/index.ts'\nimport { P } from '../policy/policy.ts'\nimport { H } from '../infra/health.ts'\nimport { K } from './kv.ts'"
+    expect(checkFile('src/app/store.ts', src)).toEqual([])
+  })
+
+  it('flags a third-party package in src/app', () => {
+    expect(checkFile('src/app/x.ts', "import _ from 'lodash'").map(v => v.rule)).toEqual(['app'])
+  })
+
+  it('flags the SDK in src/app as app and sdk', () => {
+    expect(checkFile('src/app/x.ts', "import { query } from '@anthropic-ai/claude-agent-sdk'").map(v => v.rule)).toEqual(['app', 'sdk'])
+  })
+
+  it('flags relative imports into src/cli from src/app', () => {
+    expect(checkFile('src/app/x.ts', "import { run } from '../cli/main.ts'").map(v => v.rule)).toEqual(['app'])
+  })
+
+  it('allows node builtins, core and sibling imports in src/infra', () => {
+    const src = "import { readFileSync } from 'node:fs'\nimport { M } from '../core/model.ts'\nimport { fill } from './text.ts'"
+    expect(checkFile('src/infra/x.ts', src)).toEqual([])
+  })
+
+  it('flags relative imports into src/app and third-party packages from src/infra', () => {
+    expect(checkFile('src/infra/x.ts', "import { S } from '../app/store.ts'").map(v => v.rule)).toEqual(['infra'])
+    expect(checkFile('src/infra/x.ts', "import _ from 'lodash'").map(v => v.rule)).toEqual(['infra'])
   })
 })
 
@@ -177,5 +223,7 @@ describe('scan', () => {
     }
     for (const p of ['src/policy/actors.ts', 'src/policy/admission.ts', 'src/policy/limits.ts', 'src/policy/policy.ts']) expect(r.files).toContain(p)
     expect(r.files.filter(f => f.startsWith('src/policy/')).length).toBeGreaterThanOrEqual(4)
+    for (const p of ['src/app/cache.ts', 'src/app/effects.ts', 'src/app/kv.ts', 'src/app/outbox.ts', 'src/app/passes.ts', 'src/app/store.ts', 'src/app/store-read.ts', 'src/app/versions.ts', 'src/infra/health.ts', 'src/infra/paths.ts', 'src/infra/text.ts']) expect(r.files).toContain(p)
+    expect(r.files).not.toContain('src/app/migration.ts')
   })
 })
