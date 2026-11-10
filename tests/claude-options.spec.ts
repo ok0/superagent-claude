@@ -217,4 +217,15 @@ describe('fixed safety defaults', () => {
   it('the always-disallowed list is part of every session', () => {
     expect([...ALWAYS_DISALLOWED]).toEqual(['AskUserQuestion', 'WebFetch', 'WebSearch'])
   })
+
+  it('trustRepoConfig loads only the project settings and keeps repository MCP config off', () => {
+    const trusted = sdkOptions(spec(), ctx('subscription', { trustRepoConfig: true }))
+    expect(trusted.settingSources).toEqual(['project'])
+    expect(trusted.strictMcpConfig).toBe(true)
+    expect(trusted.permissionMode).toBe('dontAsk')
+
+    const untrusted = sdkOptions(spec(), ctx('subscription', { trustRepoConfig: false }))
+    expect(untrusted.settingSources).toEqual([])
+    expect(sdkOptions(spec(), ctx('subscription')).settingSources).toEqual([])
+  })
 })

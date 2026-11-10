@@ -38,6 +38,27 @@ function reachable(code: string | undefined): boolean {
   return code !== undefined && /^[23]\d\d$/.test(code)
 }
 
+export function staticSandboxAvailable(platform: NodeJS.Platform = process.platform): boolean {
+  if (platform === 'darwin') return existsSync('/usr/bin/sandbox-exec')
+  if (platform === 'linux') return spawnSync('sh', ['-c', 'command -v bwrap && command -v socat']).status === 0
+  return false
+}
+
+export function networkStatus(o: {
+  sandbox: readonly string[]
+  control: readonly string[]
+  staticAvailable: boolean
+  sandboxLive: boolean
+}): { status: Status; reason?: string } {
+  const [s1, s2] = o.sandbox
+  const [c1, c2] = o.control
+  if (reachable(c1) && reachable(c2) && reachable(s1) && !reachable(s2)) return { status: 'PASS' }
+  if (!reachable(c1) || !reachable(c2)) return { status: 'BLOCKED', reason: 'no-network' }
+  if (!o.staticAvailable || !o.sandboxLive) return { status: 'BLOCKED', reason: 'sandbox-unavailable' }
+  if (reachable(s2)) return { status: 'FAIL' }
+  return { status: 'BLOCKED', reason: 'sandbox-unavailable' }
+}
+
 function visibilityOf(entries: TimelineEntry[]): 'PRESENT' | 'ABSENT' | 'unknown' {
   const text = toolOutputs(entries).join('\n')
   if (text.includes('SPIKE_VAR_PRESENT')) return 'PRESENT'
@@ -98,13 +119,18 @@ async function networkTest(ctx: SpikeContext, id: string): Promise<NetOutcome> {
   const sb = httpCodes(sandboxed.timeline)
   const ct = httpCodes(control.timeline)
   const bp = httpCodes(bypass.timeline)
-  const [s1, s2] = sb
-  const [c1, c2] = ct
-  const pass = reachable(c1) && reachable(c2) && reachable(s1) && !reachable(s2)
-
   const hasToolResult = sandboxed.timeline.some((e) => (e.toolResults ?? []).length > 0)
-  const unavailable = toolOutputs(sandboxed.timeline).some((text) => /sandbox[^\n]*(unavailable|not available)/i.test(text))
+  const unavailable = toolOutputs(sandboxed.timeline).some((text) =>
+    /sandbox[^\n]*(unavailable|not available)|bwrap:|bubblewrap/i.test(text),
+  )
   const sandboxLive = hasToolResult && !unavailable
+
+  const net = networkStatus({
+    sandbox: sb,
+    control: ct,
+    staticAvailable: staticSandboxAvailable(),
+    sandboxLive,
+  })
 
   const evidence = [
     ...sandboxed.timeline.map(compact),
@@ -116,15 +142,20 @@ async function networkTest(ctx: SpikeContext, id: string): Promise<NetOutcome> {
       id,
       req: 'R19',
       title: `샌드박스 네트워크 (${id})`,
-      status: pass ? 'PASS' : 'FAIL',
+      status: net.status,
+      ...(net.reason ? { reason: net.reason } : {}),
       deviation: false,
-      summary: pass
-        ? 'sandbox: example.com 허용·iana.org 차단, 대조군 양쪽 도달'
-        : `sandbox codes=${sb.join(',') || 'none'}, control codes=${ct.join(',') || 'none'}`,
+      summary:
+        net.status === 'PASS'
+          ? 'sandbox: example.com 허용·iana.org 차단, 대조군 양쪽 도달'
+          : net.status === 'BLOCKED'
+            ? `BLOCKED (${net.reason}): sandbox codes=${sb.join(',') || 'none'}, control codes=${ct.join(',') || 'none'}`
+            : `sandbox codes=${sb.join(',') || 'none'}, control codes=${ct.join(',') || 'none'}`,
       observations: [
         `sandbox codes=${sb.join(',') || 'none'}`,
         `control codes=${ct.join(',') || 'none'}`,
         `sandboxLive=${sandboxLive}`,
+        `static=${staticSandboxAvailable()}`,
         `bypass-mode codes=${bp.join(',') || 'none'}`,
       ],
       evidence,
@@ -222,10 +253,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
     costs: [],
   }
 
-  const staticAvailable =
-    process.platform === 'darwin'
-      ? existsSync('/usr/bin/sandbox-exec')
-      : spawnSync('sh', ['-c', 'command -v bwrap && command -v socat']).status === 0
+  const staticAvailable = staticSandboxAvailable()
   const sandboxLive = macOut.sandboxLive ?? linuxOut.sandboxLive
   let cSub: ItemResult
   if (sandboxLive === undefined) {
@@ -244,13 +272,19 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
     }
   } else {
     const consistent = staticAvailable === sandboxLive
+    const blockedProbe = linuxOut.sub.status === 'BLOCKED' || macOut.sub.status === 'BLOCKED'
     cSub = {
       id: 'c-probe',
       req: 'R19',
       title: '샌드박스 가용성 프로브',
-      status: consistent ? 'PASS' : 'FAIL',
+      status: consistent ? 'PASS' : blockedProbe ? 'BLOCKED' : 'FAIL',
+      ...(!consistent && blockedProbe ? { reason: 'sandbox-unavailable' } : {}),
       deviation: false,
-      summary: consistent ? '정적 프로브와 실측 샌드박스 가용성 일치' : '정적 프로브와 실측 샌드박스 가용성 불일치',
+      summary: consistent
+        ? '정적 프로브와 실측 샌드박스 가용성 일치'
+        : blockedProbe
+          ? '정적 프로브와 실측 불일치 — 샌드박스 불가 환경'
+          : '정적 프로브와 실측 샌드박스 가용성 불일치',
       observations: [
         `static=${staticAvailable}`,
         `live=${sandboxLive}`,
@@ -305,16 +339,20 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   const failedIds = [macOut.sub, linuxOut.sub, cSub, dSub, bSub]
     .filter((s) => s.status === 'FAIL')
     .map((s) => s.id)
-  const status: Status = failedIds.length > 0 ? 'FAIL' : 'PASS'
+  const blockedIds = subs.filter((s) => s.status === 'BLOCKED').map((s) => s.id)
+  const status: Status = failedIds.length > 0 ? 'FAIL' : blockedIds.length > 0 ? 'BLOCKED' : 'PASS'
 
   return {
     ...META,
     status,
+    ...(status === 'BLOCKED' ? { reason: 'sandbox-unavailable' } : {}),
     deviation: bSub.deviation,
     summary:
       status === 'PASS'
         ? '샌드박스 네트워크·크레덴셜 가시성(scrub)·예산 상한 확인'
-        : `FAIL 하위 항목: ${failedIds.join(', ')}`,
+        : status === 'BLOCKED'
+          ? `BLOCKED 하위 항목: ${blockedIds.join(', ')}`
+          : `FAIL 하위 항목: ${failedIds.join(', ')}`,
     observations: subs.map((s) => `${s.id}: ${s.status}${s.deviation ? ' (deviation)' : ''} — ${s.summary}`),
     evidence,
     attempts: 1,

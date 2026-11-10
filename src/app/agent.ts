@@ -39,6 +39,7 @@ export function createAgent(o: AgentOptions): Agent {
       mode: o.config.auth.mode,
       configDir,
       env: agentEnv(o.credential, o.env),
+      trustRepoConfig: o.config.security.trustRepoConfig,
       ...(o.query ? { query: o.query } : {}),
       ...(o.stderr ? { stderr: o.stderr } : {}),
     }),

@@ -1,14 +1,24 @@
+
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { ConfigSchema } from '../src/app/config.ts'
 import { REQUIRED_ENV } from '../src/app/credentials.ts'
+import { checkText } from '../scripts/check-branding.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const readme = readFileSync(join(root, 'README.md'), 'utf8')
-const deploy = readFileSync(join(root, 'docs/deploy.md'), 'utf8')
+const read = (path: string): string => readFileSync(join(root, path), 'utf8')
+const readme = read('README.md')
+const deploy = read('docs/deploy.md')
+const gettingStarted = read('docs/getting-started.md')
+const configuration = read('docs/configuration.md')
+const authentication = read('docs/authentication.md')
+const security = read('docs/security.md')
+const svg = read('docs/assets/flow.svg')
+
+const DOCS = ['docs/getting-started.md', 'docs/configuration.md', 'docs/authentication.md', 'docs/runtime-contract.md', 'docs/deploy.md', 'docs/security.md']
 
 const ATTRIBUTION = ''
 const HYPE = /\b(blazing|revolutionary|seamless|cutting-edge|world-class|supercharg|effortless|game-chang|best-in-class)/i
@@ -35,6 +45,20 @@ export function schemaSettings(): string[] {
   })
 }
 
+export function linkProblems(file: string, text: string): string[] {
+  const targets = [
+    ...[...text.matchAll(/!?\[[^\]]*\]\(([^)\s]+)\)/g)].map(match => match[1] ?? ''),
+    ...[...text.matchAll(/src="([^"]+)"/g)].map(match => match[1] ?? ''),
+  ]
+  const problems: string[] = []
+  for (const raw of targets) {
+    if (/^(https?:\/\/|mailto:|#)/.test(raw)) continue
+    const target = raw.split('#')[0] ?? ''
+    if (!existsSync(join(dirname(join(root, file)), target))) problems.push(`${file}: ${target}`)
+  }
+  return problems
+}
+
 function section(text: string, heading: string): string {
   const start = text.indexOf(heading)
   if (start < 0) return ''
@@ -51,7 +75,7 @@ const samples: [string, string][] = [
   ['the word seamless', readme + '\nA seamless setup.\n'],
 ]
 
-describe('README and deploy doc', () => {
+describe('README and public docs', () => {
   it('README passes the attribution, link and wording rules', () => {
     expect(readmeProblems(readme)).toEqual([])
   })
@@ -60,37 +84,50 @@ describe('README and deploy doc', () => {
     expect(readmeProblems(sample).length).toBeGreaterThan(0)
   })
 
+  it('flags a broken link', () => {
+    expect(linkProblems('README.md', readme + '\n[x](docs/missing.md)\n').length).toBeGreaterThan(0)
+  })
+
+  it('flags a broken image', () => {
+    expect(linkProblems('README.md', '![a](docs/assets/missing.svg)').length).toBeGreaterThan(0)
+  })
+
   it('counts the settings of the schema as 19', () => {
     expect(schemaSettings()).toHaveLength(19)
   })
 
   it('states the setting count of the schema and names every setting', () => {
-    const count = /has (\d+) settings/.exec(readme)?.[1]
+    const count = /has (\d+) settings/.exec(configuration)?.[1]
     expect(count).toBe(String(schemaSettings().length))
-    for (const path of schemaSettings()) expect(readme).toContain(`\`${path}\``)
+    for (const path of schemaSettings()) expect(configuration).toContain(`\`${path}\``)
   })
 
-  it('names the start command, the read commands and the required settings', () => {
+  it('getting-started names the start command and the read commands', () => {
     for (const text of [
       'superagent-claude start [--config <path>]',
       'superagent-claude status',
       'superagent-claude needs',
       'superagent-claude prompts diff',
+    ]) expect(gettingStarted).toContain(text)
+  })
+
+  it('configuration names the required settings', () => {
+    for (const text of [
       'Required:',
       'auth.mode',
       'SUPERAGENT_CLAUDE_GITHUB_TOKEN',
       '`repositories`',
       '`policy.allowed`',
       'Everything else has a default.',
-    ]) expect(readme).toContain(text)
+    ]) expect(configuration).toContain(text)
   })
 
   it('has a section per auth mode with its environment', () => {
     for (const mode of Object.keys(REQUIRED_ENV)) {
-      const body = section(readme, `### ${mode}\n`)
+      const body = section(authentication, `## ${mode}\n`)
       for (const name of REQUIRED_ENV[mode as keyof typeof REQUIRED_ENV].flat(2)) expect(body).toContain(name)
     }
-    const subscription = section(readme, '### subscription\n')
+    const subscription = section(authentication, '## subscription\n')
     for (const text of ['auth.acceptSubscriptionSharedUseRisk', 'auth.owner', 'ToS', 'refuses to start']) expect(subscription).toContain(text)
   })
 
@@ -100,11 +137,77 @@ describe('README and deploy doc', () => {
       "Do not put the agent account's login in `policy.allowed`",
       'The default `policy.acceptMode` is `observe`',
       '`auto` must be set explicitly',
-    ]) expect(readme).toContain(text)
+    ]) expect(gettingStarted).toContain(text)
   })
 
   it('links docs/deploy.md on exactly one line', () => {
     expect(readme.split('\n').filter(line => line.includes('](docs/deploy.md)'))).toHaveLength(1)
+  })
+
+  it('README is short and links the docs and the flow diagram', () => {
+    expect(readme.split('\n').length).toBeLessThanOrEqual(50)
+    for (const heading of ['## Quick start', '## Documentation', '## License']) expect(readme).toContain(heading)
+    for (const path of DOCS) expect(readme).toContain(`](${path})`)
+    expect(readme).toMatch(/!\[[^\]]+\]\(docs\/assets\/flow\.svg\)/)
+    expect(readme).not.toMatch(/^## (Install|Agent account|Start|Configuration|Authentication)\b/m)
+    expect(readme).not.toMatch(/^### (api-key|bedrock|vertex|subscription)$/m)
+  })
+
+  it('every relative link in the README and docs resolves', () => {
+    const files: [string, string][] = [['README.md', readme], ...DOCS.map((path): [string, string] => [path, read(path)])]
+    expect(files.flatMap(([file, text]) => linkProblems(file, text))).toEqual([])
+  })
+
+  it('the docs pass the wording rules', () => {
+    for (const [path, text] of [
+      ['docs/getting-started.md', gettingStarted],
+      ['docs/configuration.md', configuration],
+      ['docs/authentication.md', authentication],
+      ['docs/security.md', security],
+    ] as const) {
+      expect(text, path).not.toMatch(/\.docs\//)
+      expect(PRODUCT_NAME.test(text), path).toBe(false)
+      expect(text, path).not.toMatch(/\bM\d{1,2}\b|milestone/i)
+      expect(HYPE.test(text), path).toBe(false)
+      expect(checkText(path, text), path).toEqual([])
+    }
+  })
+
+  it('security.md states the trust policy', () => {
+    for (const term of [
+      'settingSources: []',
+      "settingSources: ['project']",
+      'core.hooksPath',
+      '.mcp.json',
+      'strictMcpConfig',
+      'dontAsk',
+      'bypassPermissions',
+      'PreToolUse',
+      'WebFetch',
+      'WebSearch',
+      'AskUserQuestion',
+      'network.allow',
+      'failIfUnavailable',
+      'allowUnsandboxed',
+      'CLAUDE_CONFIG_DIR',
+      'allowlist',
+      'prompt injection',
+      'acceptSubscriptionSharedUseRisk',
+      'trustRepoConfig',
+    ]) expect(security).toContain(term)
+  })
+
+  it('the flow diagram is a self-contained SVG with the five steps', () => {
+    expect(svg.trimStart()).toMatch(/^(<\?xml[^>]*>\s*)?<svg\b[^>]*xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)
+    expect(svg.trimEnd().endsWith('</svg>')).toBe(true)
+    expect(svg).not.toMatch(/<script|<foreignObject|<image\b|\bhref\s*=|@import|\son[a-z]+\s*=/i)
+    expect(svg.match(/url\((?!#)/g)).toBeNull()
+    expect(svg).toMatch(/<rect[^>]*width="100%"[^>]*height="100%"[^>]*fill="#[0-9a-fA-F]{6}"/)
+    const text = svg.replace(/<[^>]+>/g, ' ')
+    for (const label of ['mentions the agent', 'Allowlist', 'admission', 'Ticket', 'session', 'git worktree', 'comment', 'pull request']) expect(text).toContain(label)
+    expect(svg).not.toMatch(/\bgh[pousr]_[A-Za-z0-9]{8,}|_pat_[A-Za-z0-9]|sk-ant-/)
+    expect(svg).not.toMatch(/\bM\d{1,2}\b|milestone/i)
+    expect(checkText('docs/assets/flow.svg', svg)).toEqual([])
   })
 
   it('deploy.md has a systemd unit and a launchd plist running start, with no secrets', () => {

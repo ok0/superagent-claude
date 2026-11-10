@@ -91,6 +91,19 @@ describe('agent wiring', () => {
     await session.close()
   })
 
+  it('security.trustRepoConfig reaches the SDK settingSources', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'agent-wiring-'))
+    for (const trust of [false, true]) {
+      const sdk = stubSdk()
+      const base = cfg('subscription')
+      const config = { ...base, security: { ...base.security, trustRepoConfig: trust } }
+      const agent = createAgent({ config, credential: resolveCredential('subscription', ALL), env: ALL, query: sdk.query })
+      const session = await agent.runtime.open(contractSpec('followup starts a new turn').spec)
+      expect(sdk.queries[0]!.options.settingSources).toEqual(trust ? ['project'] : [])
+      await session.close()
+    }
+  })
+
   it('worker sessions expose the executor tools through the superagent MCP server', async () => {
     dir = mkdtempSync(join(tmpdir(), 'agent-wiring-'))
     const sdk = stubSdk()

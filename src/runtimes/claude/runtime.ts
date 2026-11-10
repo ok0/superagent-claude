@@ -31,6 +31,7 @@ export interface ClaudeRuntimeOptions {
   query?: QueryFn
   sandboxAvailable?: () => boolean
   stderr?: (text: string) => void
+  trustRepoConfig?: boolean
 }
 
 export function sandboxAvailable(platform: NodeJS.Platform = process.platform): boolean {
@@ -71,6 +72,7 @@ interface SessionConfig {
   env: Readonly<Record<string, string | undefined>>
   sandbox: boolean
   stderr?: (text: string) => void
+  trustRepoConfig: boolean
 }
 
 export class ClaudeSession implements AgentSession {
@@ -104,6 +106,7 @@ export class ClaudeSession implements AgentSession {
       onRead: () => this.emitAll(this.mapper.read()),
       abortController: this.abort,
       stderr: config.stderr,
+      trustRepoConfig: config.trustRepoConfig,
     })
     this.q = queryFn({ prompt: this.stream, options })
     this.emit({ type: 'session', sessionId: this.id })
@@ -235,6 +238,7 @@ export class ClaudeRuntime implements AgentRuntime {
       env: this.options.env ?? process.env,
       sandbox: this.options.sandbox ?? true,
       stderr: this.options.stderr,
+      trustRepoConfig: this.options.trustRepoConfig ?? false,
     }, this.options.query ?? sdkQuery)
   }
 

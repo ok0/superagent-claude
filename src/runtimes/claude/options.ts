@@ -28,6 +28,8 @@ export interface OptionsContext {
   onRead: () => void
   abortController: AbortController
   stderr?: (text: string) => void
+  /** security.trustRepoConfig: load the repository's project settings. Repository MCP config stays ignored (strictMcpConfig). */
+  trustRepoConfig?: boolean
 }
 
 const READ_TOOLS = ['Read', 'Glob', 'Grep']
@@ -111,7 +113,7 @@ export function sdkOptions(spec: SessionSpec, ctx: OptionsContext): Options {
   return {
     cwd: spec.cwd,
     env: claudeEnv(spec, ctx),
-    settingSources: [],
+    settingSources: ctx.trustRepoConfig ? ['project'] : [],
     permissionMode: 'dontAsk',
     abortController: ctx.abortController,
     systemPrompt: spec.role === 'worker' ? { type: 'preset', preset: 'claude_code', append: spec.instructions } : spec.instructions,
