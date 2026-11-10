@@ -1,9 +1,10 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/store-read.ts
 /**
  * Read-only Store queries for views, tools, and Source polling.
- * Changes from the reference: `openReadOnly` is added for the CLI.
+ * Changes from the reference: `openReadOnly` (with `keys`) and `writerActive` are added for the CLI.
  */
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
+import { checkSync } from 'proper-lockfile'
 import type { Decision, Thread, Trigger } from '../core/index.ts'
 import type { Key } from './kv.ts'
 import type { Dropped, Receipt, TimelinePlace } from './store.ts'
@@ -85,8 +86,19 @@ export function storeReads(db: DatabaseSync) {
   }
 }
 /** A read-only view of the database for the CLI; it cannot write and takes no lock, so it reads while the daemon writes (WAL). */
-export interface StoreReader { readonly db: DatabaseSync; readonly read: ReturnType<typeof storeReads>; get<V>(name: Key<V>): V | undefined; close(): void }
+export interface StoreReader { readonly db: DatabaseSync; readonly read: ReturnType<typeof storeReads>; get<V>(name: Key<V>): V | undefined; keys(prefix: string): string[]; close(): void }
 export function openReadOnly(path: string): StoreReader {
   const db = new DatabaseSync(path, { readOnly: true })
-  return { db, read: storeReads(db), get: <V>(name: Key<V>): V | undefined => { const row = db.prepare('SELECT value FROM kv WHERE key=?').get(name); return row === undefined ? undefined : JSON.parse(String(row.value)) as V }, close: () => { db.close() } }
+  return {
+    db,
+    read: storeReads(db),
+    get: <V>(name: Key<V>): V | undefined => { const row = db.prepare('SELECT value FROM kv WHERE key=?').get(name); return row === undefined ? undefined : JSON.parse(String(row.value)) as V },
+    keys: (prefix: string): string[] => {
+      const pattern = `${prefix.replace(/[\\%_]/g, match => `\\${match}`)}%`
+      return db.prepare("SELECT key FROM kv WHERE key LIKE ? ESCAPE '\\' ORDER BY key").all(pattern).map(row => String(row.key))
+    },
+    close: () => { db.close() },
+  }
 }
+/** Whether a writer (the daemon) holds the single-writer lock on the database at path; it takes no lock. A lock older than the Store's stale time counts as not held. */
+export function writerActive(path: string): boolean { try { return checkSync(path, { realpath: false, stale: 30_000 }) } catch { return false } }

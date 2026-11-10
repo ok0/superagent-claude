@@ -7,6 +7,7 @@ import { installedSources, type InstalledSources } from '../app/sources.ts'
 import { jsonLines, Runtime } from '../app/runtime.ts'
 import type { FakeScript } from '../runtimes/fake/runtime.ts'
 import { promptsCommand } from './prompts.ts'
+import { needsCommand, statusCommand } from './status.ts'
 
 export const VERSION: string = pkg.version
 
@@ -18,10 +19,14 @@ const FAKE_SCRIPT: FakeScript = ({ index }) => index === 0 ? { tools: [{ name: '
 export const HELP: string = [
   'Usage: superagent-claude [--help | --version]',
   '       superagent-claude start [--config <path>] [--fake]',
+  '       superagent-claude status [--config <path>]',
+  '       superagent-claude needs [--all] [--config <path>]',
   '       superagent-claude prompts diff [--config <path>]',
   '',
   'Commands:',
   '  start          Run the daemon in the foreground',
+  '  status         Show running work, waiting tickets, recent errors, repository access and consent',
+  '  needs          List the tickets that wait for a person',
   '  prompts diff   Show built-in prompt changes since the team sections were made',
   '',
   'Options:',
@@ -29,6 +34,9 @@ export const HELP: string = [
   '  -v, --version  Show the version',
   '  --config PATH  Config file (default: ./superagent-claude.json)',
   '  --fake         Use the scripted fake runtime (no model calls)',
+  '  --all          With needs: also list the other open tickets and the tickets ended within retention.endedTicketDays',
+  '',
+  'Exit codes: 0 done, 1 unknown argument, 2 refused start or config error, 3 no readable state database (status, needs)',
 ].join('\n') + '\n'
 
 export interface CliIo {
@@ -64,6 +72,8 @@ export function run(
 export async function main(argv: readonly string[], io: CliIo): Promise<number> {
   if (argv[0] === 'start') return start(argv.slice(1), io)
   if (argv[0] === 'prompts') return promptsCommand(argv.slice(1), io)
+  if (argv[0] === 'status') return statusCommand(argv.slice(1), io)
+  if (argv[0] === 'needs') return needsCommand(argv.slice(1), io)
   return run(argv, io.out, io.err)
 }
 

@@ -2,4 +2,5 @@
 declare module 'proper-lockfile' {
   interface LockOptions { stale?: number; update?: number; realpath?: boolean; lockfilePath?: string; onCompromised?: (error: Error) => void }
   export function lockSync(file: string, options?: LockOptions): () => void
+  export function checkSync(file: string, options?: LockOptions): boolean
 }
