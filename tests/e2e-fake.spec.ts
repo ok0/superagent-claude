@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ConfigSchema } from '../src/app/config.ts'
-import { Runtime, WORKER_INSTRUCTIONS } from '../src/app/runtime.ts'
+import { Runtime } from '../src/app/runtime.ts'
 import { threadKey } from '../src/core/index.ts'
 import { FakeRuntime, type FakeScript } from '../src/runtimes/fake/runtime.ts'
 import type { LogRecord } from '../src/sources/host.ts'
@@ -55,7 +55,10 @@ it('auto: an allowed sender\'s mention opens one Ticket whose fake worker report
   const opened = fake.opened[0]!
   expect(opened.key).toBe(`worker-${ticket.id}`)
   expect(opened.tools.map(tool => tool.name)).toEqual(['orchestrator_report'])
-  expect(opened.instructions).toBe(WORKER_INSTRUCTIONS)
+  expect(opened.instructions.startsWith('## Host rules')).toBe(true)
+  expect(opened.instructions).toContain('## Communication')
+  expect(opened.instructions).toContain('<external-data source="ticket-title">')
+  expect(r.store.db.prepare('SELECT prompt_version FROM worker WHERE ticket_id = ?').get(ticket.id)?.prompt_version).toBe(r.prompts.version('worker'))
 
   expect(ticket.assignments.at(-1)!.report!.state).toBe('ready')
   expect(chat.sent).toHaveLength(1)

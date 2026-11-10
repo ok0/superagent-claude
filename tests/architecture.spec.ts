@@ -373,7 +373,7 @@ describe('vendor names', () => {
     const offenders = scan(ROOT).files
       .filter(f => !f.startsWith('src/sources/github/'))
       .filter(f => readFileSync(join(ROOT, f), 'utf8').split('\n').some(line => !line.includes('dsh-superagent-prototype') && /github/i.test(line)))
-    expect(offenders).toEqual(['src/app/sources.ts'])
+    expect(offenders).toEqual(['src/app/prompts.ts', 'src/app/sources.ts'])
   })
 
   it('the Source framework names no service or host framework outside its port header', () => {

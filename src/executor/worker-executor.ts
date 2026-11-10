@@ -117,6 +117,15 @@ export class WorkerExecutor implements Executor {
     this.effects.cancel('launch', assignment.id)
     this.store.afterCommit(() => { void this.halt(ticket.id, assignment.id) })
   }
+  /** Ticket IDs whose worker session is open now. */
+  liveTickets(): string[] { return [...this.live.keys()] }
+  /** Injects a host notice into the ticket's open worker session; it is read with the next input (inject never starts a turn). False when no session is open. */
+  notify(ticketId: string, notice: { id: string; text: string }): boolean {
+    const live = this.live.get(ticketId)
+    if (!live) return false
+    this.send(live, { id: notice.id, text: notice.text, mode: 'inject' })
+    return true
+  }
 
   private current(ticketId: string, assignmentId: string): boolean {
     const ticket = this.store.tickets.get(ticketId)

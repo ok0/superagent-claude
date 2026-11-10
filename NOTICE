@@ -31,14 +31,29 @@ SOFTWARE.
 
 Ported files
 ------------
-Each ported file starts with the header
-"// Ported from dsh-superagent-prototype (MIT) <reference path>".
+Each ported file starts with the header "// Ported from dsh-superagent-prototype (MIT) <reference path>" (Markdown files: "<!-- Ported from dsh-superagent-prototype (MIT) <reference path> -->").
 
+prompts/admission.md <- prompts/admission.md
+prompts/dispatch.md <- prompts/dispatch.md
+prompts/handoff-router.md <- prompts/handoff-orchestrator.md
+prompts/handoff-worker.md <- prompts/handoff-worker.md
+prompts/handoff.md <- prompts/handoff.md
+prompts/replies.md <- prompts/replies.md
+prompts/router.md <- prompts/orchestrator.md
+prompts/shared.md <- prompts/shared.md
+prompts/subscriptions.md <- prompts/subscriptions.md
+prompts/team/communication.md <- prompts/team/communication.md
+prompts/team/delivery.md <- prompts/team/delivery.md
+prompts/team/scope.md <- prompts/team/scope.md
+prompts/work.md <- prompts/work.md
+prompts/worker.md <- prompts/worker.md
+skills/github.md <- skills/dsh-superagent-github/SKILL.md
 src/app/cache.ts <- src/app/cache.ts
 src/app/effects.ts <- src/app/effects.ts
 src/app/kv.ts <- src/kv.ts
 src/app/outbox.ts <- src/app/outbox.ts
 src/app/passes.ts <- src/app/passes.ts
+src/app/prompts.ts <- src/app/prompts.ts
 src/app/store.ts <- src/app/store.ts
 src/app/store-read.ts <- src/app/store-read.ts
 src/app/versions.ts <- src/app/versions.ts
