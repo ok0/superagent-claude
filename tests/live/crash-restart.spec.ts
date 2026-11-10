@@ -1,24 +1,24 @@
 /**
  * Live forced-stop run against the playground repository: the daemon is started as a child process through the CLI entry with subscription OAuth, SIGKILLed while a ticket's Assignment runs, restarted on the same stateDir, and checked through the store and the GitHub comment list. Gated by SUPERAGENT_CLAUDE_LIVE=1 and the three tokens; never prints a token.
  */
-import { execFile, spawn, type ChildProcess } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { key, type Ticket, type Trigger } from '../../src/core/index.ts'
 import { databasePath, type Receipt } from '../../src/app/store.ts'
 import { openReadOnly } from '../../src/app/store-read.ts'
 import { sleep } from '../fixtures/async.ts'
+import { ghJson } from './gh.ts'
+import { assertAllowedRepo } from './guard.ts'
 
-const execFileAsync = promisify(execFile)
 const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
 const AGENT_TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
 const OWNER_TOKEN = process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN?.trim()
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
-const REPO = 'ok0/superagent-claude-playground'
+const REPO = assertAllowedRepo('ok0/superagent-claude-playground')
 const AGENT = 'ok0-worker'
 const OWNER = 'ok0'
 const LIMITS = { max: 2, maxTurns: 40, maxBudgetUsd: 2 }
@@ -34,12 +34,7 @@ const evidence: Record<string, unknown> = {}
 const TOKENS = [AGENT_TOKEN, OWNER_TOKEN, OAUTH].filter((token): token is string => Boolean(token))
 
 async function owner(args: string[]): Promise<unknown> {
-  try {
-    const { stdout } = await execFileAsync('gh', ['api', ...args], { env: { PATH: process.env.PATH!, HOME: process.env.HOME!, GH_TOKEN: OWNER_TOKEN! } })
-    return JSON.parse(stdout)
-  } catch {
-    throw new Error('gh api failed: ' + args[0])
-  }
+  return await ghJson(OWNER_TOKEN!, args)
 }
 
 async function createIssue(title: string, body: string): Promise<{ number: number; html_url: string }> {

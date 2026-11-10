@@ -1,25 +1,24 @@
 /**
  * Live conversation quality run against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth. Checks that a steer which changes the request renames the ticket in status and needs and that its pull request carries only the requested files; that an acknowledgement does not assert a premise the request does not give; that an out-of-scope refusal has a readable reason, with the raw reason and the posted body recorded; and that no live content in the repository names a milestone. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1 and the three tokens; never prints a token.
  */
-import { execFile } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
-import { promisify } from 'node:util'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { latestReport, type Decision, type Ticket, type Trigger } from '../../src/core/index.ts'
 import { main } from '../../src/cli/main.ts'
 import { DATABASE_FILE, databasePath } from '../../src/app/store.ts'
 import { openReadOnly } from '../../src/app/store-read.ts'
 import { sleep } from '../fixtures/async.ts'
+import { ghJson } from './gh.ts'
+import { assertAllowedRepo } from './guard.ts'
 
-const execFileAsync = promisify(execFile)
 const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
 const AGENT_TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
 const OWNER_TOKEN = process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN?.trim()
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
-const REPO = 'ok0/superagent-claude-playground'
+const REPO = assertAllowedRepo('ok0/superagent-claude-playground')
 const AGENT = 'ok0-worker'
 const OWNER = 'ok0'
 const LIMITS = { max: 1, maxTurns: 40, maxBudgetUsd: 1 }
@@ -46,12 +45,7 @@ const evidence: Record<string, unknown> = {}
 const TOKENS = [AGENT_TOKEN, OWNER_TOKEN, OAUTH].filter((token): token is string => Boolean(token))
 
 async function owner(args: string[]): Promise<unknown> {
-  try {
-    const { stdout } = await execFileAsync('gh', ['api', ...args], { env: { PATH: process.env.PATH!, HOME: process.env.HOME!, GH_TOKEN: OWNER_TOKEN! } })
-    return JSON.parse(stdout)
-  } catch {
-    throw new Error('gh api failed: ' + args[0])
-  }
+  return await ghJson(OWNER_TOKEN!, args)
 }
 
 async function createIssue(title: string, body: string): Promise<{ number: number; html_url: string }> {
@@ -375,7 +369,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
       ...commitMessages,
       ...branches.map(branch => branch.name),
     ]
-    const matches = texts.filter(text => /\bM\d{1,2}\b|milestone/i.test(text))
+    const matches = texts.filter(text => /\bM\d+\b|milestone/i.test(text))
     const branding = { queried, results: { issues: issues.length, issueComments: issueComments.length, pulls: pulls.length, reviewComments: reviewComments.length, commits: commitMessages.length, branches: branches.length }, scanned: texts.length, matches: matches.length }
     evidence.branding = branding
     console.log(`[LIVE-TEXT] scanned=${branding.scanned} matches=${branding.matches} queried=${queried.length}`)

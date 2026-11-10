@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { assertAllowedRepo } from './guard.ts'
 import type { Ticket } from '../../src/core/index.ts'
 import { repositoryAccess } from '../../src/app/sources.ts'
 import { RepositoryAccessError, Workspaces } from '../../src/executor/workspaces.ts'
@@ -10,7 +11,7 @@ import { Commands } from '../../src/infra/commands.ts'
 
 const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
 const TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
-const REPO = 'ok0/superagent-claude-playground'
+const REPO = assertAllowedRepo('ok0/superagent-claude-playground')
 
 describe.skipIf(!LIVE || !TOKEN)('live private workspace', () => {
   it('prepares a worktree of the private repository with the host token and keeps the token out of git config', async () => {

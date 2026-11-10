@@ -1,0 +1,14 @@
+{
+  "name": "text-utils",
+  "version": "0.1.0",
+  "description": "Small string helpers used as a sandbox for automated changes.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
