@@ -251,3 +251,13 @@ it('stops a running session when a person stops the ticket and frees its slot', 
     expect(w.slots.used).toBe(0)
   } finally { await w.close() }
 })
+
+it('keeps the usage of a turn the worker ends by reporting mid-turn', async () => {
+  const w = workerHarness({ script: ({ index }) => index === 0 ? { turnEnded: { turns: 2, costUsd: 0.5 }, tools: [{ name: 'report', args: { state: 'ready', summary: 'done' } }] } : {} })
+  try {
+    const id = accepted(w, '1').ticketId!
+    await waitUntil(() => !!w.runtime.sessions[0]?.closed)
+    expect(w.ticket(id).ended).toBeDefined()
+    expect(w.workers.get(id)).toMatchObject({ turns: 2, costUsd: 0.5 })
+  } finally { await w.close() }
+})

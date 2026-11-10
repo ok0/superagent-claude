@@ -19,7 +19,7 @@ export interface SessionSpec {
 export type RuntimeEvent =
   | { type: 'session'; sessionId: string }
   | { type: 'inputsRead'; ids: string[] }
-  | { type: 'turnEnded'; outcome: TurnOutcome; turns: number; costUsd: number; background: number }
+  | { type: 'turnEnded'; outcome: TurnOutcome; turns: number; costUsd: number; background: number; discarded?: true }
   | { type: 'error'; message: string; retryable: boolean }
   | { type: 'closed' }
 /** What a runtime reports about its sandbox and version. */

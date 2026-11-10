@@ -104,8 +104,8 @@ describe('claude runtime', () => {
     expect(stillQueued).not.toContain('A')
     expect(stub.interrupts).toBe(1)
     stub.push(result(stub.received[0]!.uuid, 0.002, 'error_during_execution'))
-    await ticks(5)
-    expect(turnEnds(events)).toHaveLength(0)
+    await waitUntil(() => turnEnds(events).length === 1)
+    expect(turnEnds(events)[0]).toMatchObject({ type: 'turnEnded', discarded: true })
   })
 
   it('interrupt on an idle session returns only held ids without calling the SDK', async () => {
@@ -189,11 +189,13 @@ describe('claude runtime', () => {
     stub.push(result(stub.received[0]!.uuid, 0.001, 'error_during_execution'))
     await ticks(5)
     expect(stub.received).toHaveLength(2)
-    expect(turnEnds(events)).toHaveLength(0)
+    await waitUntil(() => turnEnds(events).length === 1)
+    expect(turnEnds(events)[0]).toMatchObject({ type: 'turnEnded', discarded: true })
     stub.push(result(stub.received[1]!.uuid, 0.002))
     await waitUntil(() => stub.received.length === 3)
     expect(stub.received[2]!.message.content).toBe('C')
-    await waitUntil(() => turnEnds(events).length === 1)
+    await waitUntil(() => turnEnds(events).length === 2)
+    expect(turnEnds(events)[1]).not.toMatchObject({ discarded: true })
   })
 
   it('after an interrupt with no newer turn the suppressed result leaves the session idle', async () => {

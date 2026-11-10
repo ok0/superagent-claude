@@ -207,3 +207,40 @@ it('sends nothing after stop', async () => {
   await sleep(20)
   expect(h.gh.calls.length).toBe(n)
 })
+
+it('ingests the body of an Issue first read after its creation even when the repository cursor has passed it', async () => {
+  const h = harness({ repositories: { 'acme/widgets': { notifications: [] } } })
+  await h.start()
+  await h.round()
+  await h.next()
+  h.gh.script.repositories['acme/widgets']!.notifications = [notification(A, 7)]
+  h.gh.script.repositories['acme/widgets']!.issues = { 7: issue(A, 7, { body: '@agent-bot please look', user: { login: 'bob', type: 'User' }, created_at: new Date(START + 30_000).toISOString() }) }
+  await h.next()
+  await h.next()
+  const bodies = h.rec.received.filter(item => item.trigger.meta.kind === 'issue' && item.trigger.threads[0]!.id === 'acme/widgets#7')
+  expect(bodies).toHaveLength(1)
+})
+
+it('does not ingest the body of an Issue created before the Source began when only a comment is new', async () => {
+  const h = harness({ repositories: { 'acme/widgets': {
+    notifications: [notification(A, 8)],
+    issues: { 8: issue(A, 8, { body: '@agent-bot old', user: { login: 'bob', type: 'User' }, created_at: new Date(START - 60_000).toISOString() }) },
+    comments: { 8: [comment(A, 8, 81, { created_at: new Date(START + 5_000).toISOString(), updated_at: new Date(START + 5_000).toISOString() })] },
+  } } })
+  await h.start()
+  await h.round()
+  expect(h.rec.received.some(item => item.trigger.meta.kind === 'issue' && item.trigger.threads[0]!.id === 'acme/widgets#8')).toBe(false)
+  expect(h.rec.received.some(item => item.trigger.threads[0]!.id === 'acme/widgets#8')).toBe(true)
+})
+
+it('an Issue read in two rounds yields one trigger and a duplicate on the second read', async () => {
+  const h = harness({ repositories: { 'acme/widgets': {
+    notifications: [notification(A, 9)],
+    issues: { 9: issue(A, 9, { body: '@agent-bot once', user: { login: 'bob', type: 'User' }, created_at: new Date(START + 10_000).toISOString() }) },
+  } } })
+  await h.start()
+  await h.round()
+  await h.next()
+  const results = h.rec.received.filter(item => item.trigger.meta.kind === 'issue' && item.trigger.threads[0]!.id === 'acme/widgets#9').map(item => item.result)
+  expect(results).toEqual(['stored', 'duplicate'])
+})

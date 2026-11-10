@@ -25,6 +25,7 @@ export interface Retry { since: string; pr: boolean; failedAt?: string; attempts
 export const GITHUB_STATE = {
   access: family<RepositoryAccess, [repository: string]>('repo-access:'),
   since: family<string, [repository: string]>('github-since:'),
+  begun: family<string, [repository: string]>('github-begun:'),
   retries: family<Record<string, Retry>, [repository: string]>('github-retries:'),
   cursor: family<string, [repository: string, number: number]>('github-cursor:', (repository, number) => `${repository}#${number}`),
   ci: family<{ fingerprint: string; revision: number }, [repository: string, number: number]>('github-ci:', (repository, number) => `${repository}#${number}`),
@@ -93,7 +94,10 @@ async function pollNotifications(ctx: SourceContext, round: Round): Promise<{ co
   const { state } = ctx
   const { repository, login } = round
   const since = state.get(GITHUB_STATE.since(repository)) ?? round.started
-  if (state.get(GITHUB_STATE.since(repository)) === undefined) state.set(GITHUB_STATE.since(repository), since)
+  if (state.get(GITHUB_STATE.since(repository)) === undefined) {
+    state.set(GITHUB_STATE.since(repository), since)
+    state.set(GITHUB_STATE.begun(repository), round.started)
+  }
   const path = `notifications?all=true&per_page=50&since=${encodeURIComponent(since)}`
   const raw = await round.api.api(path, '--include')
   const split = raw.search(/\r?\n\r?\n/)
@@ -139,6 +143,8 @@ async function pollNotifications(ctx: SourceContext, round: Round): Promise<{ co
 async function readNotified(ctx: SourceContext, round: Round, number: number, item: Retry): Promise<void> {
   const { since } = item
   const { repository, login } = round
+  const begun = Date.parse(ctx.state.get(GITHUB_STATE.begun(repository)) ?? '')
+  const firstRead = ctx.state.get(GITHUB_STATE.cursor(repository, number)) === undefined
   let isPr = item.pr
   if (!isPr) {
     const issue = await round.api.api(IssueSchema, `issues/${number}`)
@@ -147,7 +153,8 @@ async function readNotified(ctx: SourceContext, round: Round, number: number, it
     if (!isPr) {
       // An Issue opened by someone other than the agent since the cursor brings its body so a mention in it reaches the gate.
       // A mention added by a later edit to the body is not read: only the author can be the actor of the body.
-      const opened = Date.parse(issue.created_at) >= Date.parse(since) && !sameName(issue.user.login, login)
+      const created = Date.parse(issue.created_at)
+      const opened = (created >= Date.parse(since) || (firstRead && created >= begun)) && !sameName(issue.user.login, login)
       if (opened) await ctx.receive(issueTrigger(issue, repository, login))
       await intakeComments(ctx, round, { repository, number, isPr: false, url: issue.html_url }, since)
       nameThread(ctx, repository, number, issue.title)
@@ -155,7 +162,7 @@ async function readNotified(ctx: SourceContext, round: Round, number: number, it
   }
   if (isPr) {
     const pr = await pull(ctx, round, number)
-    if (pr.created_at && Date.parse(pr.created_at) >= Date.parse(since) && !sameName(pr.user.login, login)) {
+    if (pr.created_at && (Date.parse(pr.created_at) >= Date.parse(since) || (firstRead && Date.parse(pr.created_at) >= begun)) && !sameName(pr.user.login, login)) {
       const opened = { number, title: pr.title ?? '', body: pr.body, user: pr.user, created_at: pr.created_at, html_url: pr.html_url }
       await ctx.receive(pullTrigger(opened, repository, login))
     }

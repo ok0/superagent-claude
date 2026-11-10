@@ -40,6 +40,7 @@ export class FakeSession implements AgentSession {
   private wake?: () => void
   private ended = false
   private abort?: AbortController
+  private reaction?: FakeReaction
   private readonly script: FakeScript
   private readonly timers: FakeTimers
 
@@ -72,6 +73,10 @@ export class FakeSession implements AgentSession {
     this.interrupts += 1
     const queued = [...this.pendingSteer.splice(0), ...this.followups.splice(0), ...this.injects.splice(0)]
     this.abort?.abort()
+    if (this.busy) {
+      const end = this.reaction?.turnEnded ?? {}
+      this.emit({ type: 'turnEnded', outcome: end.outcome ?? 'success', turns: end.turns ?? 1, costUsd: end.costUsd ?? 0, background: 0, discarded: true })
+    }
     this.busy = false
     return { stillQueued: queued.map(input => input.id) }
   }
@@ -104,6 +109,7 @@ export class FakeSession implements AgentSession {
     const index = this.turns.length
     this.turns.push({ inputs: [] })
     const reaction = this.script({ spec: this.spec, session: this, index, inputs }) ?? {}
+    this.reaction = reaction
     this.read(this.turns[index]!, inputs, reaction.repeatReads === true)
     this.abort = new AbortController()
     void this.run(reaction, this.abort.signal, this.turns[index]!)

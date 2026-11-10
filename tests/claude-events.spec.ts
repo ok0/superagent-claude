@@ -81,10 +81,12 @@ describe('claude event mapping', () => {
     expect(replay(rec('auth-error'))).toContainEqual(expect.objectContaining({ type: 'error', retryable: false }))
   })
 
-  it('an interrupted turn ends without turnEnded', () => {
+  it('an interrupted turn ends with a discarded turnEnded that carries its usage, and the next turn counts from it', () => {
     const ends = turnEnds(replay(rec('interrupted')))
-    expect(ends).toHaveLength(1)
-    expect((ends[0] as { costUsd: number }).costUsd).toBeCloseTo(0.0015 - 0.00100205, 8)
+    expect(ends).toHaveLength(2)
+    expect(ends[0]).toEqual(expect.objectContaining({ type: 'turnEnded', outcome: 'success', turns: 3, background: 0, discarded: true, costUsd: expect.closeTo(0.00100205, 8) }))
+    expect(ends[1]).toEqual(expect.objectContaining({ type: 'turnEnded', outcome: 'success', turns: 1, costUsd: expect.closeTo(0.0015 - 0.00100205, 8) }))
+    expect((ends[1] as { discarded?: true }).discarded).toBeUndefined()
   })
 
   it('init with a new session id emits session', () => {
@@ -94,4 +96,15 @@ describe('claude event mapping', () => {
       { type: 'session', sessionId: 'S2' },
     ])
   })
+})
+
+it('a result suppressed by interrupt still reports its usage as discarded', () => {
+  const mapper = new EventMapper('S')
+  mapper.message({ type: 'result', subtype: 'success', total_cost_usd: 0.2, num_turns: 1 } as never)
+  mapper.skipNextResult()
+  expect(mapper.message({ type: 'result', subtype: 'error_during_execution', total_cost_usd: 0.7, num_turns: 3 } as never)).toEqual([
+    expect.objectContaining({ type: 'turnEnded', outcome: 'success', turns: 3, background: 0, discarded: true, costUsd: expect.closeTo(0.5, 8) }),
+  ])
+  const next = mapper.message({ type: 'result', subtype: 'success', total_cost_usd: 0.9, num_turns: 1 } as never)
+  expect(next).toEqual([expect.objectContaining({ type: 'turnEnded', outcome: 'success', turns: 1, costUsd: expect.closeTo(0.2, 8) })])
 })

@@ -87,9 +87,10 @@ export class EventMapper {
     const total = typeof m.total_cost_usd === 'number' ? m.total_cost_usd : 0
     if (this.skips > 0) {
       this.skips -= 1
+      const discarded = total >= this.lastTotal ? total - this.lastTotal : total
       this.lastTotal = total
       this.lastError = undefined
-      return []
+      return [{ type: 'turnEnded', outcome: 'success', turns: typeof m.num_turns === 'number' ? m.num_turns : 1, costUsd: discarded, background: 0, discarded: true }]
     }
     const out: RuntimeEvent[] = []
     if (typeof m.user_message_uuid === 'string') {

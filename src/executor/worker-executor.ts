@@ -12,6 +12,7 @@ import type { WorkerRecord, WorkerStore } from './worker-store.ts'
 export const RUNTIME_RETRIES = 3
 export const RETRY_BACKOFF_MS = 15_000
 export const BACKGROUND_LIMIT_MS = 30 * 60_000
+const DRAIN_MS = 2_000
 export const workerKey = (ticketId: string): string => `worker-${ticketId}`
 export interface Workspace { repository: string; cwd: string; branch: string; pushRemote?: string }
 export type PromptChange = { kind: 'same' } | { kind: 'team'; notice: string } | { kind: 'fixed' }
@@ -65,7 +66,7 @@ export function renderInput(input: TicketInput, trigger?: Trigger): string | und
 
 interface Live {
   ticketId: string; assignmentId: string; session: AgentSession; reads: ReadLedger; outstanding: Map<string, InputMode>
-  lastActivity: number; background?: unknown; timers: Set<unknown>
+  lastActivity: number; background?: unknown; timers: Set<unknown>; drained?: () => void
 }
 
 export class WorkerExecutor implements Executor {
@@ -346,7 +347,10 @@ export class WorkerExecutor implements Executor {
     try {
       for await (const event of live.session.events()) {
         if (event.type === 'closed') break
-        if (this.live.get(live.ticketId) !== live) continue
+        if (this.live.get(live.ticketId) !== live) {
+          if (event.type === 'turnEnded') this.discard(live, event)
+          continue
+        }
         try { await this.on(live, event) } catch (e) { this.problem(e) }
       }
     } catch (e) { this.problem(e) }
@@ -372,6 +376,10 @@ export class WorkerExecutor implements Executor {
         return
       }
       case 'turnEnded': {
+        if (event.discarded) {
+          this.discard(live, event)
+          return
+        }
         const usage = this.workers.addUsage(ticketId, assignmentId, event.turns, event.costUsd)
         this.engine().turnEnded(ticketId, assignmentId)
         const limit = event.outcome === 'max_turns' || usage.turns > this.limits.maxTurns ? 'turn limit'
@@ -426,6 +434,10 @@ export class WorkerExecutor implements Executor {
         return
     }
   }
+  private discard(live: Live, event: Extract<RuntimeEvent, { type: 'turnEnded' }>): void {
+    this.workers.addUsage(live.ticketId, live.assignmentId, event.turns, event.costUsd)
+    live.drained?.()
+  }
   private hasWork(live: Live): boolean {
     const ticket = this.store.tickets.get(live.ticketId)
     return [...live.outstanding.values()].some(mode => mode !== 'inject') || (!!ticket && this.batch(ticket).length > 0)
@@ -449,7 +461,13 @@ export class WorkerExecutor implements Executor {
       const l = this.live.get(ticketId)
       if (l?.assignmentId === assignmentId) {
         this.detach(l)
+        let settle!: () => void
+        const drained = new Promise<void>(resolve => { settle = resolve })
+        l.drained = settle
+        const bound = this.timers.setTimeout(() => settle(), DRAIN_MS)
         await l.session.interrupt().catch(() => {})
+        await drained
+        this.timers.clearTimeout(bound)
         await this.release(l)
       } else if (!l && !this.launching.has(ticketId)) {
         this.slots.release(ticketId)
