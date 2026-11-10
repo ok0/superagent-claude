@@ -164,7 +164,7 @@ describe('scan', () => {
   it('the repository src tree has no violations', () => {
     const r = scan(ROOT)
     expect(r.violations).toEqual([])
-    for (const p of ['src/core/errors.ts', 'src/core/ids.ts', 'src/core/index.ts', 'src/core/memory.ts', 'src/core/model.ts', 'src/core/part.ts', 'src/core/ports.ts', 'src/core/reasons.ts', 'src/core/stage.ts']) {
+    for (const p of ['src/core/assignments.ts', 'src/core/engine.ts', 'src/core/errors.ts', 'src/core/evals.ts', 'src/core/ids.ts', 'src/core/index.ts', 'src/core/intake.ts', 'src/core/memory.ts', 'src/core/model.ts', 'src/core/part.ts', 'src/core/ports.ts', 'src/core/reasons.ts', 'src/core/replies.ts', 'src/core/stage.ts', 'src/core/tickets.ts']) {
       expect(r.files).toContain(p)
     }
   })

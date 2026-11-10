@@ -34,13 +34,21 @@ Ported files
 Each ported file starts with the header
 "// Ported from dsh-superagent-prototype (MIT) <reference path>".
 
+src/core/assignments.ts <- src/core/assignments.ts
+src/core/engine.ts      <- src/core/engine.ts
 src/core/errors.ts      <- src/core/errors.ts
+src/core/evals.ts       <- src/core/evals.ts
 src/core/ids.ts         <- src/core/ids.ts
-src/core/index.ts       <- src/core/index.ts (partial: Engine re-export deferred to M4)
+src/core/index.ts       <- src/core/index.ts
+src/core/intake.ts      <- src/core/intake.ts
 src/core/memory.ts      <- src/core/memory.ts
 src/core/model.ts       <- src/core/model.ts
 src/core/part.ts        <- src/core/part.ts
 src/core/ports.ts       <- src/core/ports.ts
 src/core/reasons.ts     <- src/core/reasons.ts
+src/core/replies.ts     <- src/core/replies.ts
 src/core/stage.ts       <- src/core/stage.ts
+src/core/tickets.ts     <- src/core/tickets.ts
+tests/core-engine.spec.ts <- tests/core-engine.spec.ts
+tests/fixtures/engine.ts <- tests/core-engine.spec.ts (harness)
 tests/stage.spec.ts     <- tests/stage.spec.ts
