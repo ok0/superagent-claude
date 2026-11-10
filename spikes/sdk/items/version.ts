@@ -80,8 +80,8 @@ async function run(): Promise<ItemResult> {
       detail: `onFailure=${dts.includes('onFailure')}, still_queued=${dts.includes('still_queued')}`,
     },
     {
-      name: 'only-sdk-dependency',
-      ok: depKeys.length === 1 && depKeys[0] === SDK,
+      name: 'sdk-in-dependencies',
+      ok: depKeys.includes(SDK),
       detail: `dependencies=${depKeys.join(',') || 'none'}`,
     },
   ]

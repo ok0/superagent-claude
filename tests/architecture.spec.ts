@@ -1,4 +1,4 @@
-// Enforces the layer import rules (PAC1): core stays free of Node I/O and the SDK, policy stays inside core, and the SDK is imported only from src/runtimes/claude.
+// Enforces the layer import rules (PAC1): core stays free of Node I/O and the SDK, policy imports only zod, core and itself, and the SDK is imported only from src/runtimes/claude.
 import { describe, it, expect, afterEach } from 'vitest'
 import ts from 'typescript'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync, existsSync } from 'node:fs'
@@ -53,7 +53,7 @@ function checkFile(file: string, source: string): Violation[] {
     }
     if (file.startsWith('src/policy/')) {
       const r = rel ? resolves(file, spec) : ''
-      const allowed = spec === 'zod' || spec === 'node:crypto' || (rel && (r.startsWith('src/policy/') || r.startsWith('src/core/')))
+      const allowed = spec === 'zod' || (rel && (r.startsWith('src/policy/') || r.startsWith('src/core/')))
       if (!allowed) violations.push({ file, specifier: spec, rule: 'policy' })
     }
     if ((spec === SDK || spec.startsWith(SDK + '/')) && !file.startsWith('src/runtimes/claude/')) {
@@ -109,9 +109,17 @@ describe('policy rule', () => {
     expect(checkFile('src/policy/policy.ts', "import fs from 'node:fs'")).toEqual([{ file: 'src/policy/policy.ts', specifier: 'node:fs', rule: 'policy' }])
   })
 
-  it('allows core, sibling, zod and node:crypto imports', () => {
-    const src = "import { M } from '../core/model.ts'\nimport { A } from './admission.ts'\nimport { z } from 'zod'\nimport { createHash } from 'node:crypto'"
+  it('allows core, sibling and zod imports', () => {
+    const src = "import { M } from '../core/model.ts'\nimport { A } from './admission.ts'\nimport { z } from 'zod'"
     expect(checkFile('src/policy/policy.ts', src)).toEqual([])
+  })
+
+  it('flags node:crypto in src/policy', () => {
+    expect(checkFile('src/policy/policy.ts', "import { createHash } from 'node:crypto'")).toEqual([{ file: 'src/policy/policy.ts', specifier: 'node:crypto', rule: 'policy' }])
+  })
+
+  it('flags relative imports into infra', () => {
+    expect(checkFile('src/policy/policy.ts', "import { sameName } from '../infra/text.ts'").map(v => v.rule)).toEqual(['policy'])
   })
 
   it('flags relative imports outside policy and core', () => {
@@ -167,5 +175,7 @@ describe('scan', () => {
     for (const p of ['src/core/assignments.ts', 'src/core/engine.ts', 'src/core/errors.ts', 'src/core/evals.ts', 'src/core/ids.ts', 'src/core/index.ts', 'src/core/intake.ts', 'src/core/memory.ts', 'src/core/model.ts', 'src/core/part.ts', 'src/core/ports.ts', 'src/core/reasons.ts', 'src/core/replies.ts', 'src/core/stage.ts', 'src/core/tickets.ts']) {
       expect(r.files).toContain(p)
     }
+    for (const p of ['src/policy/actors.ts', 'src/policy/admission.ts', 'src/policy/limits.ts', 'src/policy/policy.ts']) expect(r.files).toContain(p)
+    expect(r.files.filter(f => f.startsWith('src/policy/')).length).toBeGreaterThanOrEqual(4)
   })
 })
