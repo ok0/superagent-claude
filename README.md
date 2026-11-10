@@ -23,7 +23,7 @@ The binary is `lib/cli.js`. After `pnpm link --global` it runs as `superagent-cl
 
 ## Agent account
 
-The agent needs a separate GitHub account with a personal access token in `SUPERAGENT_CLAUDE_GITHUB_TOKEN`. The account must be able to read the target repositories. Push access lets it open branches in them. Without push it works from a fork.
+The agent needs a separate GitHub account with a personal access token in `SUPERAGENT_CLAUDE_GITHUB_TOKEN`. The account must be able to read the target repositories. Write (push) access lets it push agent branches and open pull requests. Without write access it still receives events, replies and prepares a worktree, and a code change stops as blocked with a request to grant the agent account write access.
 
 Do not put the agent account's login in `policy.allowed`. superagent-claude refuses to start if you do.
 
@@ -49,7 +49,7 @@ To run it as a service, see [docs/deploy.md](docs/deploy.md).
 
 ## Configuration
 
-The config file `superagent-claude.json` has 20 settings.
+The config file `superagent-claude.json` has 19 settings.
 
 Required:
 
@@ -70,7 +70,6 @@ Everything else has a default.
 | `auth.mode` | `api-key` |
 | `auth.owner` | unset |
 | `auth.acceptSubscriptionSharedUseRisk` | `false` |
-| `delivery.forkWhenNoPush` | `true` |
 | `delivery.allowAutoMerge` | `false` |
 | `workers.max` | `2` |
 | `workers.maxTurns` | `100` |

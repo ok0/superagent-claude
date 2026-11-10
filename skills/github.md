@@ -11,7 +11,7 @@ GitHub writes go through host tools only: mcp__superagent__orchestrator_review_r
 
 For a review comment URL ending in `#discussion_r<ID>`, read github/pulls/<PR>/thread/<ID>; the id of its first comment is the root ID. Record the bot run identifier, review-round count and dispositions in `mcp__superagent__orchestrator_report`; the PR description retains the final implementation, verification and material limitations.
 
-The host delivers subscribed PR comments, reviews and CI directly to the bound worker. mcp__superagent__orchestrator_publish binds the PR thread to this ticket; immediately after it opens or adopts the PR, call `mcp__superagent__orchestrator_report` with `state: progress` and the returned PR URL in the summary; do not wait for CI or handoff. Read each original trigger and acknowledge new human requests before substantial work. Worker reports still go to the orchestrator for concise source-conversation delivery.
+The host delivers subscribed PR comments, reviews and CI directly to the bound worker. mcp__superagent__orchestrator_publish binds the PR thread to this ticket; immediately after it opens or adopts the PR, call `mcp__superagent__orchestrator_report` with `state: progress` and the returned PR URL in the summary; do not wait for CI or handoff. Read each original trigger and acknowledge new human requests before substantial work. Worker reports still go to the orchestrator for concise source-conversation delivery. If it returns published: false, no branch or PR exists; report blocked asking for write access as the Delivery section says.
 
 Check truncations and pagination rather than assuming a returned page is complete.
 Check results, preserve source IDs and timestamps, and report unavailable content honestly.

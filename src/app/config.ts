@@ -38,10 +38,7 @@ export const ConfigSchema = z.object({
     owner: LoginSchema.optional(),
     acceptSubscriptionSharedUseRisk: z.boolean().default(false),
   }).strict().default({ mode: 'api-key', acceptSubscriptionSharedUseRisk: false }),
-  delivery: z.object({
-    forkWhenNoPush: z.boolean().default(true),
-    allowAutoMerge: z.boolean().default(false),
-  }).strict().default({ forkWhenNoPush: true, allowAutoMerge: false }),
+  delivery: z.object({ allowAutoMerge: z.boolean().default(false) }).strict().default({ allowAutoMerge: false }),
   workers: z.object({
     max: z.number().int().min(LIMITS.maxWorkers.min).max(LIMITS.maxWorkers.max).default(2),
     maxTurns: z.number().int().min(1).default(100),

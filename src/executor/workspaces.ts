@@ -1,19 +1,28 @@
-/** Worker workspaces: git worktrees on agent branches over one shared clone per repository, and scratch directories for fake runs. Clone and fetch get the injected access env (authentication) and errors mask its secrets. Publishing pushes an agent branch without force, adding co-author trailers only to commits not yet pushed. */
+/** Worker workspaces: git worktrees on agent branches over one shared clone per repository, and scratch directories for fake runs. Clone and fetch get the injected access env (authentication) and errors mask its secrets. Publishing pushes an agent branch without force, adding co-author trailers only to commits not yet pushed. Access errors carry the HTTP status when one is known. */
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Ticket } from '../core/index.ts'
-import type { Commands } from '../infra/commands.ts'
+import { CliError, type Commands } from '../infra/commands.ts'
 import type { Workspace } from './worker-executor.ts'
 
 export class RepositoryAccessError extends Error {
   readonly repository: string
   readonly reason: string
-  constructor(repository: string, reason: string) {
-    super(`Repository ${repository} could not be accessed: ${reason}`)
+  readonly status: number | undefined
+  constructor(repository: string, reason: string, status?: number) {
+    super(`Repository ${repository} could not be accessed${status ? ` (HTTP ${status})` : ''}: ${reason}`)
     this.name = 'RepositoryAccessError'
     this.repository = repository
     this.reason = reason
+    this.status = status
   }
+}
+
+/** The HTTP status of a failed hosting or git call: the API error code, or the status git or the API program printed. */
+export function accessStatus(error: unknown): number | undefined {
+  if (error instanceof CliError && error.code !== undefined && error.code >= 100 && error.code <= 599) return error.code
+  const found = /\b(?:HTTP|returned error:)\s*(\d{3})\b/i.exec(error instanceof Error ? error.message : String(error))
+  return found ? Number(found[1]) : undefined
 }
 
 export interface WorkspaceProvider {
@@ -133,7 +142,7 @@ export class Workspaces implements WorkspaceProvider {
       }
     } catch (e) {
       if (!existsSync(join(dir, '.git'))) rmSync(dir, { recursive: true, force: true })
-      throw new RepositoryAccessError(repository, this.redact(e instanceof Error ? e.message : String(e)))
+      throw new RepositoryAccessError(repository, this.redact(e instanceof Error ? e.message : String(e)), accessStatus(e))
     }
     await this.git(['config', 'core.hooksPath', this.hooks], dir)
     return dir
@@ -196,7 +205,7 @@ export class Workspaces implements WorkspaceProvider {
         } catch (error) {
           const message = this.redact(error instanceof Error ? error.message : String(error))
           if (/non-fast-forward|fetch first|rejected/i.test(message)) throw new Error('The push was rejected without force; the remote branch has commits this worktree lacks: ' + message)
-          throw new RepositoryAccessError(repository, message)
+          throw new RepositoryAccessError(repository, message, accessStatus(error))
         }
       }
       return { repository, branch, base, head: (await this.git(['rev-parse', 'HEAD'], cwd)).trim(), pushed: list.length, rewritten, uncommitted }

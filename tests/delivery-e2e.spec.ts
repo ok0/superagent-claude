@@ -119,7 +119,7 @@ it('publish twice opens one PR bound to the ticket, and a PR follow-up resumes t
   const worker = fake.sessions.find(session => session.spec.role === 'worker')!
   const [first, second] = publishResults(worker)
   expect(first!.pr).toBe(2)
-  expect(second).toMatchObject({ pr: first!.pr, created: false })
+  expect(second).toMatchObject({ published: true, pr: first!.pr, created: false })
   expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')).toHaveLength(1)
   expect(runtime!.store.tickets.get(ticketId)!.follows).toContainEqual(expect.objectContaining({ thread: 'github:acme/widgets#2', own: true }))
 
@@ -154,7 +154,7 @@ it('publish twice opens one PR bound to the ticket, and a PR follow-up resumes t
   const receiving = fake.sessions.find(session => session.spec.role === 'worker' && session.sent.some(input => input.text.includes('second paragraph')))!
   await waitUntil(() => publishResults(receiving).length === 1)
   const third = publishResults(receiving)[0]!
-  expect(third).toMatchObject({ pr: first!.pr, created: false, pushed_commits: 1 })
+  expect(third).toMatchObject({ published: true, pr: first!.pr, created: false, pushed_commits: 1 })
   expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')).toHaveLength(1)
   expect(records.filter(item => item.event === 'eval.started')).toHaveLength(evalsBefore)
   expect(runtime!.store.tickets.list()).toHaveLength(1)

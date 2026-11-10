@@ -1,4 +1,4 @@
-/** Host-side pull request writes under the agent account: open or adopt the PR of a branch, reply in a review thread and resolve it, enable auto-merge (never merge), close a PR. Only gh api REST and graphql calls. */
+/** Host-side pull request writes under the agent account: open or adopt the PR of a branch, reply in a review thread and resolve it, enable auto-merge (never merge), close a PR, and read the push permission. Only gh api REST and graphql calls. */
 import { z } from 'zod'
 import type { Commands } from '../../infra/commands.ts'
 import { repositoryCommands } from './read.ts'
@@ -10,6 +10,8 @@ export interface PullRequests {
   replyReviewThread(repository: string, pr: number, commentId: number, body: string, resolve: boolean, signal?: AbortSignal): Promise<{ replyId: number; resolved: boolean }>
   enableAutoMerge(repository: string, pr: number, method: MergeMethod, signal?: AbortSignal): Promise<{ enabled: true }>
   close(repository: string, pr: number, reason: string, signal?: AbortSignal): Promise<{ closed: true }>
+  /** Whether the agent account may push to the repository now, from GET repos/<r> permissions.push. */
+  pushPermission(repository: string, signal?: AbortSignal): Promise<boolean>
 }
 
 const PullLite = z.looseObject({ number: z.number(), html_url: z.string(), head: z.looseObject({ ref: z.string() }) })
@@ -79,6 +81,11 @@ export function githubPullRequests(commands: Commands): PullRequests {
       await scoped.api(z.unknown(), `issues/${pr}/comments`, '--method', 'POST', '-f', 'body=' + reason)
       await scoped.api(z.unknown(), 'pulls/' + pr, '--method', 'PATCH', '-f', 'state=closed')
       return { closed: true }
+    },
+
+    async pushPermission(repository, signal) {
+      const repo = await repositoryCommands(commands.withSignal(signal), repository).api(z.looseObject({ permissions: z.looseObject({ push: z.boolean().optional() }).nullish() }), '')
+      return repo.permissions?.push === true
     },
   }
 }

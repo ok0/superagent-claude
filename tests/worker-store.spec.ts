@@ -12,7 +12,7 @@ let directory: string
 let store: Store
 let workers: WorkerStore
 const now = () => Date.parse('2026-09-23T00:00:00Z')
-const rec = { ticketId: 't1', assignmentId: 'a1', runtime: 'fake', sessionId: 's1', repository: 'owner/repo', cwd: '/work/t1', branch: 'agent/t1', pushRemote: null, turns: 0, costUsd: 0, promptVersion: 'p1' }
+const rec = { ticketId: 't1', assignmentId: 'a1', runtime: 'fake', sessionId: 's1', repository: 'owner/repo', cwd: '/work/t1', branch: 'agent/t1', turns: 0, costUsd: 0, promptVersion: 'p1' }
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'worker-store-'))
   store = new Store(join(directory, 'db.sqlite'))
@@ -51,6 +51,11 @@ it('records the session id', () => {
   workers.put(rec)
   workers.setSession('t1', 's2')
   expect(workers.get('t1')?.sessionId).toBe('s2')
+})
+
+it('writes the legacy push_remote column as NULL', () => {
+  workers.put(rec)
+  expect(store.db.prepare("SELECT push_remote FROM worker WHERE ticket_id='t1'").get()?.push_remote).toBeNull()
 })
 
 it('setPromptVersion updates only the prompt version', () => {
