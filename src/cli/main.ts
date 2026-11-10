@@ -124,7 +124,7 @@ async function start(argv: readonly string[], io: CliIo): Promise<number> {
 
   let runtime: Runtime
   try {
-    runtime = new Runtime({ config, configDir: dirname(path), configPath: path, env: io.env, runtime: agent.runtime, workspaces: agent.workspaces, log: jsonLines(io.out), startup: report, ...sources })
+    runtime = new Runtime({ config, configDir: dirname(path), configPath: path, env: io.env, runtime: agent.runtime, workspaces: agent.workspaces, router: agent.router, log: jsonLines(io.out), startup: report, ...sources })
   } catch (error) {
     io.err(`superagent-claude: ${messageOf(error)}\n`)
     return EXIT_REFUSED

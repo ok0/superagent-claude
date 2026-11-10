@@ -9,7 +9,8 @@ import { agentEnv, createAgent } from '../src/app/agent.ts'
 import { ConfigSchema } from '../src/app/config.ts'
 import { resolveCredential } from '../src/app/credentials.ts'
 import { Runtime } from '../src/app/runtime.ts'
-import { MCP_TOOL_PREFIX, WORKER_TOOLS } from '../src/app/tool-names.ts'
+import { MCP_TOOL_PREFIX, ROUTER_TOOLS, WORKER_TOOLS } from '../src/app/tool-names.ts'
+import type { AgentRuntime, SessionSpec } from '../src/executor/contract.ts'
 import { AUTH_ENV, CLAUDE_INHERITED_ENV, type AuthMode } from '../src/runtimes/claude/options.ts'
 import { ClaudeRuntime } from '../src/runtimes/claude/runtime.ts'
 import { FakeRuntime } from '../src/runtimes/fake/runtime.ts'
@@ -59,11 +60,13 @@ describe('agent wiring', () => {
     expect(claude.runtime).toBeInstanceOf(ClaudeRuntime)
     expect(claude.runtime.id).toBe('claude')
     expect(claude.workspaces).toBe('git')
+    expect(claude.router).toBe('session')
     expect(existsSync(join(config.stateDir, 'claude'))).toBe(true)
 
     const fake = createAgent({ config, credential: resolveCredential('api-key', ALL), env: ALL, fake: () => ({}) })
     expect(fake.runtime).toBeInstanceOf(FakeRuntime)
     expect(fake.workspaces).toBe('scratch')
+    expect(fake.router).toBe('deterministic')
   })
 
   it.each(MODES)('the %s adapter env carries only that mode\'s variables', async mode => {
@@ -99,9 +102,46 @@ describe('agent wiring', () => {
     await waitUntil(() => sdk.queries.length === 1)
     const options = sdk.queries[0]!.options
     expect(Object.keys(options.mcpServers!)).toEqual(['superagent'])
-    const LATER = ['orchestrator_read', 'orchestrator_publish']  // M14, M16
+    const LATER = ['orchestrator_publish']  // M16
     expect(options.allowedTools!.filter(t => t.startsWith(MCP_TOOL_PREFIX)).sort()).toEqual(WORKER_TOOLS.filter(n => !LATER.includes(n)).map(n => MCP_TOOL_PREFIX + n).sort())
     expect(options.model).toBe('claude-test-model')
     expect((options.env as Record<string, string | undefined>).SUPERAGENT_CLAUDE_GITHUB_TOKEN).toBeUndefined()
+  })
+
+  it('the Claude start opens the Router session with the Router tools and no stand-in', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'agent-wiring-'))
+    const sdk = stubSdk()
+    const config = cfg('subscription')
+    const agent = createAgent({ config, credential: resolveCredential('subscription', ALL), env: ALL, query: sdk.query })
+    const specs: SessionSpec[] = []
+    const spy: AgentRuntime = { id: agent.runtime.id, probe: () => agent.runtime.probe(), open: spec => { specs.push(spec); return agent.runtime.open(spec) } }
+    const chat = testSource()
+    runtime = new Runtime({ config, runtime: spy, router: agent.router, kinds: [chat.kind], services: [chat.service] })
+    await runtime.start()
+    const router = sdk.queries[0]!
+    const options = router.options
+    expect(options.cwd).toBe(join(config.stateDir, 'router'))
+    expect(options.allowedTools!.filter(t => t.startsWith(MCP_TOOL_PREFIX)).sort()).toEqual(ROUTER_TOOLS.map(n => MCP_TOOL_PREFIX + n).sort())
+    expect(options.disallowedTools).toEqual(expect.arrayContaining(['Bash', 'Write', 'Edit', 'NotebookEdit', 'WebFetch', 'WebSearch']))
+    expect(typeof options.systemPrompt).toBe('string')
+    expect((options.systemPrompt as string).startsWith('## Host rules')).toBe(true)
+    const env = options.env as Record<string, string | undefined>
+    const others = (['api-key', 'bedrock', 'vertex'] as const).flatMap(mode => AUTH_ENV[mode]).filter(key => !AUTH_ENV.subscription.includes(key))
+    for (const key of AUTH_ENV.subscription) if (key in ALL) expect(env[key]).toBe(ALL[key])
+    for (const key of others) expect(env[key]).toBeUndefined()
+    expect(env.SUPERAGENT_CLAUDE_GITHUB_TOKEN).toBeUndefined()
+
+    chat.emit(trigger('1', { addressed: 'mention', meta: { repository: 'owner/repo' } }))
+    await waitUntil(() => router.received.length >= 1)
+    const routeTool = specs.find(spec => spec.role === 'router')!.tools.find(tool => tool.name === 'orchestrator_route')!
+    await routeTool.execute({ decisions: [{ kind: 'accept', trigger_id: '1', title: 'Fix', worktree_name: 'fix-it', acknowledgement: 'On it.' }] }, new AbortController().signal)
+    await waitUntil(() => specs.some(spec => spec.role === 'worker'))
+    const worker = specs.find(spec => spec.role === 'worker')!
+    expect(worker.tools.map(tool => tool.name).sort()).toEqual(WORKER_TOOLS.filter(name => !['orchestrator_publish'].includes(name)).sort())
+    const report = worker.tools.find(tool => tool.name === 'orchestrator_report')!
+    await report.execute({ state: 'ready', summary: 'Done' }, new AbortController().signal)
+    await waitUntil(() => router.received.some(message => JSON.stringify(message).includes('worker_report')))
+    await runtime.outbox.sent()
+    expect(chat.sent.some(message => message.text === 'Done')).toBe(false)
   })
 })

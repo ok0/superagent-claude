@@ -1,23 +1,34 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/tools/executor.ts
 /**
  * Worker Session tools for acknowledging requests, managing threads, handing back out-of-scope triggers, and reporting status.
- * Changes from the reference: `orchestrator_read` (M14), `pr_number` and the PR claim (M16, `orchestrator_publish`), the Router
- * relay and notify side effects (M14) and `sendReplies` are removed; the host is narrowed to the engine and a ticket lookup.
+ * Changes from the reference: `orchestrator_read` is restored (M14) over the injected reader; `pr_number` and the PR claim
+ * (M16, `orchestrator_publish`) and `sendReplies` are removed; a GitHub thread must name a configured repository; a followed
+ * thread is announced to the Router session through `notify` (M14); the report relay is the Runtime's (M14).
  */
 import { z } from 'zod'
 import { type EngineForExecutor, type WorkerReport } from '../../core/index.ts'
 import { liveTicket, type Ticket } from '../../core/model.ts'
 import type { ToolSpec } from '../../executor/contract.ts'
-import { AcknowledgementSchema, HumanActionSchema, tool } from './tool.ts'
+import { parseThreadId, configured } from '../../sources/github/trigger.ts'
+import { resourceGrammar } from '../resources.ts'
+import { threadFollowedNotice, type Notice } from '../notices.ts'
+import { AcknowledgementSchema, HumanActionSchema, readTool, tool } from './tool.ts'
 
 export interface ExecutorToolsHost {
   engine(): Pick<EngineForExecutor, 'report' | 'reply' | 'markUnrelated' | 'handback' | 'followForContext'>
   ticket(id: string): Pick<Ticket, 'ended'> | undefined
+  read?(resource: string, offset: number, limit: number | undefined, signal: AbortSignal): Promise<unknown>
+  /** Announces a change to the Router session; present when the Router session runs. */
+  notify?(notice: Notice): void
+  repositories?(): readonly string[]
 }
 
 export function executorTools(host: ExecutorToolsHost, ticket: Pick<Ticket, 'id'>): ToolSpec[] {
   const ticketId = ticket.id
   return [
+    readTool('Read one page of a resource of this ticket that the resource parameter lists. Follow next_offset, and next_resource where a page names one.',
+      resourceGrammar(true), (resource, offset, limit, signal) => host.read
+        ? host.read(resource, offset, limit, signal) : Promise.reject(new Error('No resources are available in this session'))),
     tool({
       name: 'orchestrator_ack',
       description: 'Acknowledge one original human request before substantial work, as the replies section says; it posts as a reply to that message.',
@@ -52,7 +63,15 @@ export function executorTools(host: ExecutorToolsHost, ticket: Pick<Ticket, 'id'
       execute: async args => {
         const at = args.thread.indexOf(':')
         if (at < 1 || at === args.thread.length - 1) throw new Error('A thread key is <source>:<id>, as trigger/<id> shows it')
-        const followed = host.engine().followForContext(ticketId, { source: args.thread.slice(0, at), id: args.thread.slice(at + 1) })
+        const source = args.thread.slice(0, at)
+        const id = args.thread.slice(at + 1)
+        if (source === 'github' && host.repositories) {
+          const parsed = parseThreadId(id)
+          if (!parsed) throw new Error('A GitHub thread key is github:<owner>/<name>#<number>')
+          if (!configured(host.repositories(), parsed.repository)) throw new Error(`Repository ${parsed.repository} is not in the configured repositories`)
+        }
+        const followed = host.engine().followForContext(ticketId, { source, id })
+        if (followed && host.notify) host.notify(threadFollowedNotice(ticketId, args.thread, args.reason))
         return { followed, thread: args.thread }
       },
     }),

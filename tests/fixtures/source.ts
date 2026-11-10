@@ -4,13 +4,14 @@ import type { OutboundMessage, ReceiveResult, Trigger } from '../../src/core/ind
 import type { SourceHost, SourceService } from '../../src/sources/host.ts'
 import type { SourceKind } from '../../src/sources/kind.ts'
 
-export function testSource(kind = 'chat') {
+export function testSource(kind = 'chat', extra: Partial<SourceKind> = {}) {
   const sent: OutboundMessage[] = []
   let stops = 0
   let current: SourceHost | undefined
   const source: SourceKind = {
     kind, schema: z.record(z.string(), z.unknown()),
     channel: { send: async message => { sent.push(message); return 'sent' } },
+    ...extra,
   }
   const service: SourceService = {
     kind,

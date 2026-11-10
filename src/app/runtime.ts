@@ -1,9 +1,9 @@
 /**
- * The composition root: Store → Engine (Policy, SourceScope, Assessor, WorkerExecutor, Outbox) → Source kinds → AdmissionFilter in front of Passes → effect handlers → recovery. `start()` recovers interrupted work and starts the loops and Source services; `stop()` cleans up within STOP_TIMEOUT_MS. `reload()` re-reads the config file while the runtime runs: the policy part is applied to the next Trigger, startup-only keys are reported and kept, and a refused file keeps the running config. The assessor is deterministic and the worker instructions are the assembled prompt; worker workspaces are git worktrees (or scratch directories for fake runs) and the worker tools are the executor tools.
+ * The composition root: Store → Engine (Policy, SourceScope, Assessor, WorkerExecutor, Outbox) → Source kinds → AdmissionFilter in front of Passes → effect handlers → recovery. `start()` recovers interrupted work and starts the loops and Source services; `stop()` cleans up within STOP_TIMEOUT_MS. `reload()` re-reads the config file while the runtime runs: the policy part is applied to the next Trigger, startup-only keys are reported and kept, and a refused file keeps the running config. In session mode (`router: 'session'`) the Router session is hosted by `RouterHost` and assesses candidates through `MasterAssessor`; otherwise the assessor is deterministic (`GateAssessor`). The worker instructions are the assembled prompt; worker workspaces are git worktrees (or scratch directories for fake runs) and the worker tools are the executor tools.
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { Engine, UserError, type Assessor, type Candidate, type DomainEvent, type EngineForExecutor, type Policy, type Ticket } from '../core/index.ts'
+import { Engine, UserError, key, type Assessor, type Candidate, type DomainEvent, type EngineForExecutor, type Policy, type Ticket, type WorkerReport } from '../core/index.ts'
 import type { AgentRuntime, ToolSpec } from '../executor/contract.ts'
 import { recover } from '../executor/recovery.ts'
 import { Slots } from '../executor/slots.ts'
@@ -25,6 +25,14 @@ import { Passes, type Timers as PassTimers } from './passes.ts'
 import { databasePath, Store } from './store.ts'
 import { PromptVersions, Prompts, ruleLines } from './prompts.ts'
 import { executorTools, type ExecutorToolsHost } from './tools/executor.ts'
+import { RouterHost } from '../executor/router-host.ts'
+import { MasterAssessor } from './assessment.ts'
+import { candidateCard } from './links.ts'
+import { mainTools, type MainToolsHost } from './tools/main.ts'
+import { eventNotice, followupNotice, reportRelay, type Notice } from './notices.ts'
+import { readResource, type ResourceHost } from './resources.ts'
+import { TextCache } from './cache.ts'
+import { KV } from './kv.ts'
 
 export const STOP_TIMEOUT_MS = 10_000
 
@@ -112,6 +120,10 @@ export interface RuntimeOptions {
   runtime: AgentRuntime
   /** Worker workspaces: 'git' worktrees (Claude start) or 'scratch' directories (default; fake runs, no git or network). */
   workspaces?: 'git' | 'scratch'
+  /** 'session' opens the Router session (RouterHost) and assesses through MasterAssessor; 'deterministic' (default) keeps GateAssessor and the ready-summary stand-in. */
+  router?: 'session' | 'deterministic'
+  /** Reads a GitHub resource for the Router and worker `github/…` reads; the Source assembly point provides it. */
+  githubRead?: (repository: string, resource: string, signal?: AbortSignal) => Promise<unknown>
   /** Remote URLs and clone/fetch authentication for git workspaces; the Source assembly point provides it. */
   access?: RepositoryAccess
   kinds?: readonly SourceKind[]
@@ -161,6 +173,12 @@ export class Runtime implements SourceHost {
   readonly passes: Passes
   readonly prompts: Prompts
   readonly workspaces: WorkspaceProvider
+  readonly router?: RouterHost
+  readonly resources: ResourceHost
+  private executorEngine!: EngineForExecutor
+  private assessor!: Assessor & { stop?(): void }
+  private mainHost?: MainToolsHost
+  private quiet = 0
   private current: Config
   get config(): Config { return this.current }
   private readonly agent: AgentRuntime
@@ -198,6 +216,7 @@ export class Runtime implements SourceHost {
     this.services = options.services ?? []
     this.stopTimeoutMs = options.stopTimeoutMs ?? STOP_TIMEOUT_MS
     const now = this.now
+    const session = options.router === 'session'
     mkdirSync(config.stateDir, { recursive: true, mode: 0o700 })
     const store = new Store(databasePath(config.stateDir), error => {
       this.log({ level: 'error', at: new Date(now()).toISOString(), event: 'store.error', detail: String(error) })
@@ -216,6 +235,7 @@ export class Runtime implements SourceHost {
       this.settings = settings
       this.prompts = new Prompts({ versions: new PromptVersions(store, now), ...(options.configDir === undefined ? {} : { teamDir: join(options.configDir, 'prompts', 'team') }), rules: () => ruleLines(this.settings.policy.rules) })
       this.prompts.baseline('worker')
+      if (session) this.prompts.baseline('router')
       const sources = new SourceRegistry(() => ({}), board)
       this.sources = sources
       for (const kind of options.kinds ?? []) this.disposers.push(sources.register(kind))
@@ -230,21 +250,37 @@ export class Runtime implements SourceHost {
         const origin = store.triggers.get(ticket.origin.triggerId)
         return typeof origin?.meta.repository === 'string' ? origin.meta.repository : config.repositories[0]!
       }
+      this.resources = {
+        store, pages: new TextCache(4_000_000), repositories: () => this.current.repositories, repositoryOf,
+        skill: () => this.prompts.skill('github'), ...(options.githubRead ? { github: options.githubRead } : {}),
+      }
       if (options.workspaces === 'git' && !options.access) throw new Error('Git workspaces need repository access')
       this.workspaces = options.workspaces === 'git'
         ? new Workspaces({ stateDir: config.stateDir, commands: new Commands({ apiProgram: 'gh', baseEnv: this.env, env: { GIT_TERMINAL_PROMPT: '0' } }), repositoryOf, access: options.access! })
         : new ScratchWorkspaces({ stateDir: config.stateDir, repositoryOf })
+      const notifyRouter = (notice: Notice): void => {
+        const [name, value, summary] = notice
+        const text = JSON.stringify(value)
+        effects.enqueue('notice', name, { value: { target: 'router', id: `notice:${name}:${key(text)}`, text }, summary })
+      }
       const deps: WorkerDeps = {
         prepare: ticket => this.workspaces.prepare(ticket, worktreeName(ticket)),
         instructions: async ticket => this.prompts.instructions('worker', [{ source: 'ticket-title', text: ticket.title }]),
-        tools: ticket => workerTools({ engine: () => this.engine, ticket: id => store.tickets.get(id) }, ticket),
+        tools: ticket => {
+          const host: ExecutorToolsHost = {
+            engine: () => this.executorEngine, ticket: id => store.tickets.get(id),
+            read: (resource, offset, limit, signal) => readResource(this.resources, resource, offset, limit, ticket.id, signal),
+            repositories: () => this.current.repositories, ...(session ? { notify: notifyRouter } : {}),
+          }
+          return session ? executorTools(host, ticket) : workerTools(host, ticket)
+        },
         env: () => ({}),
         promptVersion: () => this.prompts.version('worker'),
         promptChange: stored => this.prompts.change('worker', stored),
         history: cwd => this.workspaces.history(cwd),
       }
       this.executor = new WorkerExecutor({
-        store, effects, engine: () => this.engine, runtime: options.runtime, slots: new Slots(config.workers.max), workers: new WorkerStore(store, now), deps,
+        store, effects, engine: () => this.executorEngine, runtime: options.runtime, slots: new Slots(config.workers.max), workers: new WorkerStore(store, now), deps,
         network: () => this.current.network.allow, model: () => this.current.models.worker,
         limits: { maxTurns: config.workers.maxTurns, maxBudgetUsd: config.workers.maxBudgetUsd }, now, paused: () => this.policy.paused,
         health: board.claim('executor'), ...(timers ? { timers } : {}),
@@ -252,12 +288,75 @@ export class Runtime implements SourceHost {
       effects.handle('notice', async payload => {
         const { target, ticketId, id, text } = payload.value
         if (target === 'worker' && typeof ticketId === 'string' && typeof id === 'string' && typeof text === 'string') this.executor.notify(ticketId, { id, text })
+        else if (target === 'router' && typeof id === 'string' && typeof text === 'string' && this.router) await this.router.notify(id, text)
       })
-      const assessor = new GateAssessor({ effects, engine: () => this.engine, settings: () => this.settings })
+      let assessor: Assessor
+      if (session) {
+        const master = new MasterAssessor({
+          engine: () => this.engine, effects, settings: () => this.settings, paused: () => this.policy.paused,
+          threadContext: trigger => sources.threadContext(trigger), deliver: (id, text) => this.router!.relay(id, text),
+          candidateCard: candidate => candidateCard({ store, sources, settings: () => this.settings }, candidate),
+        })
+        this.mainHost = {
+          engine: () => this.engine, store, assessor: master, settings: () => this.settings,
+          read: (resource, offset, limit, signal) => readResource(this.resources, resource, offset, limit, undefined, signal),
+          requestPass: () => { this.passes.request() }, sendReplies: () => this.outbox.sent(),
+          quietly: run => { this.quiet++; try { return run() } finally { this.quiet-- } },
+        }
+        assessor = master
+      } else {
+        assessor = new GateAssessor({ effects, engine: () => this.engine, settings: () => this.settings })
+      }
+      this.assessor = assessor
       this.engine = new Engine({
         repo: store, policy: () => this.policy, scope: sources, assessor, executor: this.executor, outbox: this.outbox,
-        now: () => new Date(now()).toISOString(), emit: event => { this.log(eventRecord(event)) },
+        now: () => new Date(now()).toISOString(),
+        emit: event => {
+          this.log(eventRecord(event))
+          if (!this.router || this.quiet > 0) return
+          const notice = eventNotice(event, id => store.tickets.get(id))
+          if (notice) notifyRouter(notice)
+          if (event.type === 'trigger.received' || event.type === 'ticket.resumed' || event.type === 'trigger.followup') {
+            const relay = followupNotice(store, sources, event.data.triggerId)
+            if (relay) effects.enqueue('relay', relay.id, { text: relay.text })
+          }
+        },
       })
+      const engine = this.engine
+      this.executorEngine = Object.assign(Object.create(engine) as Engine, {
+        report: (ticketId: string, report: WorkerReport): Ticket => {
+          const ticket = engine.report(ticketId, report)
+          if (this.router) {
+            const relay = reportRelay(ticket, report)
+            if (relay) effects.enqueue('relay', relay.id, { text: relay.text })
+          }
+          return ticket
+        },
+      })
+      if (session) {
+        this.router = new RouterHost({
+          runtime: options.runtime, stateDir: config.stateDir,
+          limits: { maxTurns: config.workers.maxTurns, maxBudgetUsd: config.workers.maxBudgetUsd },
+          model: () => config.models.router, health: board.claim('router'), now,
+          deps: {
+            instructions: () => this.prompts.instructions('router'),
+            tools: () => mainTools(this.mainHost!),
+            promptVersion: () => this.prompts.version('router'),
+            promptChange: stored => this.prompts.change('router', stored),
+            record: {
+              get: () => {
+                const sessionId = store.get(KV.runtime.masterId)
+                return sessionId === undefined ? undefined : { sessionId, promptVersion: store.get(KV.runtime.routerPrompt) ?? null }
+              },
+              put: record => {
+                if (record.sessionId) store.set(KV.runtime.masterId, record.sessionId)
+                if (record.promptVersion) store.set(KV.runtime.routerPrompt, record.promptVersion)
+              },
+            },
+          },
+        })
+        effects.handle('relay', (payload, id) => this.router!.relay(id, payload.text), { ordered: true })
+      }
       this.passes = new Passes({
         engine: this.engine, effects, health: this.health, lifetime: this.lifetime.signal, now, configured: () => true,
         closing: () => this.closing, ...(timers ? { timers } : {}),
@@ -290,6 +389,9 @@ export class Runtime implements SourceHost {
     recover({ tickets: this.store.tickets, engine: this.engine, executor: this.executor })
     this.passes.start()
     this.effects.start()
+    if (this.router) {
+      try { await this.router.ensure() } catch (error) { this.log({ level: 'error', at: this.stamp(), event: 'router.open_failed', detail: String(error) }) }
+    }
     for (const service of this.services) {
       await service.start(this, this.lifetime.signal)
       this.running.push(service)
@@ -311,6 +413,14 @@ export class Runtime implements SourceHost {
 
   /** Reassembles the worker prompt; when its team sections or rules changed, queues a notice with the changed sections for every open worker session (same key per ticket: only the latest is delivered). Returns the number queued. M10 calls it on reload. */
   refreshPrompts(): number {
+    const routerChange = this.router ? this.prompts.refresh('router') : undefined
+    if (routerChange?.notice) {
+      const text = routerChange.notice
+      const hash = routerChange.current.hash
+      this.store.atomic(() => {
+        this.effects.enqueue('notice', 'router-prompts', { value: { target: 'router', id: `notice:prompts:${hash}`, text }, summary: `Router prompt version ${hash.slice(0, 12)}` })
+      })
+    }
     const change = this.prompts.refresh('worker')
     if (!change?.notice) return 0
     const tickets = this.executor.liveTickets()
@@ -415,9 +525,11 @@ export class Runtime implements SourceHost {
     try {
       const passesStopped = this.passes.stop()
       this.lifetime.abort()
+      this.assessor.stop?.()
       complete = await within(Promise.allSettled([passesStopped, ...this.running.map(service => service.stop())]), deadline - Date.now())
       complete = await within(this.effects.drain(), deadline - Date.now()) && complete
       complete = await within(this.executor.dispose(), deadline - Date.now()) && complete
+      complete = await within(this.router?.close() ?? Promise.resolve(), deadline - Date.now()) && complete
     } finally {
       for (const dispose of [...this.disposers].reverse()) {
         try { dispose() } catch {}

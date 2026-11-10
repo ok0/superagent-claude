@@ -58,7 +58,7 @@ export function renderInput(input: TicketInput, trigger?: Trigger): string | und
     case 'text': return input.text
     case 'note': return `Note for context only: ${input.text}`
     case 'policy-changed': return 'Policy change: the access or admission rules changed. Check that the remaining work stays within the assignment.'
-    case 'resumed': return 'This ticket ended earlier and the message that follows resumed it under the same mandate. Continue within the original scope and report when done.'
+    case 'resumed': return 'This ticket ended earlier and the message that follows resumed it under the same mandate. If it asks for more within the original scope, continue and report when done; if it asks for work beyond this ticket or for another one, hand it back with orchestrator_trigger_handback and report dropped.'
     case 'reopen': return undefined
   }
 }

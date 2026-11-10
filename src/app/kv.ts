@@ -19,8 +19,8 @@ export function family<V, A extends unknown[] = [string]>(prefix: string, format
 export const KV = {
   /** Store: current database schema version. */
   store: { schema: record<number>('schema') },
-  /** Runtime: the Router session's ID. */
-  runtime: { masterId: record<string>('master-id') },
+  /** Runtime: the Router session's ID and the prompt version it was opened under. */
+  runtime: { masterId: record<string>('master-id'), routerPrompt: record<string>('router-prompt-version') },
   /** Sessions: prompt revisions each Session has worked under, ordered oldest first; the last entry (`.at(-1)`) is its active revision. */
   sessions: { prompts: family<number[], [session: string]>('session-prompts:') },
   /** Per-Source resolved display names mapping a named ID (such as a chat ID) to its display name. */

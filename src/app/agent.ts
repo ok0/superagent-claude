@@ -1,5 +1,5 @@
 /**
- * The agent runtime and workspace choice for `start`: the Claude runtime with git worktrees, or the scripted fake runtime with scratch directories; the adapter env carries only the inherited whitelist and the selected auth mode's variables.
+ * The agent runtime, workspace choice and Router mode for `start`: the Claude runtime with git worktrees and a Router session, or the scripted fake runtime with scratch directories and the deterministic assessor; the adapter env carries only the inherited whitelist and the selected auth mode's variables.
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -28,10 +28,10 @@ export interface AgentOptions {
   stderr?: (text: string) => void
 }
 
-export interface Agent { runtime: AgentRuntime; workspaces: 'git' | 'scratch' }
+export interface Agent { runtime: AgentRuntime; workspaces: 'git' | 'scratch'; router: 'session' | 'deterministic' }
 
 export function createAgent(o: AgentOptions): Agent {
-  if (o.fake) return { runtime: new FakeRuntime(o.fake), workspaces: 'scratch' }
+  if (o.fake) return { runtime: new FakeRuntime(o.fake), workspaces: 'scratch', router: 'deterministic' }
   const configDir = join(o.config.stateDir, 'claude')
   mkdirSync(configDir, { recursive: true, mode: 0o700 })
   return {
@@ -43,5 +43,6 @@ export function createAgent(o: AgentOptions): Agent {
       ...(o.stderr ? { stderr: o.stderr } : {}),
     }),
     workspaces: 'git',
+    router: 'session',
   }
 }

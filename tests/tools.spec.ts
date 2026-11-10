@@ -1,6 +1,7 @@
 /** Worker tool specs: tool names, report reaching the engine, human_action and acknowledgement limits, thread keys. */
 import { describe, expect, it, vi } from 'vitest'
 import { executorTools, type ExecutorToolsHost } from '../src/app/tools/executor.ts'
+import { WORKER_TOOLS } from '../src/app/tool-names.ts'
 import type { ToolSpec } from '../src/executor/contract.ts'
 
 function host(ended?: { by: string }) {
@@ -27,9 +28,49 @@ function find(tools: ToolSpec[], name: string): ToolSpec {
 describe('worker tools', () => {
   it('executor tools have the worker tool names', () => {
     const { host: h } = host()
-    expect(executorTools(h, { id: 'T1' }).map(item => item.name)).toEqual([
-      'orchestrator_ack', 'orchestrator_thread_unrelated', 'orchestrator_thread_follow', 'orchestrator_trigger_handback', 'orchestrator_report',
+    const names = executorTools(h, { id: 'T1' }).map(item => item.name)
+    expect(names).toEqual([
+      'orchestrator_read', 'orchestrator_ack', 'orchestrator_thread_unrelated', 'orchestrator_thread_follow', 'orchestrator_trigger_handback', 'orchestrator_report',
     ])
+    expect(names).toEqual(WORKER_TOOLS.filter(n => n !== 'orchestrator_publish'))  // orchestrator_publish is M16
+  })
+
+  it('orchestrator_read without a reader is a tool error', async () => {
+    const { host: h } = host()
+    const read = find(executorTools(h, { id: 'T1' }), 'orchestrator_read')
+    await expect(read.execute({ resource: 'ticket/T1' }, new AbortController().signal)).rejects.toThrow(/No resources/)
+  })
+
+  it('orchestrator_read passes resource, offset and limit', async () => {
+    const read = vi.fn(async () => 'page')
+    const { host: base } = host()
+    const h: ExecutorToolsHost = { ...base, read }
+    const tool = find(executorTools(h, { id: 'T1' }), 'orchestrator_read')
+    const signal = new AbortController().signal
+    await expect(tool.execute({ resource: 'ticket/T1' }, signal)).resolves.toBe('page')
+    expect(read).toHaveBeenCalledWith('ticket/T1', 0, undefined, signal)
+  })
+
+  it('thread_follow refuses a repository outside the list, without case', async () => {
+    const { engine, host: base } = host()
+    const h: ExecutorToolsHost = { ...base, repositories: () => ['owner/repo'] }
+    const follow = find(executorTools(h, { id: 'T1' }), 'orchestrator_thread_follow')
+    await follow.execute({ thread: 'github:Owner/Repo#7', reason: 'The issue it fixes.' }, new AbortController().signal)
+    expect(engine.followForContext).toHaveBeenCalledWith('T1', { source: 'github', id: 'Owner/Repo#7' })
+    await expect(follow.execute({ thread: 'github:other/repo#7', reason: 'r' }, new AbortController().signal))
+      .rejects.toThrow(/not in the configured repositories/)
+    expect(engine.followForContext).toHaveBeenCalledTimes(1)
+  })
+
+  it('thread_follow notifies the Router', async () => {
+    const { host: base } = host()
+    const notify = vi.fn()
+    const h: ExecutorToolsHost = { ...base, notify }
+    const follow = find(executorTools(h, { id: 'T1' }), 'orchestrator_thread_follow')
+    await follow.execute({ thread: 'chat:t9', reason: 'Same topic.' }, new AbortController().signal)
+    expect(notify).toHaveBeenCalledTimes(1)
+    const [notice] = notify.mock.calls[0] as unknown as [readonly [string, Record<string, unknown>, string]]
+    expect(notice[1]).toHaveProperty('thread_followed')
   })
 
   it('a valid report reaches the engine', async () => {

@@ -408,11 +408,11 @@ describe('vendor names', () => {
     expect(offenders).toEqual([])
   })
 
-  it('outside its Source plugin only the assembly point and the runtime env secret filter name the hosting service', () => {
+  it('outside its Source plugin only the assembly point, the Router/worker tool layer (resources, thread keys, read function, cards and notices) and the runtime env secret filter name the hosting service', () => {
     const offenders = scan(ROOT).files
       .filter(f => !f.startsWith('src/sources/github/'))
       .filter(f => readFileSync(join(ROOT, f), 'utf8').split('\n').some(line => !line.includes('dsh-superagent-prototype') && /github/i.test(line)))
-    expect(offenders).toEqual(['src/app/prompts.ts', 'src/app/sources.ts', 'src/runtimes/claude/options.ts'])
+    expect(offenders).toEqual(['src/app/assessment.ts', 'src/app/notices.ts', 'src/app/prompts.ts', 'src/app/resources.ts', 'src/app/runtime.ts', 'src/app/sources.ts', 'src/app/tools/executor.ts', 'src/app/tools/main.ts', 'src/runtimes/claude/options.ts'])
   })
 
   it('the Source framework names no service or host framework outside its port header', () => {

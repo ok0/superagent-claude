@@ -54,7 +54,7 @@ it('auto: an allowed sender\'s mention opens one Ticket whose fake worker report
 
   const opened = fake.opened[0]!
   expect(opened.key).toBe(`worker-${ticket.id}`)
-  expect(opened.tools.map(tool => tool.name)).toEqual(['orchestrator_ack', 'orchestrator_thread_unrelated', 'orchestrator_thread_follow', 'orchestrator_trigger_handback', 'orchestrator_report'])
+  expect(opened.tools.map(tool => tool.name)).toEqual(['orchestrator_read', 'orchestrator_ack', 'orchestrator_thread_unrelated', 'orchestrator_thread_follow', 'orchestrator_trigger_handback', 'orchestrator_report'])
   expect(opened.instructions.startsWith('## Host rules')).toBe(true)
   expect(opened.instructions).toContain('## Communication')
   expect(opened.instructions).toContain('<external-data source="ticket-title">')
