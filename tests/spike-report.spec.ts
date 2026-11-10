@@ -116,7 +116,7 @@ describe('renderReport', () => {
 
   it('passes the branding check and contains no credential prefix', () => {
     const md = renderReport(fixture())
-    expect(checkText('docs/spikes/sdk-semantics.md', md)).toEqual([])
+    expect(checkText('.docs/spikes/sdk-semantics.md', md)).toEqual([])
     expect(md).not.toContain(PREFIX)
   })
 

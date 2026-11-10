@@ -23,7 +23,7 @@ export const ITEMS: SpikeItem[] = [
 ]
 
 const ROOT_URL = new URL('../../', import.meta.url)
-const DEFAULT_OUT = fileURLToPath(new URL('docs/spikes/sdk-semantics.md', ROOT_URL))
+const DEFAULT_OUT = fileURLToPath(new URL('.docs/spikes/sdk-semantics.md', ROOT_URL))
 
 const EXIT_INTERNAL = 2
 const EXIT_LEAK = 6
