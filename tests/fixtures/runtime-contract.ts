@@ -43,7 +43,7 @@ export function contractSpec(name: ContractCase, overrides: Partial<SessionSpec>
 }
 
 type Opened = { session: AgentSession; events: RuntimeEvent[]; reports: unknown[]; ended: (n: number) => Promise<void> }
-interface CaseContext { open(overrides?: Partial<SessionSpec>): Promise<Opened>; quiet: () => Promise<void> }
+interface CaseContext { open(overrides?: Partial<SessionSpec>): Promise<Opened>; quiet: () => Promise<void>; wait: (check: () => boolean) => Promise<unknown> }
 
 const defaultQuiet = async (): Promise<void> => {
   for (let i = 0; i < 3; i++) await new Promise(resolve => setImmediate(resolve))
@@ -99,9 +99,9 @@ const CHECKS: Record<ContractCase, (c: CaseContext) => Promise<void>> = {
       .map(event => event.type === 'inputsRead' ? event.ids : 'turnEnded')
     expect(sequence).toEqual([['A'], 'turnEnded', ['B'], 'turnEnded'])
   },
-  'inject does not wake the session': async ({ open, quiet }) => {
+  'inject does not wake the session': async ({ open, quiet, wait }) => {
     const { session, events, ended } = await open()
-    await waitUntil(() => sessionIdOf(events) !== undefined)
+    await wait(() => sessionIdOf(events) !== undefined)
     session.send({ id: 'N', text: 'N', mode: 'inject' })
     await quiet()
     expect(events.filter(event => event.type === 'inputsRead' || event.type === 'turnEnded')).toEqual([])
@@ -122,12 +122,12 @@ const CHECKS: Record<ContractCase, (c: CaseContext) => Promise<void>> = {
     await ended(1)
     expect(events.find(event => event.type === 'turnEnded')).toMatchObject({ outcome: 'max_turns' })
   },
-  'interrupt returns the pending inputs': async ({ open }) => {
+  'interrupt returns the pending inputs': async ({ open, wait }) => {
     const { session, events } = await open()
     session.send({ id: 'A', text: 'A', mode: 'followup' })
     session.send({ id: 'B', text: 'B', mode: 'followup' })
     session.send({ id: 'C', text: 'C', mode: 'inject' })
-    await waitUntil(() => readIds(events).includes('A'))
+    await wait(() => readIds(events).includes('A'))
     const { stillQueued } = await session.interrupt()
     expect(stillQueued).toEqual(expect.arrayContaining(['B', 'C']))
     expect(stillQueued).not.toContain('A')
@@ -140,13 +140,13 @@ const CHECKS: Record<ContractCase, (c: CaseContext) => Promise<void>> = {
     const fresh = readBatches(events).flatMap(ids => ledger.fresh(ids))
     expect(fresh).toEqual(['A'])
   },
-  'resume keeps the session id': async ({ open }) => {
+  'resume keeps the session id': async ({ open, wait }) => {
     const first = await open()
-    await waitUntil(() => sessionIdOf(first.events) !== undefined)
+    await wait(() => sessionIdOf(first.events) !== undefined)
     const id = sessionIdOf(first.events)!
     await first.session.close()
     const second = await open({ resume: id })
-    await waitUntil(() => sessionIdOf(second.events) !== undefined)
+    await wait(() => sessionIdOf(second.events) !== undefined)
     expect(sessionIdOf(second.events)).toBe(id)
     if (second.session.sessionId !== undefined) expect(second.session.sessionId).toBe(id)
   },
@@ -154,11 +154,13 @@ const CHECKS: Record<ContractCase, (c: CaseContext) => Promise<void>> = {
 
 /** Adds one `it` per contract case (all cases unless options.cases narrows them), each against a session from factory(case). */
 export function runtimeContract(name: string, factory: (contractCase: ContractCase) => AgentRuntime,
-  options: { cases?: readonly ContractCase[]; quiet?: () => Promise<void> } = {}): void {
+  options: { cases?: readonly ContractCase[]; quiet?: () => Promise<void>; timeoutMs?: number } = {}): void {
   const quiet = options.quiet ?? defaultQuiet
+  const timeoutMs = options.timeoutMs ?? 3000
+  const wait = (check: () => boolean) => waitUntil(check, timeoutMs)
   describe(`runtime contract: ${name}`, () => {
     for (const contractCase of options.cases ?? CONTRACT_CASES) {
-      it(contractCase, async () => {
+      const body = async () => {
         const runtime = factory(contractCase)
         const sessions: AgentSession[] = []
         const open = async (overrides: Partial<SessionSpec> = {}): Promise<Opened> => {
@@ -166,15 +168,17 @@ export function runtimeContract(name: string, factory: (contractCase: ContractCa
           const session = await runtime.open(spec)
           sessions.push(session)
           const events = watch(session)
-          const ended = (n: number) => waitUntil(() => events.filter(event => event.type === 'turnEnded').length >= n)
+          const ended = (n: number) => waitUntil(() => events.filter(event => event.type === 'turnEnded').length >= n, timeoutMs)
           return { session, events, reports, ended }
         }
         try {
-          await CHECKS[contractCase]({ open, quiet })
+          await CHECKS[contractCase]({ open, quiet, wait })
         } finally {
           for (const session of sessions) await session.close()
         }
-      })
+      }
+      if (options.timeoutMs === undefined) it(contractCase, body)
+      else it(contractCase, body, options.timeoutMs * 4)
     }
   })
 }
