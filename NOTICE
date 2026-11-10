@@ -64,6 +64,12 @@ src/infra/text.ts <- src/infra/text.ts
 src/policy/admission.ts <- src/admission.ts
 src/policy/limits.ts    <- src/limits.ts
 src/policy/policy.ts    <- src/policy.ts
+src/sources/admission-context.ts <- src/sources/admission-context.ts
+src/sources/host.ts <- src/sources/host.ts (with sourceContextOf from src/app/source-context.ts)
+src/sources/kind.ts <- src/sources/kind.ts
+src/sources/poll.ts <- src/sources/poll.ts
+src/sources/registry.ts <- src/sources/registry.ts
+tests/admission-context.spec.ts <- tests/admission-context.spec.ts
 tests/cache.spec.ts <- tests/cache.spec.ts
 tests/core-engine.spec.ts <- tests/core-engine.spec.ts
 tests/effects.spec.ts <- tests/effects.spec.ts
@@ -72,5 +78,6 @@ tests/fixtures/engine.ts <- tests/core-engine.spec.ts (harness)
 tests/outbox.spec.ts <- tests/outbox.spec.ts
 tests/passes.spec.ts <- tests/passes.spec.ts
 tests/policy.spec.ts    <- tests/policy.spec.ts
+tests/registry.spec.ts <- tests/registry.spec.ts
 tests/stage.spec.ts     <- tests/stage.spec.ts
 tests/store.spec.ts <- tests/store.spec.ts
