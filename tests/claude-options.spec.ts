@@ -4,6 +4,7 @@ import type { HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sd
 import type { SessionSpec, ToolSpec } from '../src/executor/contract.ts'
 import { AUTH_ENV, CLAUDE_INHERITED_ENV, ALWAYS_DISALLOWED, claudeEnv, builtinTools, guardDecision, sdkOptions, type AuthMode, type OptionsContext } from '../src/runtimes/claude/options.ts'
 import { mcpTools, mcpServer, toolHandler } from '../src/runtimes/claude/mcp.ts'
+import { WORKER_TOOLS } from '../src/app/tool-names.ts'
 
 const MODES: AuthMode[] = ['api-key', 'subscription', 'bedrock', 'vertex']
 
@@ -114,6 +115,12 @@ describe('fixed safety defaults', () => {
     expect(guardDecision(s, 'Bash', { command: 'git push origin HEAD' })).toBeDefined()
     expect(guardDecision(s, 'Bash', { command: 'gh pr create' })).toBeDefined()
     expect(guardDecision(s, 'Bash', { command: 'git commit -m x' })).toBeUndefined()
+    for (const command of ['git push origin HEAD', 'gh pr create']) {
+      const message = guardDecision(s, 'Bash', { command })!
+      const names = [...message.matchAll(/orchestrator_[a-z_]+/g)].map(match => match[0])
+      expect(names.length).toBeGreaterThan(0)
+      for (const name of names) expect(WORKER_TOOLS).toContain(name)
+    }
 
     const options = sdkOptions(s, ctx('api-key'))
     const out = (await hookFn(options.hooks!.PreToolUse)({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: '/etc/x' } }, undefined, { signal: new AbortController().signal })) as {

@@ -29,7 +29,7 @@ describe('config file', () => {
       repositories: ['owner/repo'],
       policy: { allowed: ['alice'], acceptMode: 'observe', rules: SettingsSchema.parse({}).policy.rules, admission: {} },
       auth: { mode: 'api-key', acceptSubscriptionSharedUseRisk: false },
-      delivery: { forkWhenNoPush: true },
+      delivery: { forkWhenNoPush: true, allowAutoMerge: false },
       workers: { max: 2, maxTurns: 100, maxBudgetUsd: 5 },
       network: { allow: [] },
       security: { trustRepoConfig: false, allowUnsandboxed: false },
@@ -44,7 +44,7 @@ describe('config file', () => {
       repositories: ['owner/repo'],
       policy: { allowed: ['alice'], acceptMode: 'auto', rules: SettingsSchema.parse({}).policy.rules.slice(0, 1), admission: {} },
       auth: { mode: 'subscription', owner: 'Alice', acceptSubscriptionSharedUseRisk: true },
-      delivery: { forkWhenNoPush: false },
+      delivery: { forkWhenNoPush: false, allowAutoMerge: true },
       workers: { max: 3, maxTurns: 50, maxBudgetUsd: 2 },
       network: { allow: ['example.com'] },
       security: { trustRepoConfig: true, allowUnsandboxed: true },
@@ -54,7 +54,7 @@ describe('config file', () => {
     })
     const config = loadConfig(path, ENV)
     expect(config.auth).toEqual({ mode: 'subscription', owner: 'Alice', acceptSubscriptionSharedUseRisk: true })
-    expect(config.delivery).toEqual({ forkWhenNoPush: false })
+    expect(config.delivery).toEqual({ forkWhenNoPush: false, allowAutoMerge: true })
     expect(config.network).toEqual({ allow: ['example.com'] })
     expect(config.security).toEqual({ trustRepoConfig: true, allowUnsandboxed: true })
     expect(config.retention).toEqual({ endedTicketDays: 7 })
@@ -62,6 +62,10 @@ describe('config file', () => {
     expect(config.policy.rules).toHaveLength(1)
     expect(config.policy.admission).toEqual({})
     expect(config.policy.acceptMode).toBe('auto')
+  })
+
+  it('rejects an unknown delivery key', () => {
+    expect(() => loadConfig(write({ repositories: ['owner/repo'], policy: { allowed: ['alice'] }, delivery: { autoMerge: true } }), ENV)).toThrow(ConfigError)
   })
 
   it('refuses unknown nested keys and wrong types with the key path', () => {

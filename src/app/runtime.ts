@@ -31,6 +31,7 @@ import { candidateCard } from './links.ts'
 import { mainTools, type MainToolsHost } from './tools/main.ts'
 import { eventNotice, followupNotice, reportRelay, type Notice } from './notices.ts'
 import { readResource, type ResourceHost } from './resources.ts'
+import type { PullRequests } from '../sources/github/delivery.ts'
 import { TextCache } from './cache.ts'
 import { KV } from './kv.ts'
 
@@ -126,6 +127,8 @@ export interface RuntimeOptions {
   githubRead?: (repository: string, resource: string, signal?: AbortSignal) => Promise<unknown>
   /** Remote URLs and clone/fetch authentication for git workspaces; the Source assembly point provides it. */
   access?: RepositoryAccess
+  /** PR writes for worker delivery tools; the Source assembly point provides it. */
+  pulls?: PullRequests
   kinds?: readonly SourceKind[]
   services?: readonly SourceService[]
   log?: LogSink
@@ -271,6 +274,16 @@ export class Runtime implements SourceHost {
             engine: () => this.executorEngine, ticket: id => store.tickets.get(id),
             read: (resource, offset, limit, signal) => readResource(this.resources, resource, offset, limit, ticket.id, signal),
             repositories: () => this.current.repositories, ...(session ? { notify: notifyRouter } : {}),
+            delivery: {
+              repositoryOf: id => repositoryOf(store.tickets.get(id)!),
+              push: (id, push) => {
+                const found = store.tickets.get(id)
+                if (!found) throw new Error('Unknown ticket ' + id)
+                return this.workspaces.push(found, push)
+              },
+              ...(options.pulls ? { pulls: options.pulls } : {}),
+              allowAutoMerge: () => this.current.delivery.allowAutoMerge,
+            },
           }
           return session ? executorTools(host, ticket) : workerTools(host, ticket)
         },

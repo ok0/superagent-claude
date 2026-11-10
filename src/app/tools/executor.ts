@@ -1,8 +1,8 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/tools/executor.ts
 /**
  * Worker Session tools for acknowledging requests, managing threads, handing back out-of-scope triggers, and reporting status.
- * Changes from the reference: `orchestrator_read` is restored (M14) over the injected reader; `pr_number` and the PR claim
- * (M16, `orchestrator_publish`) and `sendReplies` are removed; a GitHub thread must name a configured repository; a followed
+ * Changes from the reference: `orchestrator_read` is restored (M14) over the injected reader; the delivery tools are restored (M16) in
+ * `delivery.ts`; `pr_number` is removed (publish binds the PR thread) and `sendReplies` is removed; a GitHub thread must name a configured repository; a followed
  * thread is announced to the Router session through `notify` (M14); the report relay is the Runtime's (M14).
  */
 import { z } from 'zod'
@@ -13,14 +13,16 @@ import { parseThreadId, configured } from '../../sources/github/trigger.ts'
 import { resourceGrammar } from '../resources.ts'
 import { threadFollowedNotice, type Notice } from '../notices.ts'
 import { AcknowledgementSchema, HumanActionSchema, readTool, tool } from './tool.ts'
+import { deliveryTools, type DeliveryHost } from './delivery.ts'
 
 export interface ExecutorToolsHost {
-  engine(): Pick<EngineForExecutor, 'report' | 'reply' | 'markUnrelated' | 'handback' | 'followForContext'>
-  ticket(id: string): Pick<Ticket, 'ended'> | undefined
+  engine(): Pick<EngineForExecutor, 'report' | 'reply' | 'markUnrelated' | 'handback' | 'followForContext' | 'bindThread'>
+  ticket(id: string): Pick<Ticket, 'ended' | 'follows'> | undefined
   read?(resource: string, offset: number, limit: number | undefined, signal: AbortSignal): Promise<unknown>
   /** Announces a change to the Router session; present when the Router session runs. */
   notify?(notice: Notice): void
   repositories?(): readonly string[]
+  delivery?: DeliveryHost
 }
 
 export function executorTools(host: ExecutorToolsHost, ticket: Pick<Ticket, 'id'>): ToolSpec[] {
@@ -108,5 +110,6 @@ export function executorTools(host: ExecutorToolsHost, ticket: Pick<Ticket, 'id'
         return { reported: true, ...(updated.attention ? { attention: updated.attention } : {}) }
       },
     }),
+    ...deliveryTools(host, ticketId),
   ]
 }

@@ -7,5 +7,8 @@ Refresh the comparison when later UI changes make it stale.
 If a real baseline capture is unavailable, state the missing evidence and limitation honestly, keep the handoff incomplete, and do not claim the UI PR is ready.
 Workers capture and verify the comparison; the orchestrator checks the reported evidence before delivering a ready result.
 
-A person merges every PR; never enable auto-merge, approve or merge on behalf of a reviewer.
+Publish commits and open or update the ticket PR only with mcp__superagent__orchestrator_publish; calling it again pushes new commits to the same PR, it never force-pushes, so never rewrite a pushed commit.
+When the request or repository rules name co-authors, pass them as coAuthors in Name <email> form; the host adds Co-authored-by trailers only to commits not yet pushed.
+A person merges the PR unless the assignment or repository rules ask for auto-merge; then request it with mcp__superagent__orchestrator_pr_auto_merge, which only enables auto-merge and refuses while this deployment does not allow it, in which case leave the merge to a person; never approve or merge on behalf of a reviewer.
+Close a ticket PR with mcp__superagent__orchestrator_pr_close and a one-sentence reason only when a person asks for it or the work is abandoned; closing never merges.
 Request the reviews that the matched rules, the assignment or repository instructions ask for in the PR description, and record in mcp__superagent__orchestrator_report who reviewed.

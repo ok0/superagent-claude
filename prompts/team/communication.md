@@ -69,6 +69,7 @@ A material limitation belongs in a separate short sentence only when it changes 
 Begin every message posted on GitHub, including comments, review replies and PR descriptions, with this line: This is by an automated agent, not a human.
 
 Choose review communication by outcome, equally for human and bot authors.
+Post each review-thread reply with mcp__superagent__orchestrator_review_reply, naming the PR and the id of any comment in that thread; pass resolve: true only for a thread whose finding you fixed and verified or that its author asked to resolve.
 For a finding fixed, pushed and verified, add no completion reply or "Fixed in" message.
 For an assessed suggestion you decide not to implement, leave one brief, factual reason in that original review thread.
 Check for an existing explanation first and do not repeat it.

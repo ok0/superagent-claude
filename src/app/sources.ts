@@ -1,4 +1,4 @@
-/** The Source kinds this build installs: the GitHub Source when SUPERAGENT_CLAUDE_GITHUB_TOKEN is set (the token reaches only the gh calls as GH_TOKEN). The single assembly point that names the hosting service outside its Source plugin; a missing or blank token refuses startup (agent-token), and the account and access checks run through the Source startup hook; the token also authenticates the host's clone and fetch calls for git workspaces (env-scoped header, never in worker sessions or git config). */
+/** The Source kinds this build installs: the GitHub Source when SUPERAGENT_CLAUDE_GITHUB_TOKEN is set (the token reaches only the gh calls as GH_TOKEN). The single assembly point that names the hosting service outside its Source plugin; a missing or blank token refuses startup (agent-token), and the account and access checks run through the Source startup hook; the token also authenticates the host's clone and fetch calls for git workspaces and the host's pull request writes (env-scoped header, never in worker sessions or git config). */
 import { Buffer } from 'node:buffer'
 import type { Config } from './config.ts'
 import { StartupRefused } from './config.ts'
@@ -10,6 +10,7 @@ import type { PollTimers } from '../sources/poll.ts'
 import type { RepositoryAccess } from '../executor/workspaces.ts'
 import { githubSource } from '../sources/github/source.ts'
 import { readGithub, repositoryCommands } from '../sources/github/read.ts'
+import { githubPullRequests, type PullRequests } from '../sources/github/delivery.ts'
 
 export const GITHUB_TOKEN_ENV = 'SUPERAGENT_CLAUDE_GITHUB_TOKEN'
 
@@ -24,7 +25,7 @@ export function repositoryAccess(env: Readonly<Record<string, string | undefined
   }
 }
 
-export interface InstalledSources { kinds: SourceKind[]; services: SourceService[]; agentLogin: () => string | undefined; access: RepositoryAccess; githubRead(repository: string, resource: string, signal?: AbortSignal): Promise<unknown> }
+export interface InstalledSources { kinds: SourceKind[]; services: SourceService[]; agentLogin: () => string | undefined; access: RepositoryAccess; pulls: PullRequests; githubRead(repository: string, resource: string, signal?: AbortSignal): Promise<unknown> }
 export interface InstallOptions { commands?: Commands; timers?: PollTimers; now?: () => number }
 
 export function installedSources(config: Config, env: Readonly<Record<string, string | undefined>>, options: InstallOptions = {}): InstalledSources {
@@ -46,5 +47,5 @@ export function installedSources(config: Config, env: Readonly<Record<string, st
       access: accessible => { assertRepositoryAccess(config, accessible) },
     },
   })
-  return { kinds: [github.kind], services: [github.service], agentLogin: () => login, access: repositoryAccess(env), githubRead: (repository, resource, signal) => readGithub(repositoryCommands(commands.withSignal(signal), repository), resource) }
+  return { kinds: [github.kind], services: [github.service], agentLogin: () => login, access: repositoryAccess(env), pulls: githubPullRequests(commands), githubRead: (repository, resource, signal) => readGithub(repositoryCommands(commands.withSignal(signal), repository), resource) }
 }

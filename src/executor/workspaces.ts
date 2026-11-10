@@ -1,4 +1,4 @@
-/** Worker workspaces: git worktrees on agent branches over one shared clone per repository, and scratch directories for fake runs. Clone and fetch get the injected access env (authentication) and errors mask its secrets. */
+/** Worker workspaces: git worktrees on agent branches over one shared clone per repository, and scratch directories for fake runs. Clone and fetch get the injected access env (authentication) and errors mask its secrets. Publishing pushes an agent branch without force, adding co-author trailers only to commits not yet pushed. */
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Ticket } from '../core/index.ts'
@@ -20,6 +20,23 @@ export interface WorkspaceProvider {
   prepare(ticket: Ticket, name: string): Promise<Workspace>
   remove(ticketId: string): Promise<void>
   history(cwd: string): Promise<string>
+  push(ticket: Ticket, options: PushOptions): Promise<PushResult>
+}
+
+export const CO_AUTHOR = /^[^<>\r\n]+ <[^<>\s@]+@[^<>\s]+>$/
+
+export interface PushOptions { coAuthors?: readonly string[] }
+export interface PushResult { repository: string; branch: string; base: string; head: string; pushed: number; rewritten: number; uncommitted: boolean }
+
+export function coAuthorTrailers(message: string, coAuthors: readonly string[]): string {
+  const lines = new Set(message.split(/\r?\n/).map(line => line.trim().toLowerCase()))
+  const missing = coAuthors.filter(author => !lines.has(('co-authored-by: ' + author).toLowerCase()))
+  if (!missing.length) return message
+  const text = message.replace(/\s+$/, '')
+  const paragraphs = text.split(/\n\s*\n/)
+  const last = paragraphs[paragraphs.length - 1] ?? ''
+  const trailerBlock = paragraphs.length > 1 && last.split('\n').every(line => /^[A-Za-z0-9-]+: \S/.test(line))
+  return text + (trailerBlock ? '\n' : '\n\n') + missing.map(author => 'Co-authored-by: ' + author).join('\n') + '\n'
 }
 
 export function worktreeName(ticket: Pick<Ticket, 'id' | 'execution'>): string {
@@ -133,6 +150,58 @@ export class Workspaces implements WorkspaceProvider {
   async history(cwd: string): Promise<string> {
     return (await this.git(['log', '--oneline', '-n', '20'], cwd).catch(() => '')).trim()
   }
+
+  async push(ticket: Ticket, options: PushOptions): Promise<PushResult> {
+    const coAuthors = options.coAuthors ?? []
+    for (const entry of coAuthors) if (!CO_AUTHOR.test(entry)) throw new Error('A co-author is written as Name <email>: ' + entry)
+    const repository = this.repositoryOf(ticket)
+    const cwd = this.worktreePath(ticket.id)
+    if (!existsSync(join(cwd, '.git'))) throw new Error('This ticket has no worktree to publish')
+    return this.serial(repository, async () => {
+      const branch = (await this.git(['branch', '--show-current'], cwd)).trim()
+      if (!branch.startsWith('agent/')) throw new Error('The worktree is not on its agent branch')
+      const clone = await this.clone(repository)
+      const base = (await this.git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], clone)).trim().replace(/^origin\//, '')
+      const uncommitted = (await this.git(['status', '--porcelain'], cwd)).trim() !== ''
+      const list = (await this.git(['rev-list', '--reverse', '--topo-order', 'HEAD', '--not', '--remotes=origin'], cwd)).split('\n').map(line => line.trim()).filter(Boolean)
+      let rewritten = 0
+      if (coAuthors.length && list.length) {
+        const map = new Map<string, string>()
+        for (const sha of list) {
+          const parents = (await this.git(['rev-list', '--parents', '-n', '1', sha], cwd)).trim().split(' ').slice(1)
+          const [an, ae, ad, cn, ce, cd, tree] = (await this.git(['show', '-s', '--format=%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI%x00%T', sha], cwd)).trim().split('\u0000')
+          const msg = await this.git(['show', '-s', '--format=%B', sha], cwd)
+          const next = coAuthorTrailers(msg, coAuthors)
+          const np = parents.map(parent => map.get(parent) ?? parent)
+          if (next === msg && np.length === parents.length && np.every((parent, i) => parent === parents[i])) {
+            map.set(sha, sha)
+          } else {
+            const commit = (await this.git(['commit-tree', '--no-gpg-sign', tree ?? '', ...np.flatMap(parent => ['-p', parent]), '-m', next], cwd, {
+              GIT_AUTHOR_NAME: an ?? '', GIT_AUTHOR_EMAIL: ae ?? '', GIT_AUTHOR_DATE: ad ?? '',
+              GIT_COMMITTER_NAME: cn ?? '', GIT_COMMITTER_EMAIL: ce ?? '', GIT_COMMITTER_DATE: cd ?? '',
+            })).trim()
+            map.set(sha, commit)
+            rewritten++
+          }
+        }
+        const old = (await this.git(['rev-parse', 'HEAD'], cwd)).trim()
+        const replacement = map.get(old)
+        if (replacement !== undefined && replacement !== old) await this.git(['update-ref', 'refs/heads/' + branch, replacement, old], cwd)
+      }
+      const remoteExists = await this.git(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/' + branch], cwd).then(() => true, () => false)
+      if (list.length === 0 && !remoteExists) throw new Error('There are no commits to publish; commit the change first')
+      if (list.length > 0) {
+        try {
+          await this.git(['push', 'origin', 'HEAD:refs/heads/' + branch], cwd, this.access.env(repository))
+        } catch (error) {
+          const message = this.redact(error instanceof Error ? error.message : String(error))
+          if (/non-fast-forward|fetch first|rejected/i.test(message)) throw new Error('The push was rejected without force; the remote branch has commits this worktree lacks: ' + message)
+          throw new RepositoryAccessError(repository, message)
+        }
+      }
+      return { repository, branch, base, head: (await this.git(['rev-parse', 'HEAD'], cwd)).trim(), pushed: list.length, rewritten, uncommitted }
+    })
+  }
 }
 
 export class ScratchWorkspaces implements WorkspaceProvider {
@@ -156,5 +225,9 @@ export class ScratchWorkspaces implements WorkspaceProvider {
 
   async history(): Promise<string> {
     return ''
+  }
+
+  async push(): Promise<PushResult> {
+    throw new Error('Publishing needs a git workspace; this run uses scratch directories')
   }
 }

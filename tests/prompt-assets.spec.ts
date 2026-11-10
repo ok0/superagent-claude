@@ -82,11 +82,33 @@ describe('ported prompt and skill assets', () => {
     expect(MCP_TOOL_PREFIX).toBe('mcp__superagent__')
   })
 
-  it('defines 11 router and 7 worker tools, 17 unique', () => {
+  it('defines 11 router and 10 worker tools, 20 unique', () => {
     expect(ROUTER_TOOLS).toHaveLength(11)
-    expect(WORKER_TOOLS).toHaveLength(7)
-    expect(TOOL_NAMES).toHaveLength(17)
+    expect(WORKER_TOOLS).toHaveLength(10)
+    expect(TOOL_NAMES).toHaveLength(20)
     expect(new Set(TOOL_NAMES).size).toBe(TOOL_NAMES.length)
+  })
+
+  it('never instructs running gh or git push directly', () => {
+    for (const asset of ASSETS) {
+      for (const line of body(read(asset)).split('\n')) {
+        if (!/\bgit push\b|(^|[\s`(])gh(\s|`|$)/.test(line)) continue
+        expect(/\b(never|not|blocks?)\b/i.test(line), `${asset}: ${line}`).toBe(true)
+      }
+    }
+    for (const asset of ASSETS) expect(body(read(asset)), asset).not.toContain('pr_number')
+  })
+
+  it('restores delivery and review-thread guidance on the host tools', () => {
+    const delivery = body(read('prompts/team/delivery.md'))
+    for (const token of ['mcp__superagent__orchestrator_publish', 'coAuthors', 'mcp__superagent__orchestrator_pr_auto_merge', 'mcp__superagent__orchestrator_pr_close']) {
+      expect(delivery, token).toContain(token)
+    }
+    expect(body(read('prompts/team/communication.md'))).toContain('mcp__superagent__orchestrator_review_reply')
+    const skill = body(read('skills/github.md'))
+    for (const token of ['mcp__superagent__orchestrator_review_reply', 'mcp__superagent__orchestrator_publish', 'mcp__superagent__orchestrator_pr_close']) {
+      expect(skill, token).toContain(token)
+    }
   })
 
   it('worker prompt points to the GitHub skill resource', () => {

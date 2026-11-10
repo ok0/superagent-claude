@@ -74,7 +74,7 @@ export function builtinTools(builtins: SessionSpec['builtins']): { allowed: stri
 }
 
 const OUTSIDE_CWD = 'Writing outside the working directory is not allowed'
-const PUSH_OR_PR = 'Push and pull requests go through the orchestrator_publish tool'
+const PUSH_OR_PR = 'Push, pull requests and PR changes go through the orchestrator_publish, orchestrator_review_reply, orchestrator_pr_auto_merge and orchestrator_pr_close tools'
 
 export function guardDecision(spec: SessionSpec, toolName: string, input: unknown): string | undefined {
   const args = (input ?? {}) as Record<string, unknown>

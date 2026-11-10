@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Ticket } from '../src/core/index.ts'
-import { RepositoryAccessError, Workspaces, worktreeName, type RepositoryAccess } from '../src/executor/workspaces.ts'
+import { RepositoryAccessError, Workspaces, coAuthorTrailers, worktreeName, type RepositoryAccess } from '../src/executor/workspaces.ts'
 import { Commands, execProgram } from '../src/infra/commands.ts'
 import { waitUntil } from './fixtures/async.ts'
 import { accepted } from './fixtures/engine.ts'
@@ -21,6 +21,22 @@ const idA = 'a'.repeat(32)
 const idB = 'b'.repeat(32)
 const ticket = (id: string): Ticket => ({ id } as Ticket)
 const local = (remote: string, env: Record<string, string> = {}, secrets: string[] = []): RepositoryAccess => ({ remote: () => remote, env: () => env, secrets })
+type Sh = (args: string[], cwd: string) => string
+function commit(sh: Sh, cwd: string, file: string, text: string, message: string): void {
+  writeFileSync(join(cwd, file), text)
+  sh(['add', '-A'], cwd)
+  sh([...COMMIT, 'commit', '-m', message], cwd)
+}
+function spy(dir: string) {
+  const calls: { args: readonly string[]; env: Record<string, string> }[] = []
+  const commands = new Commands({
+    apiProgram: 'gh',
+    baseEnv: { PATH: process.env.PATH!, HOME: join(dir, 'home'), LANG: 'C' },
+    env: { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' },
+    exec: (p, a, o) => { calls.push({ args: a, env: o.env }); return execProgram(p, a, o) },
+  })
+  return { commands, calls }
+}
 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'workspaces-'))
@@ -175,6 +191,71 @@ describe('git workspaces', () => {
     expect(summary).toContain('owner/repo')
     expect(summary).not.toContain(SECRET)
     w.close()
+  })
+
+  it('pushes the agent branch without force and reports the base and unpushed count', async () => {
+    const { sh, origin, ws } = fixture()
+    const a = await ws.prepare(ticket(idA), 'alpha')
+    commit(sh, a.cwd, 'one.txt', '1', 'c1')
+    const first = await ws.push(ticket(idA), {})
+    expect({ branch: first.branch, base: first.base, pushed: first.pushed, rewritten: first.rewritten, uncommitted: first.uncommitted }).toEqual({ branch: 'agent/alpha', base: 'main', pushed: 1, rewritten: 0, uncommitted: false })
+    expect(sh(['rev-parse', 'refs/heads/agent/alpha'], origin).trim()).toBe(sh(['rev-parse', 'HEAD'], a.cwd).trim())
+    expect((await ws.push(ticket(idA), {})).pushed).toBe(0)
+  })
+
+  it('adds co-author trailers only to unpushed commits and keeps pushed SHAs', async () => {
+    const { dir, sh, origin, state } = fixture()
+    const { commands, calls } = spy(dir)
+    const ws = new Workspaces({ stateDir: state, commands, repositoryOf: () => 'owner/repo', access: local(origin) })
+    const a = await ws.prepare(ticket(idA), 'alpha')
+    commit(sh, a.cwd, 'one.txt', '1', 'c1')
+    await ws.push(ticket(idA), {})
+    const sha1 = sh(['rev-parse', 'HEAD'], a.cwd).trim()
+    commit(sh, a.cwd, 'two.txt', '2', 'c2')
+    commit(sh, a.cwd, 'three.txt', '3', 'c3')
+    const result = await ws.push(ticket(idA), { coAuthors: ['Ann Lee <ann@example.com>'] })
+    expect(result.rewritten).toBe(2)
+    expect(result.pushed).toBe(2)
+    expect(sh(['rev-parse', 'agent/alpha~2'], origin).trim()).toBe(sha1)
+    expect(sh(['log', '-1', '--format=%B', 'agent/alpha~2'], origin)).not.toContain('Co-authored-by')
+    for (const ref of ['agent/alpha~1', 'agent/alpha']) {
+      const body = sh(['log', '-1', '--format=%B', ref], origin)
+      expect(body.split('Co-authored-by: Ann Lee <ann@example.com>').length - 1).toBe(1)
+    }
+    for (const call of calls.filter(c => c.args.includes('push'))) {
+      expect(call.args.some(arg => ['--force', '-f', '--force-with-lease'].includes(arg) || arg.startsWith('+'))).toBe(false)
+    }
+  })
+
+  it('refuses to publish without commits and rejects a malformed co-author before any git call', async () => {
+    const { dir, state, origin } = fixture()
+    const { commands, calls } = spy(dir)
+    const ws = new Workspaces({ stateDir: state, commands, repositoryOf: () => 'owner/repo', access: local(origin) })
+    await ws.prepare(ticket(idA), 'alpha')
+    await expect(ws.push(ticket(idA), {})).rejects.toThrow(/no commits to publish/)
+    const before = calls.length
+    await expect(ws.push(ticket(idA), { coAuthors: ['ann'] })).rejects.toThrow(/Name <email>/)
+    expect(calls.length).toBe(before)
+  })
+
+  it('passes the access env to the push', async () => {
+    const { dir, sh, origin, state } = fixture()
+    const SECRET = 'ghp_TESTSECRET0123456789'
+    const B64 = Buffer.from('x-access-token:' + SECRET).toString('base64')
+    const AUTH = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraheader', GIT_CONFIG_VALUE_0: 'Authorization: Basic ' + B64 }
+    const { commands, calls } = spy(dir)
+    const ws = new Workspaces({ stateDir: state, commands, repositoryOf: () => 'owner/repo', access: local(origin, AUTH, [SECRET, B64]) })
+    const a = await ws.prepare(ticket(idA), 'alpha')
+    commit(sh, a.cwd, 'one.txt', '1', 'c1')
+    await ws.push(ticket(idA), {})
+    const push = calls.find(c => c.args.includes('push'))
+    expect(push?.env.GIT_CONFIG_VALUE_0).toBeDefined()
+  })
+
+  it('coAuthorTrailers appends to an existing trailer block and skips present ones', () => {
+    expect(coAuthorTrailers('Fix\n\nSigned-off-by: A <a@x.io>\n', ['B <b@x.io>'])).toBe('Fix\n\nSigned-off-by: A <a@x.io>\nCo-authored-by: B <b@x.io>\n')
+    const message = 'Fix\n\nCo-authored-by: B <b@x.io>\n'
+    expect(coAuthorTrailers(message, ['B <b@x.io>'])).toBe(message)
   })
 
   it('worktreeName uses the execution name with the id prefix, else the id', () => {

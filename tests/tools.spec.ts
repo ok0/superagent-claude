@@ -29,10 +29,8 @@ describe('worker tools', () => {
   it('executor tools have the worker tool names', () => {
     const { host: h } = host()
     const names = executorTools(h, { id: 'T1' }).map(item => item.name)
-    expect(names).toEqual([
-      'orchestrator_read', 'orchestrator_ack', 'orchestrator_thread_unrelated', 'orchestrator_thread_follow', 'orchestrator_trigger_handback', 'orchestrator_report',
-    ])
-    expect(names).toEqual(WORKER_TOOLS.filter(n => n !== 'orchestrator_publish'))  // orchestrator_publish is M16
+    expect(names).toEqual([...WORKER_TOOLS])
+    expect(names).toHaveLength(10)
   })
 
   it('orchestrator_read without a reader is a tool error', async () => {

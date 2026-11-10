@@ -21,6 +21,7 @@ export interface FakeRepository {
   checkRuns?: Record<string, unknown[]>
   statuses?: Record<string, unknown[]>
   failures?: Record<string, number>
+  resolved?: Set<number>
 }
 
 export interface FakeGhScript {
@@ -37,6 +38,8 @@ export interface FakeGh {
   calls: string[]
   posted: Posted[]
   execs: { program: string; args: string[]; env: Record<string, string> }[]
+  requests: { method: string; path: string; fields: Record<string, string> }[]
+  graphql: { query: string; variables: Record<string, string> }[]
   hold(prefix: string): { reached(): boolean; release(): void }
 }
 
@@ -47,18 +50,64 @@ interface Hold {
   open: () => void
 }
 
+const fieldsOf = (args: readonly string[]): Record<string, string> => {
+  const fields: Record<string, string> = {}
+  args.forEach((arg, i) => {
+    if (arg !== '-f' && arg !== '-F') return
+    const value = args[i + 1] ?? ''
+    const at = value.indexOf('=')
+    if (at >= 0) fields[value.slice(0, at)] = value.slice(at + 1)
+  })
+  return fields
+}
+
 const failure = (status: number): Error => Object.assign(new Error('failed'), { stderr: `gh: Request failed (HTTP ${status})`, code: 1 })
 
 export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string, string | undefined>; apiEnv?: Record<string, string> } = {}): FakeGh {
   const calls: string[] = []
   const posted: Posted[] = []
   const execs: FakeGh['execs'] = []
+  const requests: FakeGh['requests'] = []
+  const graphqlCalls: FakeGh['graphql'] = []
   const holds: Hold[] = []
   const login = script.login ?? AGENT
 
   const findRepository = (name: string): string | undefined => Object.keys(script.repositories).find(item => item.toLowerCase() === name.toLowerCase())
 
+  const graphql = (fields: Record<string, string>): unknown => {
+    const query = fields.query ?? ''
+    const node = /^PR_(.+)_(\d+)$/.exec(fields.id ?? '')
+    const name = node ? findRepository(node[1]!) : findRepository(`${fields.owner ?? ''}/${fields.name ?? ''}`)
+    if (query.includes('reviewThreads')) {
+      if (!name) throw failure(404)
+      const repo = script.repositories[name]!
+      const resolved = (repo.resolved ??= new Set<number>())
+      const nodes = (repo.reviewComments?.[Number(fields.number)] ?? []).flatMap(item => {
+        const reply = (item as { in_reply_to_id?: unknown }).in_reply_to_id
+        if (reply !== undefined && reply !== null) return []
+        const rootId = Number((item as { id: unknown }).id)
+        return [{ id: 'RT_' + rootId, isResolved: resolved.has(rootId), comments: { nodes: [{ databaseId: rootId }] } }]
+      })
+      return { data: { repository: { pullRequest: { reviewThreads: { nodes } } } } }
+    }
+    if (query.includes('resolveReviewThread')) {
+      const rootId = Number(/^RT_(\d+)$/.exec(fields.id ?? '')?.[1])
+      const owner = Object.keys(script.repositories).find(key => Object.values(script.repositories[key]!.reviewComments ?? {}).flat().some(item => (item as { id?: unknown }).id === rootId))
+      if (owner) (script.repositories[owner]!.resolved ??= new Set<number>()).add(rootId)
+      return { data: { resolveReviewThread: { thread: { isResolved: true } } } }
+    }
+    if (query.includes('enablePullRequestAutoMerge')) {
+      if (!name || !node) throw failure(404)
+      const number = Number(node[2])
+      const pr = script.repositories[name]!.pulls?.[number] ?? throwNotFound()
+      Object.assign(pr as Record<string, unknown>, { auto_merge: { merge_method: (fields.method ?? '').toLowerCase() } })
+      return { data: { enablePullRequestAutoMerge: { pullRequest: { number } } } }
+    }
+    throw failure(400)
+  }
+
   const route = (path: string, args: readonly string[]): unknown => {
+    if (path === 'graphql') return graphql(fieldsOf(args))
     if (path === 'user') {
       if (script.userStatus) throw failure(script.userStatus)
       return { login, id: 1, type: 'User' }
@@ -74,6 +123,51 @@ export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string,
       const access = repo.access
       if (access && 'status' in access) throw failure(access.status)
       return { full_name: name, permissions: { push: access && 'push' in access ? access.push : true } }
+    }
+    if (rest === 'pulls' && args.includes('POST')) {
+      const fields = fieldsOf(args)
+      const numbers = [...Object.keys(repo.pulls ?? {}), ...Object.keys(repo.issues ?? {})].map(Number)
+      const number = 1 + Math.max(0, ...numbers)
+      const created = pull(name, number, { title: fields.title, body: fields.body, user: { login, type: 'User' }, node_id: `PR_${name}_${number}`, draft: fields.draft === 'true', head: { sha: 'head-' + number, ref: fields.head, repo: { full_name: name } }, base: { ref: fields.base }, state: 'open' })
+      repo.pulls ??= {}
+      repo.issues ??= {}
+      repo.pulls[number] = created
+      repo.issues[number] = created
+      return created
+    }
+    if (rest === 'pulls') {
+      const params = new URLSearchParams((match[2] ?? '').split('?')[1] ?? '')
+      const head = params.get('head')
+      const state = params.get('state')
+      return Object.values(repo.pulls ?? {}).filter(item => {
+        const found = item as { state: string; head: { ref: string } }
+        return (!state || found.state === state) && `${name.split('/')[0]}:${found.head.ref}` === head
+      })
+    }
+    const reply = /^pulls\/(\d+)\/comments\/(\d+)\/replies$/.exec(rest)
+    if (reply && args.includes('POST')) {
+      const number = Number(reply[1])
+      const root = Number(reply[2])
+      const fields = fieldsOf(args)
+      posted.push({ repository: name, path: rest, body: fields.body ?? '' })
+      const id = 1000 + posted.length
+      repo.reviewComments ??= {}
+      ;(repo.reviewComments[number] ??= []).push({ id, body: fields.body ?? '', in_reply_to_id: root, user: { login, type: 'User' }, pull_request_url: `https://api.github.com/repos/${name}/pulls/${number}` })
+      return { id }
+    }
+    if (/^pulls\/\d+\/merge$/.test(rest) && args.includes('PUT')) return { merged: true }
+    const patch = /^pulls\/(\d+)$/.exec(rest)
+    if (patch && args.includes('PATCH')) {
+      const number = Number(patch[1])
+      const fields = fieldsOf(args)
+      const changes: Record<string, unknown> = { state: fields.state }
+      if (fields.state === 'closed') changes.closed_at = new Date().toISOString()
+      const current = repo.pulls?.[number] ?? throwNotFound()
+      for (const store of [repo.pulls, repo.issues]) {
+        const item = store?.[number]
+        if (item) Object.assign(item as Record<string, unknown>, changes)
+      }
+      return current
     }
     if (args.includes('POST')) {
       const flag = args.indexOf('-f')
@@ -130,6 +224,13 @@ export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string,
     if (args[0] !== 'api') throw new Error(`Unexpected gh command: ${args[0] ?? ''}`)
     const path = args[1] ?? ''
     calls.push(path)
+    const method = args.indexOf('--method')
+    const fields = fieldsOf(args)
+    requests.push({ method: method >= 0 ? args[method + 1] ?? '' : path === 'graphql' ? 'POST' : 'GET', path, fields })
+    if (path === 'graphql') {
+      const { query = '', ...variables } = fields
+      graphqlCalls.push({ query, variables })
+    }
     for (const held of holds) {
       if (path.startsWith(held.prefix)) {
         held.reached = true
@@ -152,6 +253,8 @@ export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string,
     calls,
     posted,
     execs,
+    requests,
+    graphql: graphqlCalls,
     hold: prefix => {
       let open: () => void = () => {}
       const gate = new Promise<void>(resolve => { open = resolve })

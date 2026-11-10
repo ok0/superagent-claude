@@ -102,8 +102,7 @@ describe('agent wiring', () => {
     await waitUntil(() => sdk.queries.length === 1)
     const options = sdk.queries[0]!.options
     expect(Object.keys(options.mcpServers!)).toEqual(['superagent'])
-    const LATER = ['orchestrator_publish']  // M16
-    expect(options.allowedTools!.filter(t => t.startsWith(MCP_TOOL_PREFIX)).sort()).toEqual(WORKER_TOOLS.filter(n => !LATER.includes(n)).map(n => MCP_TOOL_PREFIX + n).sort())
+    expect(options.allowedTools!.filter(t => t.startsWith(MCP_TOOL_PREFIX)).sort()).toEqual(WORKER_TOOLS.map(n => MCP_TOOL_PREFIX + n).sort())
     expect(options.model).toBe('claude-test-model')
     expect((options.env as Record<string, string | undefined>).SUPERAGENT_CLAUDE_GITHUB_TOKEN).toBeUndefined()
   })
@@ -137,7 +136,7 @@ describe('agent wiring', () => {
     await routeTool.execute({ decisions: [{ kind: 'accept', trigger_id: '1', title: 'Fix', worktree_name: 'fix-it', acknowledgement: 'On it.' }] }, new AbortController().signal)
     await waitUntil(() => specs.some(spec => spec.role === 'worker'))
     const worker = specs.find(spec => spec.role === 'worker')!
-    expect(worker.tools.map(tool => tool.name).sort()).toEqual(WORKER_TOOLS.filter(name => !['orchestrator_publish'].includes(name)).sort())
+    expect(worker.tools.map(tool => tool.name).sort()).toEqual([...WORKER_TOOLS].sort())
     const report = worker.tools.find(tool => tool.name === 'orchestrator_report')!
     await report.execute({ state: 'ready', summary: 'Done' }, new AbortController().signal)
     await waitUntil(() => router.received.some(message => JSON.stringify(message).includes('worker_report')))
