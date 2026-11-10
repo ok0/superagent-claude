@@ -55,6 +55,11 @@ export const HOST_RULES: Record<PromptRole, string> = {
   worker: [...COMMON_HOST_RULES, '- Work only inside your ticket worktree, the current directory.'].join('\n'),
 }
 
+export const WRITE_ACCESS_NOTE_LEAD = 'Host note: the agent account cannot push to'
+export function writeAccessNote(repository: string, access: { push?: boolean } | undefined): string | undefined {
+  if (access?.push !== false) return undefined
+  return `${WRITE_ACCESS_NOTE_LEAD} ${repository} (checked at startup), so no branch or pull request can be delivered for this ticket. If the request needs a change to the repository, do not acknowledge it and do not start the work: call mcp__superagent__orchestrator_report with state: blocked and one human_action asking a person to give the agent account write access to ${repository}. If it only asks a question or an explanation, answer it normally. If a person says access was granted, continue the work.`
+}
 export const DATA_CLOSE = '</external-data>'
 export interface ExternalText { source: string; text: string }
 

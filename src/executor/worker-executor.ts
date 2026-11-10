@@ -26,6 +26,8 @@ export interface WorkerDeps {
   /** How the prompt changed since the version a ticket's earlier session used (ADR-18). */
   promptChange?(stored: string): PromptChange
   history?(cwd: string): Promise<string>
+  /** A host note for a fresh launch, such as missing write access (ADR-26). */
+  launchNote?(ticket: Ticket, workspace: Workspace): string | undefined
 }
 export interface WorkerTimers { setTimeout(run: () => void, ms: number): unknown; clearTimeout(handle: unknown): void }
 export interface WorkerExecutorOptions {
@@ -216,11 +218,12 @@ export class WorkerExecutor implements Executor {
     const last = inputs.findLastIndex(input => inputMode(input) !== 'inject')
     return last < 0 ? [] : inputs.slice(0, last + 1)
   }
-  private assignmentMessage(ticket: Ticket, resumed: boolean): string {
+  private assignmentMessage(ticket: Ticket, resumed: boolean, note?: string): string {
     if (resumed) return JSON.stringify({ ticket_id: ticket.id, assignment: ticket.assignments.length })
     const origin = this.store.triggers.get(ticket.origin.triggerId)
     return JSON.stringify({
       ticket_id: ticket.id, title: ticket.title, ...(ticket.execution?.assignment ? { assignment: ticket.execution.assignment } : {}),
+      ...(note ? { host_note: note } : {}),
       ...(origin ? { trigger: { trigger_id: origin.id, from: origin.actor.id, at: origin.at, text: origin.text } } : {}),
     })
   }
@@ -263,11 +266,12 @@ export class WorkerExecutor implements Executor {
       attached = true
       for (const input of opened.lead) this.send(live, input)
       const fresh = this.store.tickets.get(ticketId)!
+      const hostNote = opened.resume ? undefined : this.deps.launchNote?.(fresh, workspace)
       const noteId = key('input', ticketId, 'restart', assignmentId)
       const note = fresh.undelivered.includes(noteId) ? fresh.inputs.find(input => input.id === noteId) : undefined
       const noteSent = note?.kind === 'text'
       if (note?.kind === 'text') this.send(live, { id: noteId, text: note.text, mode: 'followup' })
-      this.send(live, { id: `assignment:${assignmentId}`, text: this.assignmentMessage(fresh, !!opened.resume), mode: 'followup' })
+      this.send(live, { id: `assignment:${assignmentId}`, text: this.assignmentMessage(fresh, !!opened.resume, hostNote), mode: 'followup' })
       this.engine().assignmentStarted(ticketId, assignmentId)
       if (noteSent) this.engine().inputsDelivered(ticketId, assignmentId, [noteId])
     } catch (e) {

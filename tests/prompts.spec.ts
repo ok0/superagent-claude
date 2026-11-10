@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { Store } from '../src/app/store.ts'
-import { PROMPT_FILES, Prompts, PromptVersions, assemble, diffLines, formatDiff, loadBuiltins, promptDiff, promptRows, readTeam, ruleLines } from '../src/app/prompts.ts'
+import { PROMPT_FILES, Prompts, PromptVersions, WRITE_ACCESS_NOTE_LEAD, assemble, diffLines, formatDiff, loadBuiltins, promptDiff, promptRows, readTeam, ruleLines, writeAccessNote } from '../src/app/prompts.ts'
 import type { Rule } from '../src/policy/policy.ts'
 
 let directory: string
@@ -66,6 +66,15 @@ it('uses the built-in default when a team file is missing and replaces only that
   expect(a.parts.find(p => p.key === 'team/scope')!.text).toBe('## Ticket scope\nteam scope')
   expect(a.parts.find(p => p.key === 'team/communication')!.text).toBe('## Communication\nteam/communication default line 1\nteam/communication default line 2')
   expect(a.parts.find(p => p.key === 'team/delivery')!.text).toBe('## Delivery requirements\nteam/delivery default line 1\nteam/delivery default line 2')
+})
+
+it('writes the write-access note only for a repository recorded without push', () => {
+  expect(writeAccessNote('o/r', { push: false })).toContain(WRITE_ACCESS_NOTE_LEAD + ' o/r')
+  expect(writeAccessNote('o/r', { push: false })).toContain('state: blocked')
+  expect(writeAccessNote('o/r', { push: false })).toContain('write access')
+  expect(writeAccessNote('o/r', { push: true })).toBeUndefined()
+  expect(writeAccessNote('o/r', undefined)).toBeUndefined()
+  expect(writeAccessNote('o/r', {})).toBeUndefined()
 })
 
 it('keeps external text inside the data delimiters', () => {

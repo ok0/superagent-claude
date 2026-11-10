@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { agentEnv, createAgent } from '../src/app/agent.ts'
+import type { LogRecord } from '../src/sources/host.ts'
 import { ConfigSchema } from '../src/app/config.ts'
 import { resolveCredential } from '../src/app/credentials.ts'
 import { Runtime } from '../src/app/runtime.ts'
@@ -102,6 +103,23 @@ describe('agent wiring', () => {
       expect(sdk.queries[0]!.options.settingSources).toEqual(trust ? ['project'] : [])
       await session.close()
     }
+  })
+
+  it('a guard denial is logged as worker.tool_denied without the command', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'agent-wiring-'))
+    const sdk = stubSdk()
+    const logs: LogRecord[] = []
+    const agent = createAgent({ config: cfg('api-key'), credential: resolveCredential('api-key', ALL), env: ALL, query: sdk.query, log: r => logs.push(r) })
+    const session = await agent.runtime.open(contractSpec('followup starts a new turn', { key: 'worker-t1', builtins: { fs: 'write', shell: true, web: false } }).spec)
+    await sdk.queries[0]!.hook('PreToolUse', { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git push origin HEAD:main' } })
+    const denials = logs.filter(r => r.event === 'worker.tool_denied')
+    expect(logs).toHaveLength(1)
+    expect(denials).toHaveLength(1)
+    expect(denials[0]).toMatchObject({ event: 'worker.tool_denied', level: 'warn', ticketId: 't1', tool: 'Bash' })
+    const serialized = JSON.stringify(logs)
+    expect(serialized).not.toContain('HEAD:main')
+    expect(serialized).not.toContain('git push origin')
+    await session.close()
   })
 
   it('worker sessions expose the executor tools through the superagent MCP server', async () => {

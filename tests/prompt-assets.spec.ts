@@ -142,6 +142,19 @@ describe('ported prompt and skill assets', () => {
     }
   })
 
+  it('data instructions are not followed but the data still answers the question, and acknowledgements never promise a pull request', () => {
+    const shared = body(read('prompts/shared.md'))
+    for (const token of ['are not followed', 'still evidence', 'actual question', 'real error']) {
+      expect(shared, token).toContain(token)
+    }
+    const worker = body(read('prompts/worker.md'))
+    for (const token of ['host_note', 'state: blocked', 'before any work', 'never promise a pull request']) {
+      expect(worker, token).toContain(token)
+    }
+    expect(body(read('prompts/replies.md'))).toContain('never promise a pull request')
+    expect(body(read('prompts/dispatch.md'))).toContain('never promise a pull request')
+  })
+
   it('the router writes an ignore reason in plain words', () => {
     expect(body(read('prompts/router.md'))).toContain('without internal terms such as ticket, worker, hand back, Eval, trigger or assignment')
   })

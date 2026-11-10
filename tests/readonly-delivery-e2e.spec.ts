@@ -13,6 +13,7 @@ import { FakeRuntime, type FakeReaction, type FakeScript, type FakeTurn } from '
 import { GITHUB_STATE } from '../src/sources/github/source.ts'
 import { issueTrigger } from '../src/sources/github/trigger.ts'
 import { waitUntil } from './fixtures/async.ts'
+import { WRITE_ACCESS_NOTE_LEAD } from '../src/app/prompts.ts'
 import { ManualClock } from './fixtures/executor.ts'
 import { AGENT, fakeGh, issue, notification, START, type FakeGh, type FakeRepository } from './fixtures/fake-gh.ts'
 
@@ -128,6 +129,7 @@ it('without write access: ticket, acknowledgement and worktree work; publish ret
   const [result] = publishResults(worker)
   expect(result).toMatchObject({ published: false, recorded_at_startup: 'no push' })
   expect(String(result!.reason)).toContain('acme/widgets')
+  expect(worker.sent.filter(input => input.text.includes(WRITE_ACCESS_NOTE_LEAD + ' ' + A))).toHaveLength(1)
   expect(gh.requests.filter(r => r.path.startsWith('repos/acme/widgets/pulls'))).toHaveLength(0)
   expect(execFileSync('git', ['for-each-ref', 'refs/heads/agent'], { cwd: origin, env, encoding: 'utf8' }).trim()).toBe('')
   expect(runtime!.store.tickets.get(ticketId)?.follows?.some(item => item.own)).not.toBe(true)
@@ -154,6 +156,9 @@ it('a startup record of push is overridden when push is gone at publish time', a
   const worker = fake.sessions.find(session => session.spec.role === 'worker')!
   const [result] = publishResults(worker)
   expect(result).toMatchObject({ published: false, recorded_at_startup: 'push' })
+  for (const session of fake.sessions.filter(s => s.spec.role === 'worker')) {
+    expect(session.sent.filter(input => input.text.includes(WRITE_ACCESS_NOTE_LEAD)).length).toBe(0)
+  }
   expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')).toHaveLength(0)
   expect(execFileSync('git', ['for-each-ref', 'refs/heads/agent'], { cwd: origin, env, encoding: 'utf8' }).trim()).toBe('')
   expect(latestReport()!.state).toBe('blocked')

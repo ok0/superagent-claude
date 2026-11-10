@@ -214,6 +214,39 @@ describe('fixed safety defaults', () => {
     expect(server.name).toBe('superagent')
   })
 
+  it('the shell worker allows the nine read-only git rules and no broad git or push rule', () => {
+    const nine = ['Bash(git show:*)', 'Bash(git log:*)', 'Bash(git diff:*)', 'Bash(git status:*)', 'Bash(git branch:*)', 'Bash(git blame:*)', 'Bash(git cat-file:*)', 'Bash(git ls-files:*)', 'Bash(git rev-parse:*)']
+    const allowed = sdkOptions(spec(), ctx('api-key')).allowedTools!
+    for (const rule of nine) expect(allowed).toContain(rule)
+    expect(allowed).not.toContain('Bash(git:*)')
+    expect(allowed.filter(entry => /push/.test(entry))).toEqual([])
+    const readOnly = builtinTools({ fs: 'read', shell: false, web: false }).allowed
+    for (const rule of nine) expect(readOnly).not.toContain(rule)
+  })
+
+  it('the guard hook denies push and gh variants with one onDeny call each and allows read-only git', async () => {
+    const signal = new AbortController().signal
+    const denied = ['git push origin HEAD:main', 'git push --force', 'cd sub && git push', '(git push)', 'gh pr merge 1', 'gh api repos/x']
+    for (const command of denied) {
+      const onDeny = vi.fn()
+      const options = sdkOptions(spec(), ctx('api-key', { onDeny }))
+      const out = (await hookFn(options.hooks!.PreToolUse)({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, session_id: 's', transcript_path: '', cwd: '/work/t1', tool_use_id: 'u' }, 'u', { signal })) as {
+        hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string }
+      }
+      expect(out.hookSpecificOutput?.permissionDecision).toBe('deny')
+      expect(onDeny).toHaveBeenCalledTimes(1)
+      expect(onDeny).toHaveBeenCalledWith('Bash', out.hookSpecificOutput!.permissionDecisionReason)
+      expect(out.hookSpecificOutput!.permissionDecisionReason).not.toContain(command)
+    }
+    for (const command of ['git show b:f', 'git log -1', 'git diff']) {
+      const onDeny = vi.fn()
+      const options = sdkOptions(spec(), ctx('api-key', { onDeny }))
+      const out = await hookFn(options.hooks!.PreToolUse)({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, session_id: 's', transcript_path: '', cwd: '/work/t1', tool_use_id: 'u' }, 'u', { signal })
+      expect(out).toEqual({})
+      expect(onDeny).not.toHaveBeenCalled()
+    }
+  })
+
   it('the always-disallowed list is part of every session', () => {
     expect([...ALWAYS_DISALLOWED]).toEqual(['AskUserQuestion', 'WebFetch', 'WebSearch'])
   })

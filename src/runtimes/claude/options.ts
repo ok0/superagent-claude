@@ -30,11 +30,14 @@ export interface OptionsContext {
   stderr?: (text: string) => void
   /** security.trustRepoConfig: load the repository's project settings. Repository MCP config stays ignored (strictMcpConfig). */
   trustRepoConfig?: boolean
+  /** Called once per guard denial with the tool name and the fixed reason (never the command). */
+  onDeny?: (tool: string, reason: string) => void
 }
 
 const READ_TOOLS = ['Read', 'Glob', 'Grep']
 const WRITE_TOOLS = ['Write', 'Edit', 'NotebookEdit']
 const SHELL_TOOLS = ['Bash']
+export const READONLY_GIT_RULES = ['Bash(git show:*)', 'Bash(git log:*)', 'Bash(git diff:*)', 'Bash(git status:*)', 'Bash(git branch:*)', 'Bash(git blame:*)', 'Bash(git cat-file:*)', 'Bash(git ls-files:*)', 'Bash(git rev-parse:*)'] as const
 
 function isSecretName(key: string): boolean {
   if (Object.values(AUTH_ENV).some(keys => keys.includes(key))) return true
@@ -70,7 +73,7 @@ export function builtinTools(builtins: SessionSpec['builtins']): { allowed: stri
   if (builtins.fs === 'none') disallowed.push(...READ_TOOLS)
   if (builtins.fs === 'write') allowed.push(...WRITE_TOOLS)
   if (builtins.fs !== 'write') disallowed.push(...WRITE_TOOLS)
-  if (builtins.shell) allowed.push(...SHELL_TOOLS)
+  if (builtins.shell) allowed.push(...SHELL_TOOLS, ...READONLY_GIT_RULES)
   if (!builtins.shell) disallowed.push(...SHELL_TOOLS)
   return { allowed, disallowed }
 }
@@ -102,6 +105,7 @@ export function sdkOptions(spec: SessionSpec, ctx: OptionsContext): Options {
     if (input.hook_event_name !== 'PreToolUse') return {}
     const reason = guardDecision(spec, input.tool_name, input.tool_input)
     if (reason === undefined) return {}
+    try { ctx.onDeny?.(input.tool_name, reason) } catch {}
     return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }
   }
   const read: HookCallback = async () => {

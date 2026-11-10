@@ -23,6 +23,8 @@ export interface QueryHandle extends AsyncIterable<SDKMessage> {
 
 export type QueryFn = (params: { prompt: AsyncIterable<SDKUserMessage>; options: Options }) => QueryHandle
 
+export interface ToolDenial { key: string; tool: string; reason: string }
+
 export interface ClaudeRuntimeOptions {
   mode: AuthMode
   configDir: string
@@ -32,6 +34,7 @@ export interface ClaudeRuntimeOptions {
   sandboxAvailable?: () => boolean
   stderr?: (text: string) => void
   trustRepoConfig?: boolean
+  onDeny?: (denial: ToolDenial) => void
 }
 
 export function sandboxAvailable(platform: NodeJS.Platform = process.platform): boolean {
@@ -73,6 +76,7 @@ interface SessionConfig {
   sandbox: boolean
   stderr?: (text: string) => void
   trustRepoConfig: boolean
+  onDeny?: (denial: ToolDenial) => void
 }
 
 export class ClaudeSession implements AgentSession {
@@ -107,6 +111,7 @@ export class ClaudeSession implements AgentSession {
       abortController: this.abort,
       stderr: config.stderr,
       trustRepoConfig: config.trustRepoConfig,
+      onDeny: config.onDeny ? (tool, reason) => config.onDeny!({ key: spec.key, tool, reason }) : undefined,
     })
     this.q = queryFn({ prompt: this.stream, options })
     this.emit({ type: 'session', sessionId: this.id })
@@ -239,6 +244,7 @@ export class ClaudeRuntime implements AgentRuntime {
       sandbox: this.options.sandbox ?? true,
       stderr: this.options.stderr,
       trustRepoConfig: this.options.trustRepoConfig ?? false,
+      onDeny: this.options.onDeny,
     }, this.options.query ?? sdkQuery)
   }
 

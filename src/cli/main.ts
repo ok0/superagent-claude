@@ -117,13 +117,14 @@ async function start(argv: readonly string[], io: CliIo): Promise<number> {
     throw error
   }
 
+  const log = jsonLines(io.out)
   let agent: Agent
   let credential: Credential
   let report: StartupReport
   let sources: InstalledSources
   try {
     credential = resolveCredential(config.auth.mode, io.env)
-    agent = createAgent({ config, credential, env: io.env, ...(fake ? { fake: fakeScript(io.env) } : {}) })
+    agent = createAgent({ config, credential, env: io.env, log, ...(fake ? { fake: fakeScript(io.env) } : {}) })
     report = assertStartupPolicy(config, credential, undefined, await agent.runtime.probe())
     sources = installedSources(config, io.env)
   } catch (error) {
@@ -137,7 +138,7 @@ async function start(argv: readonly string[], io: CliIo): Promise<number> {
 
   let runtime: Runtime
   try {
-    runtime = new Runtime({ config, configDir: dirname(path), configPath: path, env: io.env, runtime: agent.runtime, workspaces: agent.workspaces, router: agent.router, log: jsonLines(io.out), startup: report, ...sources })
+    runtime = new Runtime({ config, configDir: dirname(path), configPath: path, env: io.env, runtime: agent.runtime, workspaces: agent.workspaces, router: agent.router, log, startup: report, ...sources })
   } catch (error) {
     io.err(`superagent-claude: ${messageOf(error)}\n`)
     return EXIT_REFUSED

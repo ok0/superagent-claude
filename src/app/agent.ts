@@ -6,7 +6,9 @@ import { join } from 'node:path'
 import type { Config } from './config.ts'
 import { runtimeEnv, type Credential } from './credentials.ts'
 import type { AgentRuntime } from '../executor/contract.ts'
-import { ClaudeRuntime, type QueryFn } from '../runtimes/claude/runtime.ts'
+import type { LogRecord, LogSink } from '../sources/host.ts'
+import { workerKey } from '../executor/worker-executor.ts'
+import { ClaudeRuntime, type QueryFn, type ToolDenial } from '../runtimes/claude/runtime.ts'
 import { CLAUDE_INHERITED_ENV } from '../runtimes/claude/options.ts'
 import { FakeRuntime, type FakeScript } from '../runtimes/fake/runtime.ts'
 
@@ -26,6 +28,19 @@ export interface AgentOptions {
   fake?: FakeScript
   query?: QueryFn
   stderr?: (text: string) => void
+  log?: LogSink
+}
+
+export function toolDeniedRecord(d: ToolDenial, at: string): LogRecord {
+  return {
+    level: 'warn',
+    at,
+    event: 'worker.tool_denied',
+    ...(d.key.startsWith(workerKey('')) ? { ticketId: d.key.slice(workerKey('').length) } : {}),
+    session: d.key,
+    tool: d.tool,
+    reason: d.reason,
+  }
 }
 
 export interface Agent { runtime: AgentRuntime; workspaces: 'git' | 'scratch'; router: 'session' | 'deterministic' }
@@ -42,6 +57,7 @@ export function createAgent(o: AgentOptions): Agent {
       trustRepoConfig: o.config.security.trustRepoConfig,
       ...(o.query ? { query: o.query } : {}),
       ...(o.stderr ? { stderr: o.stderr } : {}),
+      onDeny: d => o.log?.(toolDeniedRecord(d, new Date().toISOString())),
     }),
     workspaces: 'git',
     router: 'session',

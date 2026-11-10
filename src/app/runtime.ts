@@ -24,7 +24,7 @@ import { Outbox, type OutboxChannels } from './outbox.ts'
 import { Passes, type Timers as PassTimers } from './passes.ts'
 import { Retention } from './retention.ts'
 import { databasePath, Store } from './store.ts'
-import { PromptVersions, Prompts, ruleLines } from './prompts.ts'
+import { PromptVersions, Prompts, ruleLines, writeAccessNote } from './prompts.ts'
 import { executorTools, type ExecutorToolsHost } from './tools/executor.ts'
 import { issueOf } from './tools/delivery.ts'
 import { RouterHost } from '../executor/router-host.ts'
@@ -302,6 +302,7 @@ export class Runtime implements SourceHost {
         env: () => ({}),
         promptVersion: () => this.prompts.version('worker'),
         promptChange: stored => this.prompts.change('worker', stored),
+        launchNote: (_ticket, workspace) => writeAccessNote(workspace.repository, this.store.get(GITHUB_STATE.access(workspace.repository))),
         history: cwd => this.workspaces.history(cwd),
       }
       this.executor = new WorkerExecutor({

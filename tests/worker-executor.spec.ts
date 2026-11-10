@@ -26,6 +26,25 @@ it('only queues a launch from start and opens the session after commit', async (
   } finally { await w.close() }
 })
 
+it('a fresh launch carries the host note exactly once, and none without one', async () => {
+  const w = workerHarness({ deps: { launchNote: () => 'NOTE-X' } })
+  try {
+    const id = accepted(w, '1').ticketId!
+    await waitUntil(() => w.runtime.opened.length === 1 && w.runtime.sessions[0]!.sent.some(input => input.id === `assignment:${w.ticket(id).assignments[0]!.id}`))
+    const sent = w.runtime.sessions[0]!.sent
+    const assignment = sent.find(input => input.id === `assignment:${w.ticket(id).assignments[0]!.id}`)!
+    expect(sent.filter(input => input.text.includes('NOTE-X'))).toHaveLength(1)
+    expect(JSON.parse(assignment.text).host_note).toBe('NOTE-X')
+  } finally { await w.close() }
+  const plain = workerHarness()
+  try {
+    const id = accepted(plain, '1').ticketId!
+    await waitUntil(() => plain.runtime.opened.length === 1 && plain.runtime.sessions[0]!.sent.some(input => input.id === `assignment:${plain.ticket(id).assignments[0]!.id}`))
+    const assignment = plain.runtime.sessions[0]!.sent.find(input => input.id === `assignment:${plain.ticket(id).assignments[0]!.id}`)!
+    expect(JSON.parse(assignment.text)).not.toHaveProperty('host_note')
+  } finally { await plain.close() }
+})
+
 it("steers a person's message into the running turn without a new Eval", async () => {
   const g = gates()
   const w = workerHarness({ script: ({ index }) => index === 0 ? { hold: g.get('a'), tools: [{ name: 'wait', args: {} }] } : {} })

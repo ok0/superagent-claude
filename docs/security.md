@@ -16,7 +16,7 @@ Sessions use `permissionMode: 'dontAsk'` with an explicit allow list (role built
 
 `bypassPermissions` is never used: in that mode the sandbox's network prompts are approved automatically, so a domain outside the allow list was reachable in measurement.
 
-A `PreToolUse` guard (fails closed) denies writes outside the worktree and direct `git push` / `gh` calls. Pushes and pull requests go through host tools.
+A `PreToolUse` guard (fails closed) denies writes outside the worktree and direct `git push` / `gh` calls. Pushes and pull requests go through host tools. Shell workers also have explicit allow rules for read-only git commands (show, log, diff, status, branch, blame, cat-file, ls-files, rev-parse); there is no broad git rule. Each guard denial is logged as a worker.tool_denied event with the tool and the reason, never the command text.
 
 ## Tools and network
 

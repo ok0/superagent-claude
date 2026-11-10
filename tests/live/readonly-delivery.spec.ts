@@ -13,6 +13,7 @@ import { main } from '../../src/cli/main.ts'
 import { DATABASE_FILE, databasePath, type Receipt } from '../../src/app/store.ts'
 import { openReadOnly } from '../../src/app/store-read.ts'
 import { humanTextProblem } from '../../src/app/tools/tool.ts'
+import { WRITE_ACCESS_NOTE_LEAD } from '../../src/app/prompts.ts'
 import { sleep } from '../fixtures/async.ts'
 
 const execFileAsync = promisify(execFile)
@@ -150,11 +151,8 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live delivery 
     dir = mkdtempSync(join(tmpdir(), 'sac-live-readonly-'))
     configPath = join(dir, 'superagent-claude.json')
 
-    let created = false
-    if (await ownerStatus('repos/' + REPO) === 404) {
-      created = true
-      await owner(['user/repos', '-X', 'POST', '-f', 'name=superagent-claude-playground-readonly', '-f', 'description=Public test target for automated agent runs without write access', '-F', 'private=false', '-F', 'auto_init=true'])
-    }
+    const status = await ownerStatus('repos/' + REPO)
+    if (status !== 200) throw new Error('the readonly test repository must already exist (HTTP ' + status + ')')
     const repo = await owner(['repos/' + REPO]) as { html_url: string; private: boolean }
     expect(repo.private).toBe(false)
     const collaboratorStatus = await ownerStatus('repos/' + REPO + '/collaborators/' + AGENT)
@@ -163,7 +161,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live delivery 
     const invitations = await owner(['repos/' + REPO + '/invitations']) as Invitation[]
     const invited = invitations.some(invitation => invitation.invitee?.login === AGENT)
     expect(invited).toBe(false)
-    evidence.repository = { url: repo.html_url, private: repo.private, created, collaboratorStatus, invited }
+    evidence.repository = { url: repo.html_url, private: repo.private, collaboratorStatus, invited }
 
     config = { repositories: [REPO], policy: { allowed: [OWNER], acceptMode: 'auto' }, auth: { mode: 'subscription', owner: OWNER }, workers: LIMITS, stateDir: join(dir, 'state') }
     writeFileSync(configPath, JSON.stringify(config, null, 2))
@@ -249,7 +247,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live delivery 
     }
   }, 300_000)
 
-  it('an issue becomes a ticket with replies and a worktree, and delivery ends blocked asking for write access', async () => {
+  it('a code request without write access is acknowledged without a pull request promise and blocked asking for write access before any work', async () => {
     const t0 = Date.now()
     const issue = await createIssue(REPO, ISSUE_TITLE, ISSUE_BODY)
     const issueTrigger = await until(() => triggerOfIssue(REPO, issue.number), 300_000, 5_000, 'trigger for the issue')
@@ -272,17 +270,19 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live delivery 
     const transcriptFiles = walk(join(dir, 'state', 'claude', 'projects')).filter(file => file.endsWith('.jsonl'))
     const publishResults = transcriptFiles.flatMap(file => readFileSync(file, 'utf8').split('\n').filter(text => text.trim()))
       .filter(text => /published\\?"\s*:\s*false|published: false/.test(text) && text.includes(REPO))
-    expect(publishResults.length).toBeGreaterThan(0)
-    const publishResult = publishResults[0]!.slice(0, 2000)
+    const publishCalls = publishResults.length
+    const publishResult = publishResults[0]?.slice(0, 2000) ?? null
 
     const question = blocked.attention?.question ?? ''
     expect(question.length).toBeGreaterThan(0)
     expect(humanTextProblem(question)).toBeUndefined()
 
-    const comments = await until(async () => {
-      const found = await agentComments(issue.number)
-      return found.length >= 2 ? found : undefined
-    }, 600_000, 20_000, 'agent comment besides the acknowledgement')
+    await until(() => storeRows<Receipt>('outbox').some(row => row.ticketId === ticketId && row.kind !== 'acknowledgement' && row.status === 'sent') ? true : undefined, 600_000, 20_000, 'non-acknowledgement reply receipt sent')
+    const comments = await agentComments(issue.number)
+
+    const noteSeen = transcriptFiles.some(file => readFileSync(file, 'utf8').includes(WRITE_ACCESS_NOTE_LEAD + ' ' + REPO))
+    expect(noteSeen).toBe(true)
+    expect(/write access|permission/i.test(question)).toBe(true)
 
     const branches = await owner(['repos/' + REPO + '/branches?per_page=100']) as { name: string }[]
     expect(branches.filter(branch => branch.name.startsWith('agent/'))).toHaveLength(0)
@@ -296,7 +296,21 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live delivery 
     const snapshot = health ? JSON.parse(String(health.value)) as { entries?: Record<string, { state?: string }> } : undefined
     expect(snapshot?.entries?.['github:' + REPO]?.state).not.toBe('error')
 
+    const acks = receipts.filter(row => row.kind === 'acknowledgement').map(row => row.text)
+    expect(acks.every(text => !/pull request|\bPR\b|merge/i.test(text))).toBe(true)
+
+    const worktreesRoot = join(dir, 'state', 'worktrees') + sep
+    const writes = transcriptFiles.flatMap(file => readFileSync(file, 'utf8').split('\n').filter(text => text.trim()).map(text => JSON.parse(text) as { cwd?: string; message?: { content?: unknown } }))
+      .filter(entry => entry.cwd?.startsWith(worktreesRoot))
+      .flatMap(entry => Array.isArray(entry.message?.content) ? entry.message.content as { type?: string; name?: string }[] : [])
+      .filter(block => block.type === 'tool_use' && ['Write', 'Edit', 'NotebookEdit'].includes(block.name ?? '')).length
+    expect(writes).toBe(0)
+
     evidence.readonly = {
+      noteSeen,
+      acks,
+      writes,
+      publishCalls,
       issue: issue.html_url,
       comments: comments.map(comment => ({ url: comment.html_url, id: markerId(comment.body ?? ''), body: stripMarker(comment.body ?? '') })),
       ticketId,

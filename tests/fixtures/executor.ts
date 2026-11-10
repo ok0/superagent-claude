@@ -41,7 +41,7 @@ export class ManualClock {
 }
 export interface WorkerHarnessOptions { script?: FakeScript; max?: number; limits?: { maxTurns: number; maxBudgetUsd: number }
   prepare?: WorkerDeps['prepare']; retries?: number; directory?: string; start?: boolean
-  deps?: Partial<Pick<WorkerDeps, 'instructions' | 'promptVersion' | 'promptChange' | 'history'>> }
+  deps?: Partial<Pick<WorkerDeps, 'instructions' | 'promptVersion' | 'promptChange' | 'history' | 'launchNote'>> }
 export function workerHarness(options: WorkerHarnessOptions = {}) {
   const directory = options.directory ?? mkdtempSync(join(tmpdir(), 'worker-'))
   const store = new Store(join(directory, 'db.sqlite'))
