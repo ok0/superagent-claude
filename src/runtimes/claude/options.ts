@@ -1,6 +1,7 @@
 /** Maps a SessionSpec to the SDK Options: a whitelisted environment, the builtin tool sets, the fixed permission posture (dontAsk, never bypass), the guard and read hooks, the sandbox and the limits. */
 import type { Options, HookCallback, HookCallbackMatcher, McpServerConfig, SandboxSettings, SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk'
-import { resolve, relative, isAbsolute } from 'node:path'
+import { existsSync, realpathSync } from 'node:fs'
+import { resolve, relative, isAbsolute, dirname, basename, join } from 'node:path'
 import type { SessionSpec } from '../../executor/contract.ts'
 import { subprocessEnv, INHERITED_ENV } from '../../infra/env.ts'
 import { mcpToolName } from './mcp.ts'
@@ -23,6 +24,8 @@ export interface OptionsContext {
   env: Readonly<Record<string, string | undefined>>
   configDir: string
   sandbox: boolean
+  /** Linux only, skip the fresh /proc mount inside the sandbox (ADR-27). Also sets denyRead /proc; CLI 0.3.321 binds /proc after that mask, so /proc stays visible, and other processes' environ reads were measured as denied (ADR-33). */
+  weakerNestedSandbox?: boolean
   sessionId?: string
   mcp?: McpServerConfig
   onRead: () => void
@@ -81,6 +84,35 @@ export function builtinTools(builtins: SessionSpec['builtins']): { allowed: stri
 
 const OUTSIDE_CWD = 'Writing outside the working directory is not allowed'
 const PUSH_OR_PR = 'Push, pull requests and PR changes go through the orchestrator_publish, orchestrator_review_reply, orchestrator_pr_auto_merge and orchestrator_pr_close tools'
+const PROC_READ = 'Reading /proc is not allowed'
+
+function isProcPath(path: string): boolean {
+  return path === '/proc' || path.startsWith('/proc/')
+}
+
+export function underProc(path: string): boolean {
+  if (isProcPath(path)) return true
+  let existing = path
+  const rest: string[] = []
+  while (!existsSync(existing) && dirname(existing) !== existing) {
+    rest.unshift(basename(existing))
+    existing = dirname(existing)
+  }
+  let resolved = existing
+  try {
+    resolved = realpathSync(existing)
+  } catch {}
+  return isProcPath(join(resolved, ...rest))
+}
+
+function globLiteralPrefix(pattern: string): string {
+  const parts: string[] = []
+  for (const segment of pattern.split('/')) {
+    if (/[*?[{]/.test(segment)) break
+    parts.push(segment)
+  }
+  return parts.join('/')
+}
 
 export function guardDecision(spec: SessionSpec, toolName: string, input: unknown): string | undefined {
   const args = (input ?? {}) as Record<string, unknown>
@@ -90,6 +122,18 @@ export function guardDecision(spec: SessionSpec, toolName: string, input: unknow
     const cwd = resolve(spec.cwd)
     const rel = relative(cwd, resolve(cwd, path))
     if (rel === '..' || rel.startsWith('../') || isAbsolute(rel)) return OUTSIDE_CWD
+    return undefined
+  }
+  if (toolName === 'Read' || toolName === 'Glob' || toolName === 'Grep') {
+    const cwd = resolve(spec.cwd)
+    const candidates: unknown[] = [toolName === 'Read' ? args.file_path : args.path]
+    if (toolName === 'Glob' && typeof args.pattern === 'string') {
+      const prefix = globLiteralPrefix(args.pattern)
+      if (prefix !== '') candidates.push(prefix)
+    }
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && underProc(resolve(cwd, candidate))) return PROC_READ
+    }
     return undefined
   }
   if (toolName === 'Bash') {
@@ -136,6 +180,7 @@ export function sdkOptions(spec: SessionSpec, ctx: OptionsContext): Options {
             allowUnsandboxedCommands: false,
             autoAllowBashIfSandboxed: true,
             network: { allowedDomains: [...spec.network.allow] },
+            ...(ctx.weakerNestedSandbox ? { enableWeakerNestedSandbox: true, filesystem: { denyRead: ['/proc'] } } : {}),
           } satisfies SandboxSettings,
         }
       : {}),

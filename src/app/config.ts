@@ -50,7 +50,8 @@ export const ConfigSchema = z.object({
   security: z.object({
     trustRepoConfig: z.boolean().default(false),
     allowUnsandboxed: z.boolean().default(false),
-  }).strict().default({ trustRepoConfig: false, allowUnsandboxed: false }),
+    weakerNestedSandbox: z.boolean().default(false),
+  }).strict().default({ trustRepoConfig: false, allowUnsandboxed: false, weakerNestedSandbox: false }),
   retention: z.object({
     endedTicketDays: z.number().int().min(1).default(14),
   }).strict().default({ endedTicketDays: 14 }),

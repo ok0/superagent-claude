@@ -105,6 +105,20 @@ describe('agent wiring', () => {
     }
   })
 
+  it('security.weakerNestedSandbox reaches the SDK sandbox', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'agent-wiring-'))
+    for (const weaker of [false, true]) {
+      const sdk = stubSdk()
+      const base = cfg('subscription')
+      const config = { ...base, security: { ...base.security, weakerNestedSandbox: weaker } }
+      const agent = createAgent({ config, credential: resolveCredential('subscription', ALL), env: ALL, query: sdk.query })
+      const session = await agent.runtime.open(contractSpec('followup starts a new turn').spec)
+      expect(sdk.queries[0]!.options.sandbox?.enableWeakerNestedSandbox).toBe(weaker ? true : undefined)
+      expect(sdk.queries[0]!.options.sandbox?.filesystem?.denyRead).toEqual(weaker ? ['/proc'] : undefined)
+      await session.close()
+    }
+  })
+
   it('a guard denial is logged as worker.tool_denied without the command', async () => {
     dir = mkdtempSync(join(tmpdir(), 'agent-wiring-'))
     const sdk = stubSdk()

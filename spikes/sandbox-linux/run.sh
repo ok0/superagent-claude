@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Runs the Linux sandbox check in a test-only container; refuses without live opt-in and a subscription token.
+# Modes: default, seccomp, privileged (existing); weaker-nested (hardened + seccomp/apparmor unconfined + SANDBOX_WEAKER_NESTED=1),
+# weaker-nested-default (hardened, default seccomp + SANDBOX_WEAKER_NESTED=1), unsandboxed (hardened + SANDBOX_ALLOW_UNSANDBOXED=1).
+# The hardened modes keep --cap-drop ALL and --security-opt no-new-privileges.
+# A placeholder SUPERAGENT_CLAUDE_GITHUB_TOKEN (not a token) lets the exposure count cover the GitHub token name; the real token is never passed.
 set -euo pipefail
 
 mode="${1:-default}"
@@ -9,14 +13,19 @@ if [ "${SUPERAGENT_CLAUDE_LIVE:-}" != "1" ] || [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-
 fi
 
 root=$(git rev-parse --show-toplevel)
-out="$root/.docs/spikes/linux-run/$mode"
+out="$root/.docs/spikes/${SANDBOX_RUN_DIR:-linux-run}/$mode"
 mkdir -p "$out"
 
+hard=(--cap-drop ALL --security-opt no-new-privileges)
 opts=()
+envs=()
 case "$mode" in
   default) ;;
   seccomp) opts=(--security-opt seccomp=unconfined --security-opt apparmor=unconfined) ;;
   privileged) opts=(--privileged) ;;
+  weaker-nested) opts=("${hard[@]}" --security-opt seccomp=unconfined --security-opt apparmor=unconfined); envs=(-e SANDBOX_WEAKER_NESTED=1) ;;
+  weaker-nested-default) opts=("${hard[@]}"); envs=(-e SANDBOX_WEAKER_NESTED=1) ;;
+  unsandboxed) opts=("${hard[@]}"); envs=(-e SANDBOX_ALLOW_UNSANDBOXED=1) ;;
   *) echo "unknown mode: $mode" >&2; exit 2 ;;
 esac
 
@@ -28,9 +37,10 @@ done | tar --null -cf - -T - | docker build --platform linux/arm64 -t superagent
 {
   docker version --format '{{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}'
   echo "options: ${opts[*]-none}"
+  echo "env: ${envs[*]-none}"
 } > "$out/env.txt"
 
-docker run --rm --platform linux/arm64 ${opts[@]+"${opts[@]}"} -e CLAUDE_CODE_OAUTH_TOKEN -e SUPERAGENT_CLAUDE_LIVE=1 -e SANDBOX_LINUX_OUT=/out -v "$out:/out" superagent-claude-sandbox-check sh -c 'uname -a > /out/uname.txt; (command -v bwrap; command -v socat; bwrap --version; cat /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null; bwrap --ro-bind / / true && echo bwrap-ok) > /out/tools.txt 2>&1; pnpm -s spike:sdk --only sandbox-secrets --out /out/spike.md > /out/spike.jsonl 2> /out/spike.stderr.txt; echo "spike exit=$?" > /out/exit.txt; pnpm -s test:live tests/live/sandbox-linux.spec.ts > /out/adapter.log 2>&1; echo "adapter exit=$?" >> /out/exit.txt' || true
+docker run --rm --platform linux/arm64 ${opts[@]+"${opts[@]}"} ${envs[@]+"${envs[@]}"} -e CLAUDE_CODE_OAUTH_TOKEN -e SUPERAGENT_CLAUDE_GITHUB_TOKEN=sac-placeholder-not-a-token -e SUPERAGENT_CLAUDE_LIVE=1 -e SANDBOX_LINUX_OUT=/out -v "$out:/out" superagent-claude-sandbox-check sh -c 'uname -a > /out/uname.txt; (command -v bwrap; command -v socat; bwrap --version; cat /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null; bwrap --ro-bind / / true && echo bwrap-ok; bwrap --ro-bind / / --dev /dev --unshare-all true && echo bwrap-noproc-ok; bwrap --ro-bind / / --dev /dev --proc /proc --unshare-all true && echo bwrap-proc-ok; bwrap --ro-bind / / --dev /dev --tmpfs /proc --unshare-all true && echo bwrap-tmpfsproc-ok) > /out/tools.txt 2>&1; pnpm -s spike:sdk --only sandbox-secrets --out /out/spike.md > /out/spike.jsonl 2> /out/spike.stderr.txt; echo "spike exit=$?" > /out/exit.txt; pnpm -s test:live tests/live/sandbox-linux.spec.ts > /out/adapter.log 2>&1; echo "adapter exit=$?" >> /out/exit.txt' || true
 
 for f in "$out"/*; do
   [ -f "$f" ] || continue

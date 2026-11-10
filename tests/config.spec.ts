@@ -32,7 +32,7 @@ describe('config file', () => {
       delivery: { allowAutoMerge: false },
       workers: { max: 2, maxTurns: 100, maxBudgetUsd: 5 },
       network: { allow: [] },
-      security: { trustRepoConfig: false, allowUnsandboxed: false },
+      security: { trustRepoConfig: false, allowUnsandboxed: false, weakerNestedSandbox: false },
       retention: { endedTicketDays: 14 },
       models: {},
       stateDir: '/home/test/.superagent-claude',
@@ -47,7 +47,7 @@ describe('config file', () => {
       delivery: { allowAutoMerge: true },
       workers: { max: 3, maxTurns: 50, maxBudgetUsd: 2 },
       network: { allow: ['example.com'] },
-      security: { trustRepoConfig: true, allowUnsandboxed: true },
+      security: { trustRepoConfig: true, allowUnsandboxed: true, weakerNestedSandbox: true },
       retention: { endedTicketDays: 7 },
       models: { router: 'r', worker: 'w' },
       stateDir: 'state',
@@ -56,7 +56,7 @@ describe('config file', () => {
     expect(config.auth).toEqual({ mode: 'subscription', owner: 'Alice', acceptSubscriptionSharedUseRisk: true })
     expect(config.delivery).toEqual({ allowAutoMerge: true })
     expect(config.network).toEqual({ allow: ['example.com'] })
-    expect(config.security).toEqual({ trustRepoConfig: true, allowUnsandboxed: true })
+    expect(config.security).toEqual({ trustRepoConfig: true, allowUnsandboxed: true, weakerNestedSandbox: true })
     expect(config.retention).toEqual({ endedTicketDays: 7 })
     expect(config.models).toEqual({ router: 'r', worker: 'w' })
     expect(config.policy.rules).toHaveLength(1)
@@ -78,6 +78,7 @@ describe('config file', () => {
       [{ ...base, auth: { mode: 'api-key', extra: 1 } }, 'auth'],
       [{ ...base, auth: { mode: 'magic' } }, 'auth.mode'],
       [{ ...base, security: { allowUnsandboxed: 'yes' } }, 'security.allowUnsandboxed'],
+      [{ ...base, security: { weakerNestedSandbox: 'yes' } }, 'security.weakerNestedSandbox'],
       [{ ...base, network: { allow: 'x' } }, 'network.allow'],
     ]
     for (const [value, text] of cases) {

@@ -1,0 +1,14 @@
+.git
+.docs
+.doc
+.ensemble
+.r
+.env
+*.env
+.env.*
+node_modules
+lib
+coverage
+.superagent-claude
+*.log
+.DS_Store

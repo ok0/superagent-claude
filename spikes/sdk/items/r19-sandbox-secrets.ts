@@ -22,6 +22,15 @@ interface NetOutcome {
   evidence: string[];
 }
 
+export function spikeSandbox(env: Readonly<Record<string, string | undefined>> = process.env): SandboxSettings {
+  return {
+    ...SANDBOX,
+    ...(env.SANDBOX_WEAKER_NESTED === '1'
+      ? { enableWeakerNestedSandbox: true, filesystem: { denyRead: ['/proc'] } }
+      : {}),
+  }
+}
+
 function stopAtResult(e: TimelineEntry, c: { end(): void }): void {
   if (e.type === 'result') c.end()
 }
@@ -91,7 +100,7 @@ async function networkTest(ctx: SpikeContext, id: string): Promise<NetOutcome> {
   const sandboxed = await runScenario({
     ctx,
     options: baseOptions(ctx, ctx.newRepo(`${id}-sandbox`), {
-      sandbox: { ...SANDBOX, autoAllowBashIfSandboxed: true },
+      sandbox: { ...spikeSandbox(), autoAllowBashIfSandboxed: true },
       permissionMode: 'dontAsk',
       allowDangerouslySkipPermissions: false,
       allowedTools: ['Bash'],
@@ -111,7 +120,7 @@ async function networkTest(ctx: SpikeContext, id: string): Promise<NetOutcome> {
   })
   const bypass = await runScenario({
     ctx,
-    options: baseOptions(ctx, ctx.newRepo(`${id}-bypass`), { sandbox: SANDBOX }),
+    options: baseOptions(ctx, ctx.newRepo(`${id}-bypass`), { sandbox: spikeSandbox() }),
     first: { text: prompt },
     onEntry: stopAtResult,
   })

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { executorTools, type ExecutorToolsHost } from '../src/app/tools/executor.ts'
 import type { RuntimeEvent, SessionSpec, ToolSpec } from '../src/executor/contract.ts'
 import { toolHandler } from '../src/runtimes/claude/mcp.ts'
-import { CLAUDE_SDK_VERSION, ClaudeRuntime, INJECT_SEPARATOR } from '../src/runtimes/claude/runtime.ts'
+import { bwrapProbeArgs, CLAUDE_SDK_VERSION, ClaudeRuntime, INJECT_SEPARATOR, sandboxAvailable } from '../src/runtimes/claude/runtime.ts'
 import { waitUntil } from './fixtures/async.ts'
 import { result, stubSdk, type StubQuery } from './fixtures/claude-sdk-stub.ts'
 import { contractSpec } from './fixtures/runtime-contract.ts'
@@ -146,6 +146,62 @@ describe('claude runtime', () => {
     expect((await off.probe()).sandbox).toBe(false)
     const pinned = JSON.parse(readFileSync('package.json', 'utf8')) as { dependencies: Record<string, string> }
     expect(CLAUDE_SDK_VERSION).toBe(pinned.dependencies['@anthropic-ai/claude-agent-sdk'])
+  })
+
+  it('bwrapProbeArgs mounts /proc unless weakerNested', () => {
+    expect(bwrapProbeArgs(false)).toContain('--proc')
+    expect(bwrapProbeArgs(true)).not.toContain('--proc')
+    for (const weaker of [false, true]) {
+      expect(bwrapProbeArgs(weaker)).toContain('--unshare-all')
+      expect(bwrapProbeArgs(weaker).at(-1)).toBe('true')
+    }
+    const weakerArgs = bwrapProbeArgs(true)
+    expect(weakerArgs[weakerArgs.indexOf('--tmpfs') + 1]).toBe('/proc')
+    expect(bwrapProbeArgs(false)).not.toContain('--tmpfs')
+  })
+
+  it('sandboxAvailable on linux runs the smoke command', () => {
+    const calls: [string, string[]][] = []
+    const run = (cmd: string, args: string[]) => { calls.push([cmd, args]); return 0 }
+    expect(sandboxAvailable('linux', true, run)).toBe(true)
+    expect(calls[1]).toEqual(['bwrap', bwrapProbeArgs(true)])
+    const bwrapFails = (cmd: string) => (cmd === 'bwrap' ? 1 : 0)
+    expect(sandboxAvailable('linux', true, bwrapFails)).toBe(false)
+    const calls2: string[] = []
+    expect(sandboxAvailable('linux', false, cmd => { calls2.push(cmd); return 1 })).toBe(false)
+    expect(calls2).toEqual(['sh'])
+    expect(sandboxAvailable('win32')).toBe(false)
+  })
+
+  it('allowUnsandboxed opens without the sandbox only when the probe finds none', async () => {
+    const sdk = stubSdk()
+    const none = new ClaudeRuntime({ mode: 'subscription', configDir: '/tmp/c', query: sdk.query, sandboxAvailable: () => false, allowUnsandboxed: true })
+    await none.open(contractSpec('followup starts a new turn').spec)
+    expect(sdk.queries[0]!.options.sandbox).toBeUndefined()
+    expect((await none.probe()).sandbox).toBe(false)
+    const found = new ClaudeRuntime({ mode: 'subscription', configDir: '/tmp/c', query: sdk.query, sandboxAvailable: () => true, allowUnsandboxed: true })
+    await found.open(contractSpec('followup starts a new turn').spec)
+    expect(sdk.queries[1]!.options.sandbox?.enabled).toBe(true)
+    const strict = new ClaudeRuntime({ mode: 'subscription', configDir: '/tmp/c', query: sdk.query, sandboxAvailable: () => false })
+    await strict.open(contractSpec('followup starts a new turn').spec)
+    expect(sdk.queries[2]!.options.sandbox?.enabled).toBe(true)
+  })
+
+  it('weakerNestedSandbox reaches the SDK sandbox', async () => {
+    const sdk = stubSdk()
+    const runtime = new ClaudeRuntime({ mode: 'subscription', configDir: '/tmp/c', query: sdk.query, weakerNestedSandbox: true, sandboxAvailable: () => true })
+    await runtime.open(contractSpec('followup starts a new turn').spec)
+    expect(sdk.queries[0]!.options.sandbox?.enableWeakerNestedSandbox).toBe(true)
+  })
+
+  it('the probe is computed once', async () => {
+    const sdk = stubSdk()
+    const check = vi.fn(() => true)
+    const runtime = new ClaudeRuntime({ mode: 'subscription', configDir: '/tmp/c', query: sdk.query, allowUnsandboxed: true, sandboxAvailable: check })
+    await runtime.probe()
+    await runtime.probe()
+    await runtime.open(contractSpec('followup starts a new turn').spec)
+    expect(check).toHaveBeenCalledTimes(1)
   })
 
   it('tool calls through the MCP server reach execute', async () => {

@@ -35,14 +35,27 @@ export interface ClaudeRuntimeOptions {
   sandboxAvailable?: () => boolean
   stderr?: (text: string) => void
   trustRepoConfig?: boolean
+  /** security.weakerNestedSandbox: Linux only, skip the fresh /proc mount inside the sandbox (ADR-27). */
+  weakerNestedSandbox?: boolean
+  /** security.allowUnsandboxed: open sessions without the sandbox when the probe finds none. */
+  allowUnsandboxed?: boolean
   onDeny?: (denial: ToolDenial) => void
   /** <stateDir>/children.json: track SDK child pids there (ADR-32). */
   children?: string
 }
 
-export function sandboxAvailable(platform: NodeJS.Platform = process.platform): boolean {
+export function bwrapProbeArgs(weakerNested: boolean): string[] {
+  return ['--ro-bind', '/', '/', '--dev', '/dev', ...(weakerNested ? ['--tmpfs', '/proc'] : ['--proc', '/proc']), '--unshare-all', '--die-with-parent', 'true']
+}
+
+/** Linux: bwrap and socat on PATH and one bwrap smoke run with the same /proc choice the SDK makes (fresh /proc, or a tmpfs /proc with weakerNested, the mask the SDK also adds). */
+export function sandboxAvailable(
+  platform: NodeJS.Platform = process.platform,
+  weakerNested = false,
+  run: (cmd: string, args: string[]) => number | null = (cmd, args) => spawnSync(cmd, args, { stdio: 'ignore', timeout: 10_000 }).status,
+): boolean {
   if (platform === 'darwin') return existsSync('/usr/bin/sandbox-exec')
-  if (platform === 'linux') return spawnSync('sh', ['-c', 'command -v bwrap && command -v socat']).status === 0
+  if (platform === 'linux') return run('sh', ['-c', 'command -v bwrap && command -v socat']) === 0 && run('bwrap', bwrapProbeArgs(weakerNested)) === 0
   return false
 }
 
@@ -79,6 +92,7 @@ interface SessionConfig {
   sandbox: boolean
   stderr?: (text: string) => void
   trustRepoConfig: boolean
+  weakerNestedSandbox: boolean
   onDeny?: (denial: ToolDenial) => void
   spawn?: OptionsContext['spawn']
 }
@@ -109,6 +123,7 @@ export class ClaudeSession implements AgentSession {
       env: config.env,
       configDir: config.configDir,
       sandbox: config.sandbox,
+      weakerNestedSandbox: config.weakerNestedSandbox,
       sessionId: spec.resume ? undefined : this.id,
       mcp: spec.tools.length ? mcpServer(spec.tools, this.abort.signal) : undefined,
       onRead: () => this.emitAll(this.mapper.read()),
@@ -237,10 +252,15 @@ export class ClaudeRuntime implements AgentRuntime {
   readonly id = 'claude'
   private readonly options: ClaudeRuntimeOptions
   private registry?: ChildRegistry
+  private usable?: boolean
 
   constructor(options: ClaudeRuntimeOptions) {
     this.options = options
     if (options.children) this.registry = new ChildRegistry(options.children)
+  }
+
+  private sandboxUsable(): boolean {
+    return this.usable ??= (this.options.sandboxAvailable ?? (() => sandboxAvailable(process.platform, this.options.weakerNestedSandbox ?? false)))()
   }
 
   async open(spec: SessionSpec): Promise<ClaudeSession> {
@@ -248,7 +268,8 @@ export class ClaudeRuntime implements AgentRuntime {
       mode: this.options.mode,
       configDir: this.options.configDir,
       env: this.options.env ?? process.env,
-      sandbox: this.options.sandbox ?? true,
+      sandbox: (this.options.sandbox ?? true) && (!this.options.allowUnsandboxed || this.sandboxUsable()),
+      weakerNestedSandbox: this.options.weakerNestedSandbox ?? false,
       stderr: this.options.stderr,
       trustRepoConfig: this.options.trustRepoConfig ?? false,
       onDeny: this.options.onDeny,
@@ -262,7 +283,7 @@ export class ClaudeRuntime implements AgentRuntime {
 
   async probe(): Promise<RuntimeProbe> {
     return {
-      sandbox: (this.options.sandbox ?? true) && (this.options.sandboxAvailable ?? sandboxAvailable)(),
+      sandbox: (this.options.sandbox ?? true) && this.sandboxUsable(),
       version: CLAUDE_SDK_VERSION,
     }
   }

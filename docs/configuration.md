@@ -1,6 +1,6 @@
 # Configuration
 
-The config file `superagent-claude.json` has 19 settings.
+The config file `superagent-claude.json` has 20 settings.
 
 Required:
 
@@ -28,10 +28,13 @@ Everything else has a default.
 | `network.allow` | `[]` |
 | `security.trustRepoConfig` | `false` |
 | `security.allowUnsandboxed` | `false` |
+| `security.weakerNestedSandbox` | `false` |
 | `retention.endedTicketDays` | `14` |
 | `models.router` | unset |
 | `models.worker` | unset |
 | `stateDir` | `~/.superagent-claude` |
+
+`security.weakerNestedSandbox` is for Linux containers that cannot mount a fresh `/proc`; see [deploy.md](deploy.md#sandbox-in-containers).
 
 The default `policy.acceptMode` is `observe`. `auto` must be set explicitly.
 

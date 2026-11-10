@@ -1,8 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
+import { existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { z } from 'zod'
 import type { HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sdk'
 import type { SessionSpec, ToolSpec } from '../src/executor/contract.ts'
-import { AUTH_ENV, CLAUDE_INHERITED_ENV, ALWAYS_DISALLOWED, claudeEnv, builtinTools, guardDecision, sdkOptions, type AuthMode, type OptionsContext } from '../src/runtimes/claude/options.ts'
+import { AUTH_ENV, CLAUDE_INHERITED_ENV, ALWAYS_DISALLOWED, claudeEnv, builtinTools, guardDecision, sdkOptions, underProc, type AuthMode, type OptionsContext } from '../src/runtimes/claude/options.ts'
 import { mcpTools, mcpServer, toolHandler } from '../src/runtimes/claude/mcp.ts'
 import { WORKER_TOOLS } from '../src/app/tool-names.ts'
 
@@ -168,6 +171,46 @@ describe('fixed safety defaults', () => {
     expect(on.sandbox).toMatchObject({ enabled: true, allowUnsandboxedCommands: false, network: { allowedDomains: ['registry.npmjs.org'] } })
     const off = sdkOptions(spec(), ctx('api-key', { sandbox: false }))
     expect(off.sandbox).toBeUndefined()
+  })
+
+  it('weakerNestedSandbox maps to enableWeakerNestedSandbox only when set', () => {
+    const on = sdkOptions(spec(), ctx('api-key', { weakerNestedSandbox: true })).sandbox as Record<string, unknown>
+    expect(on).toMatchObject({ enableWeakerNestedSandbox: true, failIfUnavailable: true, allowUnsandboxedCommands: false })
+    const def = sdkOptions(spec(), ctx('api-key')).sandbox as Record<string, unknown>
+    expect(on.filesystem).toEqual({ denyRead: ['/proc'] })
+    expect('enableWeakerNestedSandbox' in def).toBe(false)
+    expect('filesystem' in def).toBe(false)
+    const off = sdkOptions(spec(), ctx('api-key', { sandbox: false, weakerNestedSandbox: true }))
+    expect(off.sandbox).toBeUndefined()
+  })
+
+  it('the guard denies the file tools under /proc', () => {
+    const s = spec()
+    const denied: [string, Record<string, unknown>][] = [
+      ['Read', { file_path: '/proc/1/environ' }],
+      ['Read', { file_path: '/proc' }],
+      ['Grep', { pattern: 'TOKEN', path: '/proc/self' }],
+      ['Glob', { pattern: '/proc/*/environ' }],
+      ['Glob', { pattern: '*', path: '/proc/1' }],
+    ]
+    for (const [tool, input] of denied) expect(guardDecision(s, tool, input)).toBe('Reading /proc is not allowed')
+    const dir = mkdtempSync(join(tmpdir(), 'guard-proc-'))
+    try {
+      symlinkSync('/proc', join(dir, 'p'))
+      const link = join(dir, 'p', '1', 'environ')
+      if (existsSync('/proc/1')) expect(guardDecision(s, 'Read', { file_path: link })).toBe('Reading /proc is not allowed')
+      else expect(typeof underProc(link)).toBe('boolean')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+    const allowed: [string, Record<string, unknown>][] = [
+      ['Read', { file_path: 'src/a.ts' }],
+      ['Read', { file_path: '/etc/hosts' }],
+      ['Grep', { pattern: 'x' }],
+      ['Glob', { pattern: '**/*.ts' }],
+      ['Read', { file_path: '/procfs/x' }],
+    ]
+    for (const [tool, input] of allowed) expect(guardDecision(s, tool, input)).toBeUndefined()
   })
 
   it('limits, model, resume and session id are mapped', () => {

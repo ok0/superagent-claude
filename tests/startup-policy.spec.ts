@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ConfigError, ConfigSchema, loadConfig, StartupRefused, type Config } from '../src/app/config.ts'
-import { allowedHash, assertAgentLogin, assertRepositoryAccess, assertStartupPolicy, resolveCredential, SHARED_USE_WARNING, SUBSCRIPTION_POLICY_WARNING } from '../src/app/credentials.ts'
+import { allowedHash, assertAgentLogin, assertRepositoryAccess, assertStartupPolicy, resolveCredential, SHARED_USE_WARNING, SUBSCRIPTION_POLICY_WARNING, UNSANDBOXED_WARNING } from '../src/app/credentials.ts'
 import { installedSources } from '../src/app/sources.ts'
 import { main } from '../src/cli/main.ts'
 import type { SourceService } from '../src/sources/host.ts'
@@ -119,9 +119,18 @@ describe('startup rules', () => {
     const error = refusal(() => assertStartupPolicy(auto, { mode: 'api-key' }, undefined, unsandboxed))
     expect(error.rule).toBe('unsandboxed')
     expect(error.message).toContain('rule 7')
+    expect(error.message).toContain('docs/deploy.md#sandbox-in-containers')
     expect(() => assertStartupPolicy(cfg({ policy: { allowed: ['owner'], acceptMode: 'auto' }, security: { allowUnsandboxed: true } }), { mode: 'api-key' }, undefined, unsandboxed)).not.toThrow()
     expect(() => assertStartupPolicy(auto, { mode: 'api-key' }, undefined, sandboxed)).not.toThrow()
     expect(() => assertStartupPolicy(auto, { mode: 'api-key' })).not.toThrow()
+  })
+
+  it('allowUnsandboxed without a sandbox returns the unsandboxed warning', () => {
+    const allowed = cfg({ policy: { allowed: ['owner'], acceptMode: 'auto' }, security: { allowUnsandboxed: true } })
+    expect(assertStartupPolicy(allowed, { mode: 'api-key' }, undefined, unsandboxed).warnings).toEqual([UNSANDBOXED_WARNING])
+    expect(assertStartupPolicy(allowed, { mode: 'api-key' }, undefined, sandboxed).warnings).toEqual([])
+    const observe = cfg({ policy: { allowed: ['owner'], acceptMode: 'observe' }, security: { allowUnsandboxed: true } })
+    expect(assertStartupPolicy(observe, { mode: 'api-key' }, undefined, unsandboxed).warnings).toContain(UNSANDBOXED_WARNING)
   })
 
   it('rule 8: no accessible repository is refused, partial access is not', () => {
@@ -220,12 +229,14 @@ describe('startup refusals through the CLI', () => {
     const refused = cliIo(dir, cliEnv(dir))
     expect(await main(['start', '--fake', '--config', writeConfig(dir, { policy: { allowed: ['alice'], acceptMode: 'auto' } })], refused.io)).toBe(2)
     expect(refused.err.join('')).toContain('rule 7')
+    expect(refused.err.join('')).toContain('docs/deploy.md#sandbox-in-containers')
 
     const allowed = cliIo(dir, cliEnv(dir))
     const p = main(['start', '--fake', '--config', writeConfig(dir, { policy: { allowed: ['alice'], acceptMode: 'auto' }, security: { allowUnsandboxed: true } })], allowed.io)
     await waitUntil(() => allowed.out.join('').includes('"runtime.started"'), 10_000)
     allowed.listeners.SIGINT!()
     expect(await p).toBe(0)
+    expect(allowed.err.join('')).toContain('warning: security.allowUnsandboxed')
   }, 30_000)
 
   it('an agent account on policy.allowed exits 2 with rule 4', async () => {

@@ -1,4 +1,4 @@
-/** Linux sandbox through the adapter: a real dontAsk session with network.allow ['example.com'] fetches an allowed and a disallowed domain; the result is compared with probe().sandbox. Runs only on Linux with SUPERAGENT_CLAUDE_LIVE=1 and CLAUDE_CODE_OAUTH_TOKEN. Writes adapter.json to SANDBOX_LINUX_OUT when set. */
+/** Linux sandbox through the adapter: a real dontAsk session with network.allow ['example.com'] fetches an allowed and a disallowed domain; the result is compared with probe().sandbox. Runs only on Linux with SUPERAGENT_CLAUDE_LIVE=1 and CLAUDE_CODE_OAUTH_TOKEN. Writes adapter.json to SANDBOX_LINUX_OUT when set. SANDBOX_WEAKER_NESTED=1 sets security.weakerNestedSandbox and SANDBOX_ALLOW_UNSANDBOXED=1 sets security.allowUnsandboxed. Only counts of CLAUDE_CODE_OAUTH_TOKEN are recorded, never values. A probe.sh written by the test counts, per token name, the other processes whose environ holds it, and whether /proc is visible. */
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -11,7 +11,22 @@ import { contractSpec } from '../fixtures/runtime-contract.ts'
 
 const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
-const CMD = "curl -sS -m 10 -o /dev/null -w 'A:%{http_code}\\n' https://example.com > net.txt 2>&1; curl -sS -m 10 -o /dev/null -w 'B:%{http_code}\\n' https://www.iana.org >> net.txt 2>&1"
+const GITHUB = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
+const PROBE = `#!/bin/sh
+# Counts only, never values.
+for name in CLAUDE_CODE_OAUTH_TOKEN SUPERAGENT_CLAUDE_GITHUB_TOKEN; do
+  n=0
+  for p in /proc/[0-9]*; do
+    [ "$p" = "/proc/$$" ] && continue
+    if tr '\\0' '\\n' < "$p/environ" 2>/dev/null | grep -q "^$name="; then n=$((n+1)); fi
+  done
+  echo "E_$name:$n"
+done
+echo "S:$(env | grep -c '^CLAUDE_CODE_OAUTH_TOKEN=')"
+if [ -d /proc/1 ]; then echo "P:visible"; else echo "P:hidden"; fi
+echo "Z:done"
+`
+const CMD = "curl -sS -m 10 -o /dev/null -w 'A:%{http_code}\\n' https://example.com > net.txt 2>&1; curl -sS -m 10 -o /dev/null -w 'B:%{http_code}\\n' https://www.iana.org >> net.txt 2>&1; sh ./probe.sh >> net.txt 2>&1"
 
 function reachable(code: string | undefined): boolean {
   return code !== undefined && /^[23]\d\d$/.test(code)
@@ -22,12 +37,15 @@ describe.skipIf(!LIVE || !OAUTH || process.platform !== 'linux')('linux sandbox 
     const root = mkdtempSync(join(tmpdir(), 'sac-sandbox-'))
     const cwd = join(root, 'work')
     execFileSync('git', ['init', '-q', cwd])
+    writeFileSync(join(cwd, 'probe.sh'), PROBE, { mode: 0o755 })
     const stderr: string[] = []
     const runtime = new ClaudeRuntime({
       mode: 'subscription',
       configDir: join(root, 'claude'),
       env: process.env,
       stderr: line => stderr.push(line),
+      weakerNestedSandbox: process.env.SANDBOX_WEAKER_NESTED === '1',
+      allowUnsandboxed: process.env.SANDBOX_ALLOW_UNSANDBOXED === '1',
     })
     const probe = await runtime.probe()
     const { spec } = contractSpec('followup starts a new turn', {
@@ -51,6 +69,11 @@ describe.skipIf(!LIVE || !OAUTH || process.platform !== 'linux')('linux sandbox 
     const net = existsSync(netPath) ? readFileSync(netPath, 'utf8') : ''
     const a = /A:(\d{3})/.exec(net)?.[1]
     const b = /B:(\d{3})/.exec(net)?.[1]
+    const envE = /E_CLAUDE_CODE_OAUTH_TOKEN:(\d+)/.exec(net)?.[1]
+    const envG = /E_SUPERAGENT_CLAUDE_GITHUB_TOKEN:(\d+)/.exec(net)?.[1]
+    const envS = /S:(\d+)/.exec(net)?.[1]
+    const proc = /P:(visible|hidden)/.exec(net)?.[1]
+    const probeRan = /Z:done/.test(net)
     const status = reachable(b) && probe.sandbox
       ? 'FAIL'
       : reachable(a) && b !== undefined && !reachable(b) && probe.sandbox
@@ -63,13 +86,19 @@ describe.skipIf(!LIVE || !OAUTH || process.platform !== 'linux')('linux sandbox 
       at: new Date().toISOString(),
       probe,
       codes: { a, b },
+      environ: { readable: envE, readableGithub: envG, self: envS, proc, probeRan },
+      weakerNested: process.env.SANDBOX_WEAKER_NESTED === '1',
+      allowUnsandboxed: process.env.SANDBOX_ALLOW_UNSANDBOXED === '1',
+      sessions: events.filter(e => e.type === 'session').length,
       net,
       events: events.map(e => e.type === 'error' ? { type: e.type, message: e.message } : { type: e.type }),
       stderrTail: stderr.slice(-40),
       status,
-    }, null, 2).split(OAUTH ?? '').join('***')
-    writeFileSync(join(outDir, 'adapter.json'), body)
-    console.log(`[sandbox-linux] status=${status} probe.sandbox=${probe.sandbox} A=${a ?? 'none'} B=${b ?? 'none'}`)
+    }, null, 2)
+    const secrets = [OAUTH, GITHUB].filter((v): v is string => !!v && v.length >= 8)
+    const redacted = secrets.reduce((text, secret) => text.split(secret).join('***'), body)
+    writeFileSync(join(outDir, 'adapter.json'), redacted)
+    console.log(`[sandbox-linux] status=${status} probe.sandbox=${probe.sandbox} A=${a ?? 'none'} B=${b ?? 'none'} environ=${envE ?? 'none'} environGithub=${envG ?? 'none'} proc=${proc ?? 'none'} probeRan=${probeRan} sessions=${events.filter(e => e.type === 'session').length} weakerNested=${process.env.SANDBOX_WEAKER_NESTED === '1'} allowUnsandboxed=${process.env.SANDBOX_ALLOW_UNSANDBOXED === '1'}`)
     expect(status).not.toBe('FAIL')
   }, 600_000)
 })
