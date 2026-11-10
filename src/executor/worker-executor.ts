@@ -7,20 +7,24 @@ import type { HealthEntry } from '../infra/health.ts'
 import { ReadLedger, type AgentRuntime, type AgentSession, type InputMode, type RuntimeEvent, type RuntimeInput, type SessionSpec,
   type ToolSpec } from './contract.ts'
 import type { Slots } from './slots.ts'
-import type { WorkerStore } from './worker-store.ts'
+import type { WorkerRecord, WorkerStore } from './worker-store.ts'
 
 export const RUNTIME_RETRIES = 3
 export const RETRY_BACKOFF_MS = 15_000
 export const BACKGROUND_LIMIT_MS = 30 * 60_000
 export const workerKey = (ticketId: string): string => `worker-${ticketId}`
 export interface Workspace { repository: string; cwd: string; branch: string; pushRemote?: string }
-/** Injected collaborators: the workspace (M12), the instructions (M13) and the worker tools (M8/M11). */
+export type PromptChange = { kind: 'same' } | { kind: 'team'; notice: string } | { kind: 'fixed' }
+/** Injected collaborators: the workspace, the instructions and the worker tools (M8/M11, M12); the prompt-version change and the git history for resumed sessions (M12, ADR-18). */
 export interface WorkerDeps {
   prepare(ticket: Ticket): Promise<Workspace>
   instructions(ticket: Ticket): Promise<string>
   tools(ticket: Ticket, assignment: Assignment): ToolSpec[]
   env?(ticket: Ticket): Record<string, string>
   promptVersion?(): string
+  /** How the prompt changed since the version a ticket's earlier session used (ADR-18). */
+  promptChange?(stored: string): PromptChange
+  history?(cwd: string): Promise<string>
 }
 export interface WorkerTimers { setTimeout(run: () => void, ms: number): unknown; clearTimeout(handle: unknown): void }
 export interface WorkerExecutorOptions {
@@ -29,7 +33,8 @@ export interface WorkerExecutorOptions {
   engine: () => EngineForExecutor
   runtime: AgentRuntime; slots: Slots; workers: WorkerStore; deps: WorkerDeps
   limits: { maxTurns: number; maxBudgetUsd: number }
-  network?: string[]; model?: string
+  /** Read when a session opens, so a reload applies to new sessions. */
+  network?: () => readonly string[]; model?: () => string | undefined
   retries?: number; retryBackoffMs?: number; backgroundLimitMs?: number
   timers?: WorkerTimers; now?: () => number; paused?: () => boolean
   health?: Pick<HealthEntry, 'set'>
@@ -75,8 +80,8 @@ export class WorkerExecutor implements Executor {
   private readonly workers: WorkerStore
   private readonly deps: WorkerDeps
   private readonly limits: { maxTurns: number; maxBudgetUsd: number }
-  private readonly network: string[]
-  private readonly model: string | undefined
+  private readonly network: () => readonly string[]
+  private readonly model: () => string | undefined
   private readonly retries: number
   private readonly retryBackoffMs: number
   private readonly backgroundLimitMs: number
@@ -94,8 +99,8 @@ export class WorkerExecutor implements Executor {
     this.workers = options.workers
     this.deps = options.deps
     this.limits = options.limits
-    this.network = options.network ?? []
-    this.model = options.model
+    this.network = options.network ?? (() => [])
+    this.model = options.model ?? (() => undefined)
     this.retries = options.retries ?? RUNTIME_RETRIES
     this.retryBackoffMs = options.retryBackoffMs ?? RETRY_BACKOFF_MS
     this.backgroundLimitMs = options.backgroundLimitMs ?? BACKGROUND_LIMIT_MS
@@ -163,11 +168,41 @@ export class WorkerExecutor implements Executor {
     return live
   }
   private async spec(ticket: Ticket, assignment: Assignment, cwd: string, resume?: string): Promise<SessionSpec> {
+    const model = this.model()
     return {
       key: workerKey(ticket.id), role: 'worker', cwd, instructions: await this.deps.instructions(ticket), tools: this.deps.tools(ticket, assignment),
-      builtins: { fs: 'write', shell: true, web: false }, network: { allow: [...this.network] }, limits: { ...this.limits },
-      env: this.deps.env?.(ticket) ?? {}, ...(resume ? { resume } : {}), ...(this.model ? { model: this.model } : {}),
+      builtins: { fs: 'write', shell: true, web: false }, network: { allow: [...this.network()] }, limits: { ...this.limits },
+      env: this.deps.env?.(ticket) ?? {}, ...(resume ? { resume } : {}), ...(model ? { model } : {}),
     }
+  }
+  private async contextNote(ticket: Ticket, cwd: string, branch: string): Promise<string> {
+    const history = await (this.deps.history?.(cwd) ?? Promise.resolve('')).catch(() => '')
+    const last = [...ticket.assignments].reverse().find(a => a.report)?.report
+    return [
+      'The host instructions changed since this ticket\'s earlier session, so this is a new session with the current instructions.',
+      `Ticket ${ticket.id}: ${JSON.stringify(ticket.title)}`,
+      ...(last ? [`Last report: ${last.state}: ${last.summary}`] : []),
+      `Worktree: ${cwd} (branch ${branch})`,
+      ...(history ? ['Recent git history:\n' + history] : []),
+      'Inspect the worktree, git history and remote state before continuing; do not repeat completed external operations.',
+    ].join('\n')
+  }
+  private async opening(ticket: Ticket, assignment: Assignment, record: WorkerRecord | undefined, cwd: string, branch: string):
+    Promise<{ session: AgentSession; resume?: string; lead: RuntimeInput[] }> {
+    let resume = record?.sessionId ?? undefined
+    const lead: RuntimeInput[] = []
+    if (resume && record?.promptVersion && this.deps.promptChange) {
+      const change = this.deps.promptChange(record.promptVersion)
+      const tag = this.deps.promptVersion?.() ?? assignment.id
+      if (change.kind === 'fixed') {
+        resume = undefined
+        lead.push({ id: `context:prompts:${tag}`, text: await this.contextNote(ticket, cwd, branch), mode: 'followup' })
+      } else if (change.kind === 'team') {
+        lead.push({ id: `notice:prompts:${tag}`, text: change.notice, mode: 'inject' })
+      }
+    }
+    const session = await this.runtime.open(await this.spec(ticket, assignment, cwd, resume))
+    return { session, ...(resume ? { resume } : {}), lead }
   }
   private batch(ticket: Ticket): TicketInput[] {
     const inputs = ticket.undelivered.flatMap(id => ticket.inputs.filter(input => input.id === id))
@@ -207,23 +242,25 @@ export class WorkerExecutor implements Executor {
         return
       }
       if (!this.current(ticketId, assignmentId)) return
-      const resume = record?.sessionId ?? undefined
-      session = await this.runtime.open(await this.spec(ticket, assignment, workspace.cwd, resume))
+      const cwd = record?.cwd ?? workspace.cwd
+      const opened = await this.opening(ticket, assignment, record, cwd, workspace.branch)
+      session = opened.session
       if (!this.current(ticketId, assignmentId)) return
       const same = record?.assignmentId === assignmentId
       this.workers.put({
-        ticketId, assignmentId, runtime: this.runtime.id, sessionId: session.sessionId ?? resume ?? null, repository: workspace.repository,
-        cwd: workspace.cwd, branch: workspace.branch, pushRemote: workspace.pushRemote ?? null, turns: same ? record.turns : 0,
+        ticketId, assignmentId, runtime: this.runtime.id, sessionId: session.sessionId ?? opened.resume ?? null, repository: workspace.repository,
+        cwd, branch: workspace.branch, pushRemote: workspace.pushRemote ?? null, turns: same ? record.turns : 0,
         costUsd: same ? record.costUsd : 0, promptVersion: this.deps.promptVersion?.() ?? null,
       })
       const live = this.attach(ticketId, assignmentId, session)
       attached = true
+      for (const input of opened.lead) this.send(live, input)
       const fresh = this.store.tickets.get(ticketId)!
       const noteId = key('input', ticketId, 'restart', assignmentId)
       const note = fresh.undelivered.includes(noteId) ? fresh.inputs.find(input => input.id === noteId) : undefined
       const noteSent = note?.kind === 'text'
       if (note?.kind === 'text') this.send(live, { id: noteId, text: note.text, mode: 'followup' })
-      this.send(live, { id: `assignment:${assignmentId}`, text: this.assignmentMessage(fresh, !!resume), mode: 'followup' })
+      this.send(live, { id: `assignment:${assignmentId}`, text: this.assignmentMessage(fresh, !!opened.resume), mode: 'followup' })
       this.engine().assignmentStarted(ticketId, assignmentId)
       if (noteSent) this.engine().inputsDelivered(ticketId, assignmentId, [noteId])
     } catch (e) {
@@ -255,11 +292,14 @@ export class WorkerExecutor implements Executor {
       if (!this.slots.acquire(ticketId, 'wake', human)) throw new Later('No worker slot is free')
       let session: AgentSession
       let resume: string | undefined
+      let lead: RuntimeInput[] = []
       try {
         const record = this.workers.get(ticketId)
         const cwd = record?.cwd ?? (await this.deps.prepare(first)).cwd
-        resume = record?.sessionId ?? undefined
-        session = await this.runtime.open(await this.spec(first, target, cwd, resume))
+        const opened = await this.opening(first, target, record, cwd, record?.branch ?? '')
+        session = opened.session
+        resume = opened.resume
+        lead = opened.lead
       } catch (e) {
         this.slots.release(ticketId)
         this.effects.kick()
@@ -273,8 +313,11 @@ export class WorkerExecutor implements Executor {
         return
       }
       if (session.sessionId && session.sessionId !== resume) this.workers.setSession(ticketId, session.sessionId)
+      const version = this.deps.promptVersion?.()
+      if (version && this.workers.get(ticketId)) this.workers.setPromptVersion(ticketId, version)
       live = this.attach(ticketId, target.id, session)
       woken = true
+      for (const input of lead) this.send(live, input)
       if (!resume) this.send(live, { id: `assignment:${target.id}`, text: this.assignmentMessage(first, false), mode: 'followup' })
     }
     const ticket = this.store.tickets.get(ticketId)

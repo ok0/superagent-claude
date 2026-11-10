@@ -29,13 +29,13 @@ function teamFile(section: string, text: string): void {
   writeFileSync(join(directory!, 'config', 'prompts', 'team', `${section}.md`), text)
 }
 
-async function boot() {
+async function boot(given?: FakeScript) {
   directory = mkdtempSync(join(tmpdir(), 'prompt-notice-'))
   teamFile('communication', 'Team communication A')
   gate = deferred()
-  const script: FakeScript = ({ index }) => index === 0
+  const script: FakeScript = given ?? (({ index }) => index === 0
     ? { hold: gate.promise }
-    : { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'done' } }] }
+    : { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'done' } }] })
   const config = ConfigSchema.parse({ repositories: ['owner/repo'], policy: { allowed: ['alice'], acceptMode: 'auto' }, stateDir: join(directory, 'state') })
   const chat = testSource()
   const fake = new FakeRuntime(script)
@@ -117,4 +117,23 @@ it('keeps only the latest notice of a key while delivery waits', async () => {
   expect(injects).toHaveLength(1)
   expect(injects[0]!.text).toContain('Team communication C')
   expect(injects[0]!.text).not.toContain('Team communication B')
+})
+
+it('a ticket resumed after it ended gets the changed team sections merged into its first input', async () => {
+  const { r, chat, fake } = await boot(({ index }) => index === 0 ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'done' } }] } : {})
+  chat.emit(trigger('1', { addressed: 'mention', meta: { repository: 'owner/repo' } }))
+  await waitUntil(() => fake.sessions.length === 1 && fake.sessions[0]!.closed)
+  await waitUntil(() => r.store.tickets.list().some(ticket => ticket.ended !== undefined))
+
+  teamFile('communication', 'Team communication B')
+  r.refreshPrompts()
+  const hashB = r.prompts.version('worker')
+  chat.emit(trigger('2', { addressed: 'mention', meta: { repository: 'owner/repo' } }))
+  await waitUntil(() => fake.sessions.length === 2)
+  expect(fake.sessions[1]!.spec.resume).toBe(fake.sessions[0]!.sessionId)
+  const first = fake.sessions[1]!.sent[0]!
+  expect(first).toMatchObject({ id: `notice:prompts:${hashB}`, mode: 'inject' })
+  expect(first.text).toContain('## Communication\nTeam communication B')
+  const [ticket] = r.store.tickets.list()
+  expect(r.store.db.prepare('SELECT prompt_version FROM worker WHERE ticket_id = ?').get(ticket!.id)?.prompt_version).toBe(hashB)
 })

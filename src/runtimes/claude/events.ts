@@ -18,7 +18,7 @@ export class EventMapper {
   private readonly fifo: Group[] = []
   private readonly awaiting = new Set<string>()
   private readonly finished = new Set<string>()
-  private skip = false
+  private skips = 0
   private lastTotal = 0
   private lastError: SDKAssistantMessageError | undefined
 
@@ -42,7 +42,7 @@ export class EventMapper {
   }
 
   skipNextResult(): void {
-    this.skip = true
+    this.skips += 1
   }
 
   message(msg: SDKMessage): RuntimeEvent[] {
@@ -85,8 +85,8 @@ export class EventMapper {
 
   private result(m: Record<string, unknown>): RuntimeEvent[] {
     const total = typeof m.total_cost_usd === 'number' ? m.total_cost_usd : 0
-    if (this.skip) {
-      this.skip = false
+    if (this.skips > 0) {
+      this.skips -= 1
       this.lastTotal = total
       this.lastError = undefined
       return []

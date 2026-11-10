@@ -78,12 +78,15 @@ describe('start in process', () => {
     expect(c.err.join('')).toContain("unknown option '--bogus'")
   }, 30_000)
 
-  it('refuses start without --fake with exit code 2', async () => {
+  it('start without --fake runs the Claude runtime and stops with exit code 0', async () => {
     const dir = tempDir()
     const c = io(dir)
-    const code = await main(['start', '--config', writeConfig(dir)], c.io)
-    expect(code).toBe(2)
-    expect(c.err.join('')).toContain('only start --fake is available in this build')
+    const p = main(['start', '--config', writeConfig(dir, { security: { allowUnsandboxed: true } })], c.io)
+    await waitUntil(() => c.out.join('').includes('"runtime.started"'), 10_000)
+    const started = c.out.join('').split('\n').filter(line => line.length > 0).map(line => JSON.parse(line) as { event: string; runtime?: string }).find(record => record.event === 'runtime.started')
+    expect(started?.runtime).toBe('claude')
+    c.listeners.SIGINT!()
+    expect(await p).toBe(0)
   }, 30_000)
 
   it('start --fake logs JSON and stops with exit code 0 on SIGINT', async () => {
@@ -96,12 +99,13 @@ describe('start in process', () => {
 
     const lines = c.out.join('').split('\n').filter(line => line.length > 0)
     const events = lines.map(line => {
-      const record = JSON.parse(line) as { level: unknown; at: unknown; event: string }
+      const record = JSON.parse(line) as { level: unknown; at: unknown; event: string; runtime?: string }
       expect(record).toHaveProperty('level')
       expect(record).toHaveProperty('at')
-      return record.event
+      return record
     })
-    expect(events.at(-1)).toBe('runtime.stopped')
+    expect(events.find(record => record.event === 'runtime.started')?.runtime).toBe('fake')
+    expect(events.at(-1)?.event).toBe('runtime.stopped')
   }, 30_000)
 
   it('finds superagent-claude.json in the current directory', async () => {

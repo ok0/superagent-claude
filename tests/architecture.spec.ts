@@ -312,6 +312,11 @@ describe('sources and cli rules', () => {
     expect(checkFile('src/cli/main.ts', "import { query } from '@anthropic-ai/claude-agent-sdk'").map(v => v.rule)).toEqual(['cli', 'sdk'])
     expect(checkFile('src/cli/main.ts', "import { A } from '../runtimes/claude/runtime.ts'").map(v => v.rule)).toEqual(['cli'])
   })
+
+  it('allows the app agent factory to import the Claude runtime and the CLI to import it', () => {
+    expect(checkFile('src/app/agent.ts', "import { ClaudeRuntime } from '../runtimes/claude/runtime.ts'")).toEqual([])
+    expect(checkFile('src/cli/main.ts', "import { createAgent } from '../app/agent.ts'")).toEqual([])
+  })
 })
 
 describe('scan', () => {

@@ -149,6 +149,29 @@ it('notice carries only changed team and rule sections', () => {
   expect(prompts.refresh('worker')).toBeUndefined()
 })
 
+it('change classifies a stored version against the latest prompt', () => {
+  const root = writeAssets(join(directory, 'a'))
+  const rootB = writeAssets(join(directory, 'b'), { shared: 'changed shared' })
+  const teamDir = join(directory, 'team')
+  mkdirSync(teamDir)
+  const db = openStore()
+  const versions = new PromptVersions(db)
+  const p = new Prompts({ versions, teamDir, assetRoot: root })
+  const v1 = p.version('worker')
+  expect(p.change('worker', v1)).toEqual({ kind: 'same' })
+
+  writeFileSync(join(teamDir, 'scope.md'), 'new scope text')
+  const team = p.change('worker', v1)
+  expect(team.kind).toBe('team')
+  const notice = team.kind === 'team' ? team.notice : ''
+  expect(notice.startsWith('Host notice:')).toBe(true)
+  expect(notice).toContain('## Ticket scope\nnew scope text')
+  expect(notice).not.toContain('## Communication')
+
+  expect(new Prompts({ versions, teamDir, assetRoot: rootB }).change('worker', v1)).toEqual({ kind: 'fixed' })
+  expect(p.change('worker', 'unknown-hash')).toEqual({ kind: 'fixed' })
+})
+
 it('reads an old database without the prompt_version table as no rows', () => {
   const path = join(directory, 'old.sqlite')
   const old = new DatabaseSync(path)

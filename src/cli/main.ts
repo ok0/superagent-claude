@@ -1,10 +1,11 @@
 import { dirname, resolve } from 'node:path'
 import pkg from '../../package.json' with { type: 'json' }
 import { CONFIG_FILE, loadConfig, StartupRefused, type Config } from '../app/config.ts'
-import { assertStartupPolicy, resolveCredential, type StartupReport } from '../app/credentials.ts'
+import { createAgent, type Agent } from '../app/agent.ts'
+import { assertStartupPolicy, resolveCredential, type Credential, type StartupReport } from '../app/credentials.ts'
 import { installedSources, type InstalledSources } from '../app/sources.ts'
 import { jsonLines, Runtime } from '../app/runtime.ts'
-import { FakeRuntime, type FakeScript } from '../runtimes/fake/runtime.ts'
+import type { FakeScript } from '../runtimes/fake/runtime.ts'
 import { promptsCommand } from './prompts.ts'
 
 export const VERSION: string = pkg.version
@@ -103,17 +104,14 @@ async function start(argv: readonly string[], io: CliIo): Promise<number> {
     throw error
   }
 
-  if (!fake) {
-    io.err('superagent-claude: only start --fake is available in this build\n')
-    return EXIT_REFUSED
-  }
-
-  const agent = new FakeRuntime(FAKE_SCRIPT)
+  let agent: Agent
+  let credential: Credential
   let report: StartupReport
   let sources: InstalledSources
   try {
-    const credential = resolveCredential(config.auth.mode, io.env)
-    report = assertStartupPolicy(config, credential, undefined, await agent.probe())
+    credential = resolveCredential(config.auth.mode, io.env)
+    agent = createAgent({ config, credential, env: io.env, ...(fake ? { fake: FAKE_SCRIPT } : {}) })
+    report = assertStartupPolicy(config, credential, undefined, await agent.runtime.probe())
     sources = installedSources(config, io.env)
   } catch (error) {
     if (error instanceof StartupRefused) {
@@ -126,7 +124,7 @@ async function start(argv: readonly string[], io: CliIo): Promise<number> {
 
   let runtime: Runtime
   try {
-    runtime = new Runtime({ config, configDir: dirname(path), configPath: path, env: io.env, runtime: agent, log: jsonLines(io.out), startup: report, ...sources })
+    runtime = new Runtime({ config, configDir: dirname(path), configPath: path, env: io.env, runtime: agent.runtime, workspaces: agent.workspaces, log: jsonLines(io.out), startup: report, ...sources })
   } catch (error) {
     io.err(`superagent-claude: ${messageOf(error)}\n`)
     return EXIT_REFUSED

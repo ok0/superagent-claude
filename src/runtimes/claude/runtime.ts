@@ -2,6 +2,7 @@
  * Claude runtime adapter: one SDK query per session fed by a message stream. steer is sent into the running turn with priority next;
  * followup is held until the running turn's result; inject is merged into the next input sent (never sent alone, the SDK shouldQuery
  * flag is unused). Message uuids are adapter UUIDs mapped to input ids. The permission mode is fixed by options.ts.
+ * A result suppressed by interrupt does not end the newer turn: busy and held followups wait for that turn's own result.
  */
 import { query as sdkQuery, type Options, type SDKMessage, type SDKUserMessage, type SDKControlInterruptResponse } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
@@ -82,6 +83,7 @@ export class ClaudeSession implements AgentSession {
   private readonly queue: RuntimeEvent[] = []
   private wakeEvents?: () => void
   private busy = false
+  private suppressed = 0
   private readonly followups: RuntimeInput[] = []
   private readonly injects: RuntimeInput[] = []
   private readonly carried = new Map<string, string[]>()
@@ -134,6 +136,7 @@ export class ClaudeSession implements AgentSession {
     if (!this.busy) return { stillQueued: pending }
     const receipt = await this.q.interrupt().catch(() => undefined)
     this.mapper.skipNextResult()
+    this.suppressed += 1
     this.busy = false
     const sdk = this.mapper.queued(receipt?.still_queued ?? [])
     return { stillQueued: [...new Set([...sdk, ...pending])] }
@@ -177,6 +180,10 @@ export class ClaudeSession implements AgentSession {
         const events = this.mapper.message(msg)
         this.emitAll(events)
         if (msg.type === 'result') {
+          if (this.suppressed > 0) {
+            this.suppressed -= 1
+            continue
+          }
           this.busy = false
           if (events.some(event => event.type === 'error' && !event.retryable)) {
             void this.close()

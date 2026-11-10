@@ -195,3 +195,29 @@ it('the CLI reloads on SIGHUP, and the listener is removed when the daemon stops
   expect(await p).toBe(0)
   expect(c.listeners.SIGHUP).toBeUndefined()
 }, 30_000)
+
+describe('worker session options on reload', () => {
+  it('passes models.worker and network.allow to worker sessions and applies a reload to sessions opened after it', async () => {
+    const { r, chat, fake } = await boot({ models: { worker: 'model-a' }, network: { allow: ['registry.npmjs.org'] } })
+    expect(fake.sessions[0]!.spec.model).toBe('model-a')
+    expect(fake.sessions[0]!.spec.network.allow).toEqual(['registry.npmjs.org'])
+
+    writeConfig({ models: { worker: 'model-b' }, network: { allow: ['example.org'] } })
+    const outcome = await r.reload()
+    expect(outcome).toMatchObject({ applied: true })
+    expect(outcome.restartRequired).not.toContain('network')
+    expect(outcome.restartRequired).not.toContain('models.worker')
+
+    expect(chat.emit(from('2', 'alice'))).toBe('stored')
+    await waitUntil(() => fake.sessions.length === 2)
+    expect(fake.sessions[1]!.spec.model).toBe('model-b')
+    expect(fake.sessions[1]!.spec.network.allow).toEqual(['example.org'])
+    expect(fake.sessions[0]!.spec.model).toBe('model-a')
+  })
+
+  it('omits the model option when models.worker is not set', async () => {
+    const { fake } = await boot()
+    expect('model' in fake.sessions[0]!.spec).toBe(false)
+    expect(fake.sessions[0]!.spec.network.allow).toEqual([])
+  })
+})

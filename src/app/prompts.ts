@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { key } from '../core/index.ts'
 import { packageRoot } from '../infra/paths.ts'
+import type { PromptChange } from '../executor/worker-executor.ts'
 import type { Rule } from '../policy/policy.ts'
 import type { Store } from './store.ts'
 
@@ -271,12 +272,26 @@ export function formatDiff(diffs: readonly SectionDiff[]): string {
   return diffs.map(d => `${TEAM_HEADINGS[d.section]} (prompts/team/${d.section}.md): the built-in default changed since this team section was made (base ${d.base.slice(0, 12)}, now ${d.current.slice(0, 12)})\n` + d.lines.join('\n') + '\n').join('\n')
 }
 
+export const NOTICE_HEADER = 'Host notice: the team prompt sections below changed. From now on each replaces the section of the same name in your instructions.\n\n'
+
 export function noticeText(previous: Assembled, next: Assembled): string | undefined {
   const before = new Map(previous.parts.map(part => [part.key, part.text]))
   const texts = next.parts.filter(part => (part.layer === 'rule' || part.layer === 'team') && before.get(part.key) !== part.text).map(part => part.text)
   if (previous.parts.some(part => part.key === 'rule/policy') && !next.parts.some(part => part.key === 'rule/policy')) texts.push('## Rules\nNo admission rule is enabled now.')
   if (!texts.length) return undefined
-  return 'Host notice: the team prompt sections below changed. From now on each replaces the section of the same name in your instructions.\n\n' + texts.join('\n\n')
+  return NOTICE_HEADER + texts.join('\n\n')
+}
+
+/** Classifies the change from a stored prompt version to the current assembly: fixed when the role or a host, built-in or skill part changed (a new session is needed), team when only rule or team sections changed (a notice is enough), same otherwise (ADR-18). */
+export function promptChange(stored: PromptRecord | undefined, current: Assembled): PromptChange {
+  if (!stored || stored.role !== current.role) return { kind: 'fixed' }
+  const now = [...current.parts.filter(p => p.layer === 'host' || p.layer === 'builtin').map(p => [p.key, partHash(p.text)]), ['skill/github', current.skillHash]]
+  if (JSON.stringify(now) !== JSON.stringify(stored.fixed.map(p => [p.key, p.hash]))) return { kind: 'fixed' }
+  const old = new Map(stored.team.map(p => [p.key, p.hash]))
+  const texts = current.parts.filter(p => (p.layer === 'rule' || p.layer === 'team') && old.get(p.key) !== partHash(p.text)).map(p => p.text)
+  if (old.has('rule/policy') && !current.parts.some(p => p.key === 'rule/policy')) texts.push('## Rules\nNo admission rule is enabled now.')
+  if (!texts.length) return { kind: 'same' }
+  return { kind: 'team', notice: NOTICE_HEADER + texts.join('\n\n') }
 }
 
 export interface PromptsOptions { versions: PromptVersions; teamDir?: string; rules?: () => readonly string[]; assetRoot?: string }
@@ -305,6 +320,11 @@ export class Prompts {
   }
   version(role: PromptRole): string {
     return (this.last[role] ?? this.current(role)).hash
+  }
+  change(role: PromptRole, stored: string): PromptChange {
+    const current = this.current(role)
+    if (stored === current.hash) return { kind: 'same' }
+    return promptChange(this.versions.get(stored)?.parts, current)
   }
   baseline(role: PromptRole): Assembled {
     const a = this.current(role)

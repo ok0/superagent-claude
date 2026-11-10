@@ -40,7 +40,8 @@ export class ManualClock {
   }
 }
 export interface WorkerHarnessOptions { script?: FakeScript; max?: number; limits?: { maxTurns: number; maxBudgetUsd: number }
-  prepare?: WorkerDeps['prepare']; retries?: number; directory?: string; start?: boolean }
+  prepare?: WorkerDeps['prepare']; retries?: number; directory?: string; start?: boolean
+  deps?: Partial<Pick<WorkerDeps, 'instructions' | 'promptVersion' | 'promptChange' | 'history'>> }
 export function workerHarness(options: WorkerHarnessOptions = {}) {
   const directory = options.directory ?? mkdtempSync(join(tmpdir(), 'worker-'))
   const store = new Store(join(directory, 'db.sqlite'))
@@ -57,7 +58,7 @@ export function workerHarness(options: WorkerHarnessOptions = {}) {
       execute: async args => { h!.engine.report(ticket.id, args as WorkerReport); return 'ok' } },
   ]
   const executor = new WorkerExecutor({
-    store, effects, engine: () => h!.engine, runtime, slots, workers, deps: { prepare, instructions: async () => 'instructions', tools },
+    store, effects, engine: () => h!.engine, runtime, slots, workers, deps: { prepare, instructions: async () => 'instructions', tools, ...options.deps },
     limits: options.limits ?? { maxTurns: 100, maxBudgetUsd: 5 }, timers: clock, now: clock.now, ...(options.retries === undefined ? {} : { retries: options.retries }),
   })
   h = harness({}, { repo: store, executor })

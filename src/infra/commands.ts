@@ -154,8 +154,8 @@ export class Commands {
     return root ? (path ? `${root}/${path}` : root) : path
   }
 
-  /** Runs `git` with the whitelisted environment only, without API-only variables. */
-  async git(args: string[], cwd: string): Promise<string> {
-    return this.run('git', args, cwd)
+  /** Runs `git` with the whitelisted environment only, without API-only variables; `extra` reaches only this call. */
+  async git(args: string[], cwd: string, extra: Readonly<Record<string, string>> = {}): Promise<string> {
+    return this.run('git', args, cwd, extra)
   }
 }

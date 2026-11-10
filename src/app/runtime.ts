@@ -1,15 +1,16 @@
 /**
- * The composition root: Store → Engine (Policy, SourceScope, Assessor, WorkerExecutor, Outbox) → Source kinds → AdmissionFilter in front of Passes → effect handlers → recovery. `start()` recovers interrupted work and starts the loops and Source services; `stop()` cleans up within STOP_TIMEOUT_MS. `reload()` re-reads the config file while the runtime runs: the policy part is applied to the next Trigger, startup-only keys are reported and kept, and a refused file keeps the running config. The assessor is deterministic and the worker instructions are the assembled prompt; the worker workspace and tools are minimal stand-ins until the model runtime milestones.
+ * The composition root: Store → Engine (Policy, SourceScope, Assessor, WorkerExecutor, Outbox) → Source kinds → AdmissionFilter in front of Passes → effect handlers → recovery. `start()` recovers interrupted work and starts the loops and Source services; `stop()` cleans up within STOP_TIMEOUT_MS. `reload()` re-reads the config file while the runtime runs: the policy part is applied to the next Trigger, startup-only keys are reported and kept, and a refused file keeps the running config. The assessor is deterministic and the worker instructions are the assembled prompt; worker workspaces are git worktrees (or scratch directories for fake runs) and the worker tools are the executor tools.
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { z } from 'zod'
-import { Engine, UserError, type Assessor, type Candidate, type DomainEvent, type EngineForExecutor, type Policy, type Ticket, type WorkerReport } from '../core/index.ts'
+import { Engine, UserError, type Assessor, type Candidate, type DomainEvent, type EngineForExecutor, type Policy, type Ticket } from '../core/index.ts'
 import type { AgentRuntime, ToolSpec } from '../executor/contract.ts'
 import { recover } from '../executor/recovery.ts'
 import { Slots } from '../executor/slots.ts'
 import { WorkerExecutor, type WorkerDeps, type WorkerTimers } from '../executor/worker-executor.ts'
 import { WorkerStore } from '../executor/worker-store.ts'
+import { ScratchWorkspaces, Workspaces, worktreeName, type RepositoryAccess, type WorkspaceProvider } from '../executor/workspaces.ts'
+import { Commands } from '../infra/commands.ts'
 import { HealthBoard, type Health, type HealthEntry } from '../infra/health.ts'
 import { assessmentOutcome, policyEffects, policyVersion, settingsPolicy, type Assessment, type Settings } from '../policy/policy.ts'
 import { AdmissionFilter } from '../sources/admission-filter.ts'
@@ -23,11 +24,12 @@ import { Outbox, type OutboxChannels } from './outbox.ts'
 import { Passes, type Timers as PassTimers } from './passes.ts'
 import { databasePath, Store } from './store.ts'
 import { PromptVersions, Prompts, ruleLines } from './prompts.ts'
+import { executorTools, type ExecutorToolsHost } from './tools/executor.ts'
 
 export const STOP_TIMEOUT_MS = 10_000
 
 /** The config keys that take effect only on restart; a reload keeps the running value and reports the key. */
-export const RESTART_KEYS = ['auth.mode', 'delivery', 'workers', 'network', 'security', 'retention', 'models', 'stateDir'] as const
+export const RESTART_KEYS = ['auth.mode', 'delivery', 'workers', 'security', 'retention', 'models.router', 'stateDir'] as const
 
 export interface ReloadOutcome { applied: boolean; policyChanged: boolean; restartRequired: string[]; warnings: string[]; error?: string }
 
@@ -35,19 +37,20 @@ export function jsonLines(write: (line: string) => void): LogSink {
   return record => { write(JSON.stringify(record) + '\n') }
 }
 
-/** The one worker tool. Report and reply run synchronously inside one tool call, so the session stop that a ready report causes cannot cut the reply off. */
-export function workerTools(engine: () => Pick<EngineForExecutor, 'report' | 'reply'>, ticket: Ticket): ToolSpec[] {
-  return [{
-    name: 'orchestrator_report',
-    description: 'Report the ticket state with a short summary; a ready report sends the summary as the result',
-    schema: z.object({ state: z.enum(['progress', 'waiting', 'ready', 'blocked', 'failed', 'dropped']), summary: z.string().trim().min(1).max(500) }),
-    execute: async args => {
-      const report = args as WorkerReport
-      engine().report(ticket.id, report)
-      if (report.state === 'ready') engine().reply({ purpose: 'result', ticketId: ticket.id, text: report.summary })
-      return 'ok'
+/** Executor tools; a ready report also sends its summary as the result (stand-in until the Router relays results, M14). */
+export function workerTools(host: ExecutorToolsHost, ticket: Pick<Ticket, 'id'>): ToolSpec[] {
+  return executorTools(host, ticket).map(tool => tool.name !== 'orchestrator_report' ? tool : {
+    ...tool,
+    execute: async (args, signal) => {
+      const out = await tool.execute(args, signal)
+      const parsed = tool.schema.safeParse(args)
+      const data = parsed.success ? parsed.data as { state: string; summary: string } : undefined
+      if (data?.state === 'ready') {
+        try { host.engine().reply({ purpose: 'result', ticketId: ticket.id, text: data.summary }) } catch (e) { if (!(e instanceof UserError)) throw e }
+      }
+      return out
     },
-  }]
+  })
 }
 
 export function deterministicAssessment(candidate: Candidate, settings: Settings): Assessment {
@@ -107,6 +110,10 @@ export interface RuntimeOptions {
   /** The agent account login once the Source read it; reload checks it against policy.allowed. */
   agentLogin?: () => string | undefined
   runtime: AgentRuntime
+  /** Worker workspaces: 'git' worktrees (Claude start) or 'scratch' directories (default; fake runs, no git or network). */
+  workspaces?: 'git' | 'scratch'
+  /** Remote URLs and clone/fetch authentication for git workspaces; the Source assembly point provides it. */
+  access?: RepositoryAccess
   kinds?: readonly SourceKind[]
   services?: readonly SourceService[]
   log?: LogSink
@@ -153,6 +160,7 @@ export class Runtime implements SourceHost {
   readonly engine: Engine
   readonly passes: Passes
   readonly prompts: Prompts
+  readonly workspaces: WorkspaceProvider
   private current: Config
   get config(): Config { return this.current }
   private readonly agent: AgentRuntime
@@ -218,21 +226,26 @@ export class Runtime implements SourceHost {
         send: message => sources.send(message),
       }
       this.outbox = new Outbox({ store, effects, channels, paused: () => this.policy.paused })
+      const repositoryOf = (ticket: Ticket): string => {
+        const origin = store.triggers.get(ticket.origin.triggerId)
+        return typeof origin?.meta.repository === 'string' ? origin.meta.repository : config.repositories[0]!
+      }
+      if (options.workspaces === 'git' && !options.access) throw new Error('Git workspaces need repository access')
+      this.workspaces = options.workspaces === 'git'
+        ? new Workspaces({ stateDir: config.stateDir, commands: new Commands({ apiProgram: 'gh', baseEnv: this.env, env: { GIT_TERMINAL_PROMPT: '0' } }), repositoryOf, access: options.access! })
+        : new ScratchWorkspaces({ stateDir: config.stateDir, repositoryOf })
       const deps: WorkerDeps = {
-        prepare: async ticket => {
-          const origin = store.triggers.get(ticket.origin.triggerId)
-          const repository = typeof origin?.meta.repository === 'string' ? origin.meta.repository : config.repositories[0]!
-          const cwd = join(config.stateDir, 'work', ticket.id)
-          mkdirSync(cwd, { recursive: true })
-          return { repository, cwd, branch: `agent/${ticket.id}` }
-        },
+        prepare: ticket => this.workspaces.prepare(ticket, worktreeName(ticket)),
         instructions: async ticket => this.prompts.instructions('worker', [{ source: 'ticket-title', text: ticket.title }]),
-        tools: ticket => workerTools(() => this.engine, ticket),
+        tools: ticket => workerTools({ engine: () => this.engine, ticket: id => store.tickets.get(id) }, ticket),
         env: () => ({}),
         promptVersion: () => this.prompts.version('worker'),
+        promptChange: stored => this.prompts.change('worker', stored),
+        history: cwd => this.workspaces.history(cwd),
       }
       this.executor = new WorkerExecutor({
         store, effects, engine: () => this.engine, runtime: options.runtime, slots: new Slots(config.workers.max), workers: new WorkerStore(store, now), deps,
+        network: () => this.current.network.allow, model: () => this.current.models.worker,
         limits: { maxTurns: config.workers.maxTurns, maxBudgetUsd: config.workers.maxBudgetUsd }, now, paused: () => this.policy.paused,
         health: board.claim('executor'), ...(timers ? { timers } : {}),
       })
@@ -289,7 +302,7 @@ export class Runtime implements SourceHost {
     this.passes.request()
   }
 
-  /** Re-reads the config file and applies it: the policy part from the next Trigger on (a changed policy version is an input to open tickets), startup-only keys are kept and reported. A refused file changes nothing. Calls are serialised. */
+  /** Re-reads the config file and applies it: the policy part from the next Trigger on (a changed policy version is an input to open tickets), startup-only keys are kept and reported. A refused file changes nothing. `network.allow` and `models.worker` apply to worker sessions opened after the reload. Calls are serialised. */
   reload(): Promise<ReloadOutcome> {
     const next = this.reloads.then(() => this.reloadOnce())
     this.reloads = next.catch(() => undefined)
@@ -350,6 +363,11 @@ export class Runtime implements SourceHost {
       ...this.current,
       repositories: next.repositories,
       policy: next.policy,
+      network: next.network,
+      models: {
+        ...(this.current.models.router === undefined ? {} : { router: this.current.models.router }),
+        ...(next.models.worker === undefined ? {} : { worker: next.models.worker }),
+      },
       auth: {
         mode: this.current.auth.mode,
         acceptSubscriptionSharedUseRisk: next.auth.acceptSubscriptionSharedUseRisk,

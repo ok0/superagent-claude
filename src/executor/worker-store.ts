@@ -35,6 +35,10 @@ export class WorkerStore {
   setSession(ticketId: string, sessionId: string): void {
     this.store.db.prepare('UPDATE worker SET session_id = ?, updated_at = ? WHERE ticket_id = ?').run(sessionId, new Date(this.now()).toISOString(), ticketId)
   }
+  /** Records the prompt version the ticket's worker record was opened with. */
+  setPromptVersion(ticketId: string, promptVersion: string): void {
+    this.store.db.prepare('UPDATE worker SET prompt_version = ?, updated_at = ? WHERE ticket_id = ?').run(promptVersion, new Date(this.now()).toISOString(), ticketId)
+  }
   /** Adds one turn's usage to the record's Assignment; a record of another Assignment starts over from zero under assignmentId. Returns the totals (the given values when there is no record). */
   addUsage(ticketId: string, assignmentId: string, turns: number, costUsd: number): { turns: number; costUsd: number } {
     this.store.db.prepare(`UPDATE worker SET turns = CASE WHEN assignment_id = ? THEN turns + ? ELSE ? END,

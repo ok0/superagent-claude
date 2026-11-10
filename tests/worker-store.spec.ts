@@ -53,6 +53,12 @@ it('records the session id', () => {
   expect(workers.get('t1')?.sessionId).toBe('s2')
 })
 
+it('setPromptVersion updates only the prompt version', () => {
+  workers.put({ ...rec, promptVersion: 'v1' })
+  workers.setPromptVersion('t1', 'v2')
+  expect(workers.get('t1')).toEqual({ ...rec, promptVersion: 'v2', updatedAt: '2026-09-23T00:00:00.000Z' })
+})
+
 it('declares the worker table in schema version 1', () => {
   expect(SCHEMA_VERSION).toBe(1)
   expect(store.db.prepare("SELECT name FROM pragma_table_info('worker')").all().map(row => row.name)).toEqual([
