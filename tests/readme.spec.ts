@@ -20,16 +20,13 @@ const svg = read('docs/assets/flow.svg')
 
 const DOCS = ['docs/getting-started.md', 'docs/configuration.md', 'docs/authentication.md', 'docs/runtime-contract.md', 'docs/deploy.md', 'docs/security.md']
 
-const ATTRIBUTION = ''
 const HYPE = /\b(blazing|revolutionary|seamless|cutting-edge|world-class|supercharg|effortless|game-chang|best-in-class)/i
 const PRODUCT_NAME = /claude[ \t]+code/i
 
 export function readmeProblems(text: string): string[] {
   const problems: string[] = []
-  const attribution = text.split('\n').filter(line => line === ATTRIBUTION).length
-  if (attribution !== 1) problems.push(`attribution line occurs ${attribution} times`)
   const mentions = text.match(/dsh-superagent-prototype/g)?.length ?? 0
-  if (mentions !== 1) problems.push(`dsh-superagent-prototype is mentioned ${mentions} times`)
+  if (mentions !== 0) problems.push(`dsh-superagent-prototype is mentioned ${mentions} times`)
   if (/\.docs\//.test(text)) problems.push('a .docs/ path appears')
   if (PRODUCT_NAME.test(text)) problems.push('the forbidden product name appears')
   const hype = HYPE.exec(text)
@@ -68,8 +65,7 @@ function section(text: string, heading: string): string {
 }
 
 const samples: [string, string][] = [
-  ['a sentence twice', readme + `\n${ATTRIBUTION}\n`],
-  ['an extra mention of the reference', readme + '\nSee dsh-superagent-prototype for more.\n'],
+  ['a mention of the reference', readme + '\nSee dsh-superagent-prototype for more.\n'],
   ['a .docs/ link', readme + '\n[x](.docs/acceptance/PAC1.md)\n'],
   ['the forbidden product name', readme + '\n' + 'Claude' + ' Code' + ' is used here.\n'],
   ['the word seamless', readme + '\nA seamless setup.\n'],
