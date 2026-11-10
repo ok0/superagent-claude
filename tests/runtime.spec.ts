@@ -6,7 +6,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { ConfigSchema } from '../src/app/config.ts'
-import { Runtime, STOP_TIMEOUT_MS } from '../src/app/runtime.ts'
+import { Runtime, STOP_TIMEOUT_MS, workerTools } from '../src/app/runtime.ts'
+import type { ExecutorToolsHost } from '../src/app/tools/executor.ts'
+import { UserError } from '../src/core/index.ts'
 import { FakeRuntime, type FakeScript } from '../src/runtimes/fake/runtime.ts'
 import type { LogRecord } from '../src/sources/host.ts'
 import { sleep, waitUntil } from './fixtures/async.ts'
@@ -107,6 +109,33 @@ it('a second Runtime on a running state directory is refused', async () => {
   const { runtime } = await boot(stateDir, hold)
   expect(() => new Runtime({ config: config(stateDir), runtime: new FakeRuntime(() => ({})) })).toThrow(/Another superagent-claude process/)
   await runtime.stop()
+})
+
+it('a ready report ends the ticket and queues its result in one transaction', async () => {
+  let depth = 0
+  const atomic = <T>(op: () => T): T => { depth++; try { return op() } finally { depth-- } }
+  const calls: string[] = []
+  const unused = (): never => { throw new Error('unexpected call') }
+  const engine = {
+    report: () => { calls.push(`report:${depth}`); return {} },
+    reply: (request: { purpose: string }) => { calls.push(`reply:${depth}:${request.purpose}`); return { id: 'r', status: 'pending', reused: false } },
+    markUnrelated: unused, handback: unused, followForContext: unused, bindThread: unused,
+  }
+  const host = { engine: () => engine, ticket: () => ({}) } as unknown as ExecutorToolsHost
+  const tool = workerTools(host, { id: 't1' }, atomic).find(t => t.name === 'orchestrator_report')!
+  const signal = new AbortController().signal
+
+  await tool.execute({ state: 'ready', summary: 'Done' }, signal)
+  expect(calls).toEqual(['report:1', 'reply:1:result'])
+
+  calls.length = 0
+  engine.reply = request => { calls.push(`reply:${depth}:${request.purpose}`); throw new UserError('ticketEnded') }
+  await expect(tool.execute({ state: 'ready', summary: 'Done' }, signal)).resolves.toBeDefined()
+  expect(calls).toEqual(['report:1', 'reply:1:result'])
+
+  calls.length = 0
+  await tool.execute({ state: 'progress', summary: 'Working' }, signal)
+  expect(calls).toEqual(['report:1'])
 })
 
 it('starts with no Source registered', async () => {

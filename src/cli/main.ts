@@ -15,6 +15,9 @@ export const EXIT_REFUSED = 2
 
 /** The fake worker reports ready on its first turn, so a fake run answers once. */
 const FAKE_SCRIPT: FakeScript = ({ index }) => index === 0 ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'Done: the fake worker finished' } }] } : {}
+/** With SUPERAGENT_CLAUDE_FAKE_HOLD=1 (read only with --fake) the fake worker never ends a turn, so a test can stop the daemon while an Assignment runs. */
+const HOLD_SCRIPT: FakeScript = () => ({ hold: new Promise<never>(() => {}) })
+const fakeScript = (env: CliIo['env']): FakeScript => env.SUPERAGENT_CLAUDE_FAKE_HOLD === '1' ? HOLD_SCRIPT : FAKE_SCRIPT
 
 export const HELP: string = [
   'Usage: superagent-claude [--help | --version]',
@@ -120,7 +123,7 @@ async function start(argv: readonly string[], io: CliIo): Promise<number> {
   let sources: InstalledSources
   try {
     credential = resolveCredential(config.auth.mode, io.env)
-    agent = createAgent({ config, credential, env: io.env, ...(fake ? { fake: FAKE_SCRIPT } : {}) })
+    agent = createAgent({ config, credential, env: io.env, ...(fake ? { fake: fakeScript(io.env) } : {}) })
     report = assertStartupPolicy(config, credential, undefined, await agent.runtime.probe())
     sources = installedSources(config, io.env)
   } catch (error) {
@@ -140,21 +143,28 @@ async function start(argv: readonly string[], io: CliIo): Promise<number> {
     return EXIT_REFUSED
   }
 
+  // Listen before starting, so a signal during startup stops the runtime in order instead of killing the process.
+  const signal = { received: false }
+  const signalled = new Promise<void>(done => {
+    const onSignal = (): void => { signal.received = true; done() }
+    io.signals.once('SIGINT', onSignal)
+    io.signals.once('SIGTERM', onSignal)
+  })
+  const starting = runtime.start()
+  starting.catch(() => {})
   try {
-    await runtime.start()
+    await Promise.race([starting, signalled])
   } catch (error) {
     await runtime.stop()
     io.err(`superagent-claude: ${messageOf(error)}\n`)
     return EXIT_REFUSED
   }
-
-  const onHup = (): void => { void runtime.reload() }
-  io.signals.on?.('SIGHUP', onHup)
-  await new Promise<void>(done => {
-    io.signals.once('SIGINT', done)
-    io.signals.once('SIGTERM', done)
-  })
-  io.signals.off?.('SIGHUP', onHup)
+  if (!signal.received) {
+    const onHup = (): void => { void runtime.reload() }
+    io.signals.on?.('SIGHUP', onHup)
+    await signalled
+    io.signals.off?.('SIGHUP', onHup)
+  }
   await runtime.stop()
   return 0
 }

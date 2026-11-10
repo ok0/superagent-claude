@@ -7,7 +7,7 @@ import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { checkSync } from 'proper-lockfile'
 import type { Decision, Thread, Trigger } from '../core/index.ts'
 import type { Key } from './kv.ts'
-import type { Dropped, Receipt, TimelinePlace } from './store.ts'
+import { lockOwnerGone, type Dropped, type Receipt, type TimelinePlace } from './store.ts'
 
 export function storeReads(db: DatabaseSync) {
   const values = <T>(sql: string, ...parameters: SQLInputValue[]): T[] => db.prepare(sql).all(...parameters).map(row => JSON.parse(String(row.value)) as T)
@@ -89,6 +89,7 @@ export function storeReads(db: DatabaseSync) {
 export interface StoreReader { readonly db: DatabaseSync; readonly read: ReturnType<typeof storeReads>; get<V>(name: Key<V>): V | undefined; keys(prefix: string): string[]; close(): void }
 export function openReadOnly(path: string): StoreReader {
   const db = new DatabaseSync(path, { readOnly: true })
+  db.exec('PRAGMA busy_timeout=5000')
   return {
     db,
     read: storeReads(db),
@@ -100,5 +101,5 @@ export function openReadOnly(path: string): StoreReader {
     close: () => { db.close() },
   }
 }
-/** Whether a writer (the daemon) holds the single-writer lock on the database at path; it takes no lock. A lock older than the Store's stale time counts as not held. */
-export function writerActive(path: string): boolean { try { return checkSync(path, { realpath: false, stale: 30_000 }) } catch { return false } }
+/** Whether a writer (the daemon) holds the single-writer lock on the database at path; it takes no lock. A lock older than the Store's stale time counts as not held, and so does a lock whose recorded owner process is gone. */
+export function writerActive(path: string): boolean { try { return checkSync(path, { realpath: false, stale: 30_000 }) && !lockOwnerGone(path) } catch { return false } }

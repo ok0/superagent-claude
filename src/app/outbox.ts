@@ -42,6 +42,7 @@ export class Outbox implements OutboxPort {
     store.atomic(() => { if (store.receipts.withdraw(id)) effects.cancel('reply', id) })
   }
   sent(): Promise<void> { return this.host.effects.idle('reply') }
+  /** Reply crash rule: the reply effect row is deleted only after the receipt settles, so a process stopped after its Source accepted the message but before `settle` runs this again on restart; each channel must find a message it already sent by its id and return `sent` without sending again (the channel's pre-send marker lookup on the hosting service looks for its id marker before every post). A stop before the send sends it once after restart. */
   private async deliver(id: string): Promise<void> {
     const { store, channels } = this.host
     const receipt = store.receipts.get(id)

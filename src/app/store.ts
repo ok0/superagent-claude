@@ -1,10 +1,10 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/store.ts
 /**
  * SQLite persistence for domain aggregates, key-value state, and the channel outbox.
- * Changes from the reference: settings methods and the upgrade path for older schemas are removed; the schema is fixed at version 1; the Store takes a single-writer lock on the database file; `databasePath` is added; a `worker` table for worker session records is added; a `prompt_version` table records assembled prompt versions.
+ * Changes from the reference: settings methods and the upgrade path for older schemas are removed; the schema is fixed at version 1; the Store takes a single-writer lock on the database file; `databasePath` is added; a `worker` table for worker session records is added; a `prompt_version` table records assembled prompt versions; a lock whose recorded owner pid no longer runs is taken over at once.
  */
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
-import { chmodSync, mkdirSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { lockSync } from 'proper-lockfile'
 import { key, threadKey, type ChannelRef, type Decision, type OutboundMessage, type ReplyStatus, type Repositories, type Thread, type ThreadFact,
@@ -83,16 +83,35 @@ function toRejected(row: Record<string, SQLInputValue>): RejectedTrigger {
   return { triggerId: String(row.trigger_id), repository: String(row.repository), actor: String(row.actor), at: String(row.at), reason: String(row.reason) as RejectionReason }
 }
 
-/** Takes the single-writer lock on `path`; a lock held by another process is reported as a clear error. Returns the release function. */
+/** The file next to the database that names the pid holding its single-writer lock. */
+const ownerFile = (path: string): string => `${path}.owner`
+/** True when the lock on `path` names an owner pid that no longer runs on this host (it was killed and left its lock behind). */
+export function lockOwnerGone(path: string): boolean {
+  let text: string
+  try { text = readFileSync(ownerFile(path), 'utf8') } catch { return false }
+  const pid = Number(text.trim())
+  if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return false
+  try { process.kill(pid, 0); return false } catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH' }
+}
+/**
+ * Takes the single-writer lock on `path`; a lock held by another process is reported as a clear error. Returns the release function.
+ * A lock left by a killed process is taken over at once when its recorded owner pid no longer runs; otherwise the 30 s stale rule applies.
+ */
 function lockDatabase(path: string, report: (error: unknown) => void): () => void {
+  const take = () => lockSync(path, { realpath: false, stale: 30_000, onCompromised: error => { report(error) } })
+  const locked = (error: unknown): boolean => typeof error === 'object' && error !== null && 'code' in error && error.code === 'ELOCKED'
+  const refused = (cause: unknown): Error => new Error(`Another superagent-claude process is writing ${path}`, { cause })
   let release: () => void
   try {
-    release = lockSync(path, { realpath: false, stale: 30_000, onCompromised: error => { report(error) } })
+    release = take()
   } catch (error) {
-    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ELOCKED') throw new Error(`Another superagent-claude process is writing ${path}`, { cause: error })
-    throw error
+    if (!locked(error)) throw error
+    if (!lockOwnerGone(path)) throw refused(error)
+    rmSync(`${path}.lock`, { recursive: true, force: true })
+    try { release = take() } catch (again) { if (locked(again)) throw refused(again); throw again }
   }
-  return () => { try { release() } catch (error) { report(error) } }
+  writeFileSync(ownerFile(path), String(process.pid), { mode: 0o600 })
+  return () => { try { rmSync(ownerFile(path), { force: true }); release() } catch (error) { report(error) } }
 }
 
 /**
@@ -106,7 +125,7 @@ export class Store implements Repositories {
   /** Releases the single-writer lock on the database file. */
   private readonly unlock: () => void
   /**
-   * Opens or creates the SQLite database at `path` under the single-writer lock.
+   * Opens or creates the SQLite database at `path` under the single-writer lock. Waits up to 5 s for a lock another connection holds (such as a reader during crash recovery) instead of failing at once.
    * @throws When another process holds the lock, when the stored schema is not `SCHEMA_VERSION`, or when the database cannot be opened; in every case the lock is released and the SQLite handle is closed so a later attempt can open it.
    */
   constructor(path: string, report: (error: unknown) => void = () => {}) {
@@ -117,7 +136,7 @@ export class Store implements Repositories {
     this.read = storeReads(this.db)
     try {
       chmodSync(path, 0o600)
-      this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+      this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
       const version = this.get(KV.store.schema)
       if (version !== undefined && version !== SCHEMA_VERSION) throw new Error(`Unsupported database version ${version}: this build reads schema ${SCHEMA_VERSION} only`)
       this.atomic(() => {

@@ -75,3 +75,24 @@ it('queues one launch per ticket however often recovery runs', async () => {
   await w2.effects.idle()
   expect(w2.runtime.opened.length).toBe(1)
 })
+
+it('does not resume an ended ticket on restart', async () => {
+  const w1 = workerHarness({ directory, max: 2, script: () => ({ hold: new Promise(() => {}) }) })
+  const first = accepted(w1, '1', 't1').ticketId!
+  w1.tick(1)
+  const second = accepted(w1, '2', 't2').ticketId!
+  await waitUntil(() => w1.runtime.active === 2)
+  w1.engine.report(second, { state: 'ready', summary: 'done' })
+  expect(w1.ticket(second).ended).toBeDefined()
+  const ended = w1.ticket(second).assignments
+  await w1.effects.drain()
+  w1.store.close()
+
+  const w2 = workerHarness({ directory, start: false })
+  expect(recover({ tickets: w2.store.tickets, engine: w2.engine, executor: w2.executor })).toEqual([first])
+  w2.effects.start()
+  await waitUntil(() => w2.runtime.opened.length === 1)
+  await w2.effects.idle('launch')
+  expect(w2.runtime.opened.map(spec => spec.key)).toEqual([`worker-${first}`])
+  expect(w2.ticket(second).assignments).toEqual(ended)
+})

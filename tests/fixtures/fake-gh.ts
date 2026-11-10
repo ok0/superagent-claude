@@ -63,9 +63,9 @@ const fieldsOf = (args: readonly string[]): Record<string, string> => {
 
 const failure = (status: number): Error => Object.assign(new Error('failed'), { stderr: `gh: Request failed (HTTP ${status})`, code: 1 })
 
-export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string, string | undefined>; apiEnv?: Record<string, string> } = {}): FakeGh {
+export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string, string | undefined>; apiEnv?: Record<string, string>; posted?: Posted[] } = {}): FakeGh {
   const calls: string[] = []
-  const posted: Posted[] = []
+  const posted: Posted[] = options.posted ?? []
   const execs: FakeGh['execs'] = []
   const requests: FakeGh['requests'] = []
   const graphqlCalls: FakeGh['graphql'] = []
