@@ -60,8 +60,8 @@ describe('README and deploy doc', () => {
     expect(readmeProblems(sample).length).toBeGreaterThan(0)
   })
 
-  it('counts the settings of the schema as 20', () => {
-    expect(schemaSettings()).toHaveLength(20)
+  it('counts the settings of the schema as 19', () => {
+    expect(schemaSettings()).toHaveLength(19)
   })
 
   it('states the setting count of the schema and names every setting', () => {

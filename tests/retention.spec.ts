@@ -64,7 +64,7 @@ function harness(wrap?: (ws: Workspaces) => Pick<WorkspaceProvider, 'remove'>) {
     const prepared = await ws.prepare(ticket(id, ended), id)
     s.workers.put({
       ticketId: id, assignmentId: 'as-' + id.slice(0, 4), runtime: 'fake', sessionId: null, repository: 'owner/repo',
-      cwd: prepared.cwd, branch: prepared.branch, pushRemote: null, turns: 0, costUsd: 0, promptVersion: null,
+      cwd: prepared.cwd, branch: prepared.branch, turns: 0, costUsd: 0, promptVersion: null,
     })
   }
 

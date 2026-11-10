@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { deliveryTools, type DeliveryToolsHost } from '../src/app/tools/delivery.ts'
 import type { ToolSpec } from '../src/executor/contract.ts'
+import { RepositoryAccessError } from '../src/executor/workspaces.ts'
 import { githubPullRequests } from '../src/sources/github/delivery.ts'
 import { fakeGh, pull, type FakeRepository } from './fixtures/fake-gh.ts'
 
@@ -13,10 +14,17 @@ interface SetupOptions {
   allow?: boolean
   repositoryOf?: () => string
   ended?: boolean
+  access?: FakeRepository['access']
+  failures?: Record<string, number>
+  recorded?: boolean
+  pushError?: Error
+  apiEnv?: Record<string, string>
 }
 
 function setup(opts: SetupOptions = {}) {
   const repo: FakeRepository = {
+    access: opts.access,
+    failures: opts.failures,
     pulls: {
       2: pull(A, 2, { node_id: 'PR_acme/widgets_2', state: 'open' }),
       5: pull(A, 5, { node_id: 'PR_acme/widgets_5', state: 'open' }),
@@ -25,13 +33,17 @@ function setup(opts: SetupOptions = {}) {
       2: [{ id: 70, body: 'x', user: { login: 'alice' }, pull_request_url: `https://api.github.com/repos/${A}/pulls/2` }],
     },
   }
-  const gh = fakeGh({ repositories: { [A]: repo } })
+  const gh = fakeGh({ repositories: { [A]: repo } }, { apiEnv: opts.apiEnv })
   const follows = opts.follows ?? [{ thread: 'github:acme/widgets#2', own: true }]
   const bindThread = vi.fn()
-  const push = vi.fn(async () => ({ repository: A, branch: 'agent/x', base: 'main', head: 'h', pushed: 1, rewritten: 0, uncommitted: false }))
+  const push = vi.fn(async () => {
+    if (opts.pushError) throw opts.pushError
+    return { repository: A, branch: 'agent/x', base: 'main', head: 'h', pushed: 1, rewritten: 0, uncommitted: false }
+  })
+  const report = vi.fn(() => ({}))
   const ended = { at: '2026-09-23T00:00:00Z', by: 'human', outcome: 'closed' }
   const host: DeliveryToolsHost = {
-    engine: () => ({ bindThread }) as never,
+    engine: () => ({ bindThread, report }) as never,
     ticket: () => (opts.ended ? { ended, follows } : { follows }) as never,
     repositories: () => [A],
     delivery: {
@@ -39,10 +51,11 @@ function setup(opts: SetupOptions = {}) {
       push,
       pulls: githubPullRequests(gh.commands),
       allowAutoMerge: () => opts.allow ?? false,
+      recordedPush: () => opts.recorded,
     },
   }
   const tools = deliveryTools(host, 'T1')
-  return { gh, tools, bindThread, push }
+  return { gh, tools, bindThread, push, report }
 }
 
 function find(tools: ToolSpec[], name: string): ToolSpec {
@@ -57,12 +70,76 @@ describe('worker delivery tools', () => {
     const publish = find(tools, 'orchestrator_publish')
     const args = { title: 'Fix', body: 'Body', coAuthors: ['Ann <ann@example.com>'] }
     const first = await publish.execute(args, signal()) as { pr: number; created: boolean }
+    expect(first).toMatchObject({ published: true })
     const second = await publish.execute(args, signal()) as { pr: number; created: boolean }
     expect(first.created).toBe(true)
     expect(second).toMatchObject({ pr: first.pr, created: false })
     expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')).toHaveLength(1)
     expect(bindThread).toHaveBeenCalledWith('T1', { source: 'github', id: `acme/widgets#${first.pr}` }, true)
     expect(push).toHaveBeenCalledWith('T1', { coAuthors: ['Ann <ann@example.com>'] })
+  })
+
+  it('without write access publish pushes nothing, opens no PR, binds nothing and returns published false with the reason', async () => {
+    const { gh, tools, bindThread, push, report } = setup({ access: { push: false }, recorded: false })
+    const result = await find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())
+    expect(result).toMatchObject({ published: false, repository: A, recorded_at_startup: 'no push' })
+    expect((result as { reason: string }).reason).toContain('acme/widgets')
+    expect((result as { reason: string }).reason).toContain('write access is needed')
+    expect(push).not.toHaveBeenCalled()
+    expect(gh.requests.filter(r => r.path.startsWith('repos/acme/widgets/pulls'))).toHaveLength(0)
+    expect(bindThread).not.toHaveBeenCalled()
+    expect(report).not.toHaveBeenCalled()
+  })
+
+  it('the push-time check overrides a startup record of push', async () => {
+    const { gh, tools, bindThread, push } = setup({ access: { push: false }, recorded: true })
+    const result = await find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())
+    expect(result).toMatchObject({ published: false, repository: A, recorded_at_startup: 'push' })
+    expect(push).not.toHaveBeenCalled()
+    expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')).toHaveLength(0)
+    expect(bindThread).not.toHaveBeenCalled()
+  })
+
+  it('a push-time check that allows push publishes as before', async () => {
+    const { gh, tools, bindThread, push } = setup({ recorded: false })
+    const result = await find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())
+    expect(result).toMatchObject({ published: true })
+    expect(push).toHaveBeenCalledTimes(1)
+    expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')).toHaveLength(1)
+    expect(bindThread).toHaveBeenCalledTimes(1)
+  })
+
+  it('a failed push-time check is a failed report, not a push', async () => {
+    const { tools, push, report } = setup({ access: { status: 502 } })
+    await expect(find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())).rejects.toThrow(/acme\/widgets[\s\S]*HTTP 502/)
+    expect(report).toHaveBeenCalledTimes(1)
+    expect(report).toHaveBeenCalledWith('T1', { state: 'failed', summary: expect.stringContaining('HTTP 502') })
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('a PR API 403 is a repository access error with the status and a failed report, without the token', async () => {
+    const { tools, bindThread, report } = setup({ failures: { pulls: 403 }, apiEnv: { GH_TOKEN: 'tok-secret-1' } })
+    const error = await find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal()).then(() => undefined, (e: unknown) => e) as Error
+    expect(error.message).toContain('acme/widgets')
+    expect(error.message).toContain('HTTP 403')
+    expect(error.message).not.toContain('tok-secret-1')
+    expect(report).toHaveBeenCalledWith('T1', { state: 'failed', summary: expect.stringContaining('acme/widgets') })
+    const summary = (report.mock.calls[0] as unknown as [string, { summary: string }])[1].summary
+    expect(summary).toContain('HTTP 403')
+    expect(summary).not.toContain('tok-secret-1')
+    expect(bindThread).not.toHaveBeenCalled()
+  })
+
+  it('a push access error is reported failed', async () => {
+    const { tools, report } = setup({ pushError: new RepositoryAccessError(A, 'denied', 403) })
+    await expect(find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())).rejects.toThrow(/HTTP 403/)
+    expect(report).toHaveBeenCalledWith('T1', { state: 'failed', summary: expect.stringContaining('(HTTP 403)') })
+  })
+
+  it('a PR error that is not an access error stays a tool error', async () => {
+    const { tools, report } = setup({ failures: { pulls: 422 } })
+    await expect(find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())).rejects.toThrow()
+    expect(report).not.toHaveBeenCalled()
   })
 
   it('publish rejects a malformed co-author with no push or gh call', async () => {

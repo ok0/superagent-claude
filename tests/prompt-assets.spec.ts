@@ -111,6 +111,19 @@ describe('ported prompt and skill assets', () => {
     }
   })
 
+  it('guides the no-write-access branch with the publish and report tools and no fork', () => {
+    const delivery = body(read('prompts/team/delivery.md'))
+    for (const token of ['published: false', 'mcp__superagent__orchestrator_publish', 'mcp__superagent__orchestrator_report', 'state: blocked', 'write access']) {
+      expect(delivery, token).toContain(token)
+    }
+    expect(body(read('skills/github.md'))).toContain('published: false')
+    for (const asset of ASSETS) {
+      const text = body(read(asset))
+      expect(text, asset).not.toMatch(/fork/i)
+      expect(toolNameViolations(text), asset).toEqual([])
+    }
+  })
+
   it('worker prompt points to the GitHub skill resource', () => {
     expect(body(read('prompts/worker.md'))).toContain('mcp__superagent__orchestrator_read skill/github')
   })

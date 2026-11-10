@@ -14,7 +14,7 @@ export const RETRY_BACKOFF_MS = 15_000
 export const BACKGROUND_LIMIT_MS = 30 * 60_000
 const DRAIN_MS = 2_000
 export const workerKey = (ticketId: string): string => `worker-${ticketId}`
-export interface Workspace { repository: string; cwd: string; branch: string; pushRemote?: string }
+export interface Workspace { repository: string; cwd: string; branch: string }
 export type PromptChange = { kind: 'same' } | { kind: 'team'; notice: string } | { kind: 'fixed' }
 /** Injected collaborators: the workspace, the instructions and the worker tools (M8/M11, M12); the prompt-version change and the git history for resumed sessions (M12, ADR-18). */
 export interface WorkerDeps {
@@ -250,7 +250,7 @@ export class WorkerExecutor implements Executor {
       const same = record?.assignmentId === assignmentId
       this.workers.put({
         ticketId, assignmentId, runtime: this.runtime.id, sessionId: session.sessionId ?? opened.resume ?? null, repository: workspace.repository,
-        cwd, branch: workspace.branch, pushRemote: workspace.pushRemote ?? null, turns: same ? record.turns : 0,
+        cwd, branch: workspace.branch, turns: same ? record.turns : 0,
         costUsd: same ? record.costUsd : 0, promptVersion: this.deps.promptVersion?.() ?? null,
       })
       const live = this.attach(ticketId, assignmentId, session)

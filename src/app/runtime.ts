@@ -33,6 +33,7 @@ import { mainTools, type MainToolsHost } from './tools/main.ts'
 import { eventNotice, followupNotice, reportRelay, type Notice } from './notices.ts'
 import { readResource, type ResourceHost } from './resources.ts'
 import type { PullRequests } from '../sources/github/delivery.ts'
+import { GITHUB_STATE } from '../sources/github/source.ts'
 import { TextCache } from './cache.ts'
 import { KV } from './kv.ts'
 
@@ -285,6 +286,7 @@ export class Runtime implements SourceHost {
               },
               ...(options.pulls ? { pulls: options.pulls } : {}),
               allowAutoMerge: () => this.current.delivery.allowAutoMerge,
+              recordedPush: repository => store.get(GITHUB_STATE.access(repository))?.push,
             },
           }
           return session ? executorTools(host, ticket) : workerTools(host, ticket)

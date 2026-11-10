@@ -1,5 +1,6 @@
 /** Host-side pull request writes: one PR per branch (adopted when open), review-thread replies with resolve, auto-merge enabled but never merged, and close with a reason. Runs against the scripted gh fixture. */
 import { describe, expect, it } from 'vitest'
+import { CliError } from '../src/infra/commands.ts'
 import { githubPullRequests } from '../src/sources/github/delivery.ts'
 import { fakeGh, pull, type FakeRepository } from './fixtures/fake-gh.ts'
 
@@ -44,6 +45,17 @@ describe('github delivery', () => {
     expect(gh.graphql.length).toBe(graphqlBefore)
 
     await expect(pulls.replyReviewThread(A, 3, 80, 'x', false)).rejects.toThrow(/not a review comment on PR #3/)
+  })
+
+  it('reads the push permission of the agent account', async () => {
+    const gh = fakeGh({ repositories: { [A]: { access: { push: false } }, 'acme/tools': {} } })
+    const pulls = githubPullRequests(gh.commands)
+    expect(await pulls.pushPermission(A)).toBe(false)
+    expect(await pulls.pushPermission('acme/tools')).toBe(true)
+    const denied = fakeGh({ repositories: { [A]: { access: { status: 404 } } } })
+    const error = await githubPullRequests(denied.commands).pushPermission(A).then(() => undefined, (e: unknown) => e)
+    expect(error).toBeInstanceOf(CliError)
+    expect((error as CliError).code).toBe(404)
   })
 
   it('enables auto-merge only', async () => {

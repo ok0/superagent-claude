@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Ticket } from '../src/core/index.ts'
-import { RepositoryAccessError, Workspaces, coAuthorTrailers, worktreeName, type RepositoryAccess } from '../src/executor/workspaces.ts'
-import { Commands, execProgram } from '../src/infra/commands.ts'
+import { RepositoryAccessError, Workspaces, accessStatus, coAuthorTrailers, worktreeName, type RepositoryAccess } from '../src/executor/workspaces.ts'
+import { CliError, Commands, commandError, execProgram } from '../src/infra/commands.ts'
 import { waitUntil } from './fixtures/async.ts'
 import { accepted } from './fixtures/engine.ts'
 import { workerHarness } from './fixtures/executor.ts'
@@ -191,6 +191,37 @@ describe('git workspaces', () => {
     expect(summary).toContain('owner/repo')
     expect(summary).not.toContain(SECRET)
     w.close()
+  })
+
+  it('a clone 403 is a repository access error with the repository and status and without the token', async () => {
+    const { state, commands } = fixture()
+    const SECRET = 'SECRET'
+    const bad = new Workspaces({ stateDir: state, commands: { git: async args => {
+      if (args.includes('clone')) throw commandError(Object.assign(new Error('x'), { stderr: "fatal: unable to access 'https://SECRET@host/acme/widgets.git/': The requested URL returned error: 403", code: 128 }), 'git')
+      return ''
+    } }, repositoryOf: () => 'acme/widgets', access: local('https://host/acme/widgets.git', {}, [SECRET]) })
+    const error = await bad.prepare(ticket(idA), 'alpha').then(() => undefined, (e: unknown) => e) as RepositoryAccessError
+    expect(error).toBeInstanceOf(RepositoryAccessError)
+    expect(error.status).toBe(403)
+    expect(error.repository).toBe('acme/widgets')
+    expect(error.message).toContain('acme/widgets')
+    expect(error.message).toContain('(HTTP 403)')
+    expect(error.message).not.toContain(SECRET)
+    const w = workerHarness({ prepare: t => bad.prepare(t, t.id) })
+    const id = accepted(w, '1').ticketId!
+    await waitUntil(() => w.ticket(id).assignments.at(-1)?.report?.state === 'failed')
+    const summary = w.ticket(id).assignments.at(-1)!.report!.summary
+    expect(summary).toContain('acme/widgets')
+    expect(summary).toContain('HTTP 403')
+    expect(summary).not.toContain(SECRET)
+    w.close()
+  })
+
+  it('accessStatus reads the API code and the printed status', () => {
+    expect(accessStatus(new CliError('x', 404))).toBe(404)
+    expect(accessStatus(new Error('gh: Request failed (HTTP 403)'))).toBe(403)
+    expect(accessStatus(new Error('The requested URL returned error: 401'))).toBe(401)
+    expect(accessStatus(new Error('disk full'))).toBeUndefined()
   })
 
   it('pushes the agent branch without force and reports the base and unpushed count', async () => {
