@@ -57,13 +57,14 @@ export function workerHarness(options: WorkerHarnessOptions = {}) {
     { name: 'report', description: 'Report the ticket status', schema: z.object({ state: z.enum(['progress', 'waiting', 'ready', 'blocked', 'failed', 'dropped']), summary: z.string() }),
       execute: async args => { h!.engine.report(ticket.id, args as WorkerReport); return 'ok' } },
   ]
+  const events: { type: string; data: Record<string, unknown> }[] = []
   const executor = new WorkerExecutor({
     store, effects, engine: () => h!.engine, runtime, slots, workers, deps: { prepare, instructions: async () => 'instructions', tools, ...options.deps },
     limits: options.limits ?? { maxTurns: 100, maxBudgetUsd: 5 }, timers: clock, now: clock.now, ...(options.retries === undefined ? {} : { retries: options.retries }),
   })
-  h = harness({}, { repo: store, executor })
+  h = harness({}, { repo: store, executor, emit: event => { events.push(event) } })
   if (options.start !== false) effects.start()
-  return { ...h, store, clock, effects, runtime, slots, workers, executor, prepare, directory, ticket: (id: string) => store.tickets.get(id)!,
+  return { ...h, store, clock, effects, runtime, slots, workers, executor, prepare, directory, events, ticket: (id: string) => store.tickets.get(id)!,
     close: async () => { await executor.dispose(); await effects.drain(); store.close(); if (!options.directory) rmSync(directory, { recursive: true, force: true }) } }
 }
 type Harness = ReturnType<typeof harness>

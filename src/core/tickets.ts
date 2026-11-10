@@ -232,16 +232,20 @@ export class Tickets extends EnginePart {
   }
   /**
    * Add an Input once (idempotently) and ask the Executor to deliver it, or to launch again a pending Assignment whose launch
-   * failed once no person is waited for: a Policy change alone does not launch it again.
+   * failed once no person is waited for: a Policy change alone does not launch it again. A message no person wrote waits on a
+   * ticket that rests on a ready report and goes with the next person's message (see `restsReady`).
    */
   addInput(ticket: Ticket, input: TicketInput): void {
     if (ticket.inputs.some(existing => existing.id === input.id)) return
-    ticket.inputs.push(input); ticket.updatedAt = this.now()
+    // A message no person wrote waits on a ticket that rests on a ready report and goes with the next person's message (ADR-24).
+    const quiet = liveTicket(ticket) && input.kind === 'trigger' && !input.human && this.restsReady(ticket)
+    const added: TicketInput = quiet ? { ...input, quiet: true } : input
+    ticket.inputs.push(added); ticket.updatedAt = this.now()
     // Hold back automated inputs while the worker is waiting on a person.
-    const held = liveTicket(ticket) && automatic(input) && waitsForPerson(ticket)
-    if (!held) ticket.undelivered.push(input.id)
+    const held = liveTicket(ticket) && automatic(added) && waitsForPerson(ticket)
+    if (!held) ticket.undelivered.push(added.id)
     this.repo.tickets.save(ticket)
-    if (!liveTicket(ticket) || held) return
+    if (!liveTicket(ticket) || held || quiet) return
     const running = runningAssignment(ticket), latest = latestAssignment(ticket)
     if (running) this.options.executor.deliver(ticket, running)
     else if (latest?.state === 'pending' && !waitsForPerson(ticket)) this.options.executor.start(ticket, latest)
@@ -288,6 +292,23 @@ export class Tickets extends EnginePart {
   private untaken(ticket: Ticket, ids: readonly string[]): Trigger[] {
     return this.triggersOf(ticket, ids).filter(trigger => this.owners(trigger).includes(ticket.id) && !this.takenUp(ticket, trigger))
   }
+  /** The person's messages on its own Threads that reached a ticket after its latest report, when that report is `ready`; undefined otherwise. */
+  private sinceReady(ticket: Ticket): Trigger[] | undefined {
+    const report = latestReport(ticket)
+    if (report?.state !== 'ready') return undefined
+    return this.triggersOf(ticket, ticket.inputs.filter(input => input.kind === 'trigger' && input.human && !input.context && input.at > report.at).map(input => input.id))
+  }
+  /** Whether a ticket keeps its `ready` report through a limit stop: its worker took up none of the person's messages since (ADR-24). */
+  keepsReady(ticket: Ticket): boolean {
+    const since = this.sinceReady(ticket)
+    return !!since && !since.some(trigger => this.takenUp(ticket, trigger))
+  }
+  /** Whether a ticket rests on its `ready` report: every person's message since was handed back by it and not taken up (ADR-24). */
+  restsReady(ticket: Ticket): boolean {
+    const since = this.sinceReady(ticket)
+    return !!since && since.every(trigger => !this.takenUp(ticket, trigger)
+      && !!this.repo.triggers.disposition(trigger.id)?.handbacks?.some(item => item.ticketId === ticket.id))
+  }
   /**
    * A ticket that ended, or cannot resume, lets go of the messages its worker never received, `waiting`, and of the person's
    * messages it decided but may not have taken up, `left`: it no longer counts as having reached them, and each of `left`
@@ -332,10 +353,11 @@ export class Tickets extends EnginePart {
    * Put back, ahead of what waits, the Trigger Inputs delivered to `replaced` that no step of its worker took: a cancel may
    * have dropped them, or a step that claimed them was cut off, and the new Assignment's launch takes a copy still waiting
    * in the Session out, so its delivery is the only one. An earlier end let go of what earlier Assignments left.
+   * A message the ticket handed back is not its work and is not put back.
    */
   private requeueUntaken(ticket: Ticket, replaced: Assignment): void {
     const untaken = ticket.inputs.filter(input => input.kind === 'trigger' && input.readAt === null && input.deliveredTo === replaced.id
-      && !ticket.undelivered.includes(input.id))
+      && !ticket.undelivered.includes(input.id) && !this.repo.triggers.disposition(input.triggerId)?.handbacks?.some(item => item.ticketId === ticket.id))
     ticket.undelivered.unshift(...untaken.map(input => input.id))
   }
   /**

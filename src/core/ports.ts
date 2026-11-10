@@ -25,6 +25,8 @@ export interface Policy {
   admitsInferred(rules: readonly string[]): boolean
   /** How long an assessor may take before an eval is recorded as unavailable. */
   evalTimeoutMs: number
+  /** Whether an explicit request that an assessor ignores in its own words gets a refusal reply (accept mode auto only, ADR-24). */
+  refuses?: boolean
 }
 
 /** What the assessor receives: bounded facts, never authority. */
@@ -100,6 +102,8 @@ export interface DomainEvents {
   /** A person's follow-up that reached tickets and that an earlier version also queued for Eval left the queue. */
   'trigger.followup': { triggerId: string }
   'policy.changed': { from: string; to: string }
+  /** A worker's Session stopped at its turn or budget limit; `kept` when the ticket kept its `ready` report. */
+  'worker.limit': { ticketId: string; assignmentId: string; limit: string; kept: boolean }
 }
 export type DomainEvent = { [K in keyof DomainEvents]: { type: K; at: string; data: DomainEvents[K] } }[keyof DomainEvents]
 

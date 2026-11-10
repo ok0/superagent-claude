@@ -3,7 +3,8 @@
  */
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
-import { inputMode } from '../src/executor/worker-executor.ts'
+import { ticketStage } from '../src/core/stage.ts'
+import { inputMode, remainingLimits } from '../src/executor/worker-executor.ts'
 import { accepted, guest, trigger } from './fixtures/engine.ts'
 import { gates, workerHarness } from './fixtures/executor.ts'
 import { waitUntil } from './fixtures/async.ts'
@@ -260,4 +261,64 @@ it('keeps the usage of a turn the worker ends by reporting mid-turn', async () =
     expect(w.ticket(id).ended).toBeDefined()
     expect(w.workers.get(id)).toMatchObject({ turns: 2, costUsd: 0.5 })
   } finally { await w.close() }
+})
+
+it('injects a message no person wrote that waited on a ready ticket', () => {
+  expect(inputMode({ id: 'i', kind: 'trigger', triggerId: 't', at: AT, quiet: true })).toBe('inject')
+})
+
+it("keeps a ready report when a limit stops a session no person's message was taken up in", async () => {
+  let n = 0
+  const w = workerHarness({ limits: { maxTurns: 100, maxBudgetUsd: 5 }, script: () => n++ === 0 ? { tools: [{ name: 'report', args: { state: 'ready', summary: 'PR opened' } }] } : { turnEnded: { costUsd: 6 } } })
+  try {
+    const id = accepted(w, '1').ticketId!
+    await waitUntil(() => !!w.ticket(id).ended)
+    w.tick(1)
+    w.engine.receive(trigger('2', { actor: guest })); w.pump()
+    await waitUntil(() => w.events.some(e => e.type === 'worker.limit'))
+    await waitUntil(() => w.slots.used === 0)
+    expect(w.ticket(id).assignments[1]!.report).toMatchObject({ state: 'ready', summary: 'PR opened' })
+    expect(ticketStage(w.ticket(id))).toEqual({ stage: 'person', action: 'review' })
+    expect(w.events.find(e => e.type === 'worker.limit')!.data).toMatchObject({ ticketId: id, limit: 'budget limit', kept: true })
+    expect(w.runtime.sessions[1]!.interrupts).toBe(1)
+    expect(w.runtime.sessions[1]!.closed).toBe(true)
+  } finally { await w.close() }
+})
+
+it('blocks on a limit once the worker took a person\'s message up', async () => {
+  const g = gates()
+  let n = 0
+  const w = workerHarness({ limits: { maxTurns: 100, maxBudgetUsd: 5 }, script: () => n++ === 0 ? { tools: [{ name: 'report', args: { state: 'ready', summary: 'PR opened' } }] } : { hold: g.get('ack'), turnEnded: { costUsd: 6 } } })
+  try {
+    const id = accepted(w, '1').ticketId!
+    await waitUntil(() => !!w.ticket(id).ended)
+    w.tick(1)
+    w.engine.receive(trigger('2', { actor: guest })); w.pump()
+    await waitUntil(() => w.runtime.sessions.length === 2)
+    w.engine.reply({ purpose: 'acknowledgement', ticketId: id, triggerId: '2', text: 'On it' })
+    g.open('ack')
+    await waitUntil(() => w.ticket(id).assignments[1]?.report?.state === 'blocked')
+    expect(w.ticket(id).assignments[1]!.report).toMatchObject({ state: 'blocked', summary: 'budget limit' })
+    expect(w.events.find(e => e.type === 'worker.limit')!.data).toMatchObject({ kept: false })
+    expect(w.slots.used).toBe(0)
+  } finally { await w.close() }
+})
+
+it('resumes a session with what is left of the turn and budget limits', async () => {
+  let n = 0
+  const w = workerHarness({ limits: { maxTurns: 100, maxBudgetUsd: 1 }, script: () => n++ === 0 ? { turnEnded: { turns: 20, costUsd: 0.7 } } : {} })
+  try {
+    const id = accepted(w, '1').ticketId!
+    await waitUntil(() => !!w.runtime.sessions[0]?.closed)
+    w.engine.receive(trigger('2', { actor: guest })); w.pump()
+    await waitUntil(() => w.runtime.opened.length === 2)
+    expect(w.runtime.opened[1]!.limits).toEqual({ maxTurns: 80, maxBudgetUsd: 0.3 })
+    expect(w.runtime.opened[0]!.limits).toEqual({ maxTurns: 100, maxBudgetUsd: 1 })
+  } finally { await w.close() }
+})
+
+it('remainingLimits floors at one turn and one cent', () => {
+  expect(remainingLimits({ maxTurns: 100, maxBudgetUsd: 1 }, { turns: 20, costUsd: 0.7 })).toEqual({ maxTurns: 80, maxBudgetUsd: 0.3 })
+  expect(remainingLimits({ maxTurns: 10, maxBudgetUsd: 1 }, { turns: 12, costUsd: 1.4 })).toEqual({ maxTurns: 1, maxBudgetUsd: 0.01 })
+  expect(remainingLimits({ maxTurns: 10, maxBudgetUsd: 1 })).toEqual({ maxTurns: 10, maxBudgetUsd: 1 })
 })

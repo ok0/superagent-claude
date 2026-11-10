@@ -76,6 +76,12 @@ describe('accept modes (AC7)', () => {
     expect(assessmentOutcome(accept(auto), auto, 'explicit')).toMatchObject({ kind: 'accept' })
   })
 
+  it('refuses only in accept mode auto', () => {
+    expect(settingsPolicy(settings('auto'), scope).refuses).toBe(true)
+    expect(settingsPolicy(settings('observe'), scope).refuses).toBe(false)
+    expect(settingsPolicy(settings('off'), scope).refuses).toBe(false)
+  })
+
   it('defaults to observe, which records would_accept', () => {
     const fromEmpty = SettingsSchema.parse({})
     const fromAllowed = SettingsSchema.parse({ policy: { allowed: ['alice'] } })

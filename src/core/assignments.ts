@@ -2,7 +2,7 @@
 /** What the Executor and its workers report about the Assignments that run tickets. */
 import { key } from './ids.ts'
 import { UserError } from './errors.ts'
-import { latestAssignment, liveTicket, runningAssignment } from './model.ts'
+import { latestAssignment, latestReport, liveTicket, runningAssignment } from './model.ts'
 import type { ReportState, Ticket } from './model.ts'
 import { EnginePart, type EngineOptions } from './part.ts'
 import type { Replies } from './replies.ts'
@@ -73,6 +73,25 @@ export class Assignments extends EnginePart {
     if (!ticket) return
     runningAssignment(ticket)!.idleAt = this.now()
     this.repo.tickets.save(ticket)
+  }
+  /**
+   * A worker's Session stopped at its turn or budget limit (`limit`). A ticket whose latest report is `ready` and whose worker
+   * took up no person's message since keeps that report: the running Assignment carries it, so the ticket shows as ready for
+   * review, and the caller reports nothing (ADR-24). Emits `worker.limit` either way.
+   * @returns whether the ticket kept its ready report; false when `assignmentId` no longer runs the open ticket.
+   */
+  limited(ticketId: string, assignmentId: string, limit: string): boolean {
+    const ticket = this.running(ticketId, assignmentId)
+    if (!ticket) return false
+    const kept = this.tickets.keepsReady(ticket)
+    const running = runningAssignment(ticket)!
+    if (kept && running.report?.state !== 'ready') {
+      running.report = { ...latestReport(ticket)! }
+      ticket.updatedAt = this.now()
+      this.repo.tickets.save(ticket)
+    }
+    this.emit('worker.limit', { ticketId, assignmentId, limit, kept })
+    return kept
   }
   deliveryFailed(ticketId: string, assignmentId: string, error: string): void {
     const ticket = this.running(ticketId, assignmentId)

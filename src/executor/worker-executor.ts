@@ -40,13 +40,18 @@ export interface WorkerExecutorOptions {
   timers?: WorkerTimers; now?: () => number; paused?: () => boolean
   health?: Pick<HealthEntry, 'set'>
 }
-/** Mode of a ticket Input (see docs/runtime-contract.md): a person's message steers; notes and legacy reopen markers are injected; everything else is a followup. */
+/** Mode of a ticket Input (see docs/runtime-contract.md): a person's message steers; notes, legacy reopen markers and a message no person wrote that waited on a ready ticket (`quiet`) are injected; everything else is a followup. */
 export function inputMode(input: TicketInput): InputMode {
   switch (input.kind) {
-    case 'trigger': return input.human ? 'steer' : 'followup'
+    case 'trigger': return input.human ? 'steer' : input.quiet ? 'inject' : 'followup'
     case 'note': case 'reopen': return 'inject'
     case 'text': case 'policy-changed': case 'resumed': return 'followup'
   }
+}
+/** What is left of the limits for an Assignment that used `used` already: the SDK caps of a launch or resume, at least 1 turn and $0.01 (ADR-24). The host still checks the totals (ADR-6). */
+export function remainingLimits(limits: { maxTurns: number; maxBudgetUsd: number }, used?: { turns: number; costUsd: number }): { maxTurns: number; maxBudgetUsd: number } {
+  if (!used) return { ...limits }
+  return { maxTurns: Math.max(1, limits.maxTurns - used.turns), maxBudgetUsd: Math.max(0.01, Math.round((limits.maxBudgetUsd - used.costUsd) * 1e6) / 1e6) }
 }
 /** Worker-facing text of an Input; undefined for a legacy reopen marker, which is marked delivered without being sent. */
 export function renderInput(input: TicketInput, trigger?: Trigger): string | undefined {
@@ -168,11 +173,12 @@ export class WorkerExecutor implements Executor {
     void this.loop(live)
     return live
   }
-  private async spec(ticket: Ticket, assignment: Assignment, cwd: string, resume?: string): Promise<SessionSpec> {
+  private async spec(ticket: Ticket, assignment: Assignment, cwd: string, resume?: string, record?: WorkerRecord): Promise<SessionSpec> {
     const model = this.model()
     return {
       key: workerKey(ticket.id), role: 'worker', cwd, instructions: await this.deps.instructions(ticket), tools: this.deps.tools(ticket, assignment),
-      builtins: { fs: 'write', shell: true, web: false }, network: { allow: [...this.network()] }, limits: { ...this.limits },
+      builtins: { fs: 'write', shell: true, web: false }, network: { allow: [...this.network()] },
+      limits: remainingLimits(this.limits, record?.assignmentId === assignment.id ? record : undefined),
       env: this.deps.env?.(ticket) ?? {}, ...(resume ? { resume } : {}), ...(model ? { model } : {}),
     }
   }
@@ -202,7 +208,7 @@ export class WorkerExecutor implements Executor {
         lead.push({ id: `notice:prompts:${tag}`, text: change.notice, mode: 'inject' })
       }
     }
-    const session = await this.runtime.open(await this.spec(ticket, assignment, cwd, resume))
+    const session = await this.runtime.open(await this.spec(ticket, assignment, cwd, resume, record))
     return { session, ...(resume ? { resume } : {}), lead }
   }
   private batch(ticket: Ticket): TicketInput[] {
@@ -387,7 +393,10 @@ export class WorkerExecutor implements Executor {
         if (limit) {
           this.detach(live)
           await live.session.interrupt().catch(() => ({ stillQueued: [] }))
-          this.report(ticketId, { state: 'blocked', summary: limit })
+          let kept = false
+          try { kept = this.engine().limitReached(ticketId, assignmentId, limit) } catch (e) { this.problem(e) }
+          // A ticket that kept its ready report is done; only one with work under way is blocked (ADR-24).
+          if (!kept) this.report(ticketId, { state: 'blocked', summary: limit })
           await this.release(live)
           return
         }

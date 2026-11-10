@@ -18,6 +18,17 @@ export type ReplyRequest =
 /** A queued message: its id, whether it went out, and whether an earlier request had queued it already. */
 export interface Reply { id: string; status: ReplyStatus; reused: boolean }
 
+export const REFUSAL_PREFIX = "I can't take this on here: "
+const REFUSAL_FALLBACK = 'it is outside what I can do.'
+const INTERNAL = /\b(?:tickets?|workers?|hand(?:ed|s|ing)?[\s-]?backs?|evals?|triggers?|orchestrator|assignments?)\b|\b[0-9a-f]{16,}\b/i
+/** The refusal a person gets for an explicit request the assessor ignored: the first sentence of its reason, or a fixed phrase when that names internal terms, at most 200 characters (ADR-24). */
+export function refusalText(reason: string): string {
+  const first = reason.trim().split(/(?<=[.!?。！？])\s+|\n/)[0]?.trim() ?? ''
+  const body = !first || INTERNAL.test(first) ? REFUSAL_FALLBACK : first
+  const text = REFUSAL_PREFIX + body
+  return text.length <= 200 ? text : text.slice(0, 199).trimEnd() + '…'
+}
+
 /**
  * Replies writes the Engine's messages to Channels through the Outbox port: an acknowledgement, the answer to a person's
  * question, a ticket's result, and its question for a person, each only when its rule allows it, under a deterministic id
@@ -46,6 +57,11 @@ export class Replies extends EnginePart {
   }
   /** Withdraw a ticket's question for a person from the outbox, unless it went out already. */
   withdrawAttention(attentionId: string): void { this.options.outbox.withdraw(key('attention-reply', attentionId)) }
+  /** Queue the refusal of a person's explicit request once, where it was written: its id is `refusal:<triggerId>`, so a replay or restart does not send it again. */
+  refuse(trigger: Trigger, reason: string): void {
+    if (!trigger.channel) return
+    this.options.outbox.send({ id: `refusal:${trigger.id}`, channel: trigger.channel, text: refusalText(reason), kind: 'reply' })
+  }
   private acknowledge(request: Extract<ReplyRequest, { purpose: 'acknowledgement' }>): Reply {
     const ticket = this.require(request.ticketId)
     if (!liveTicket(ticket)) throw new UserError('ackEnded')

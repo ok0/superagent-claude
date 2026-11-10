@@ -23,7 +23,7 @@ describe('core index', () => {
       main: true satisfies Exact<keyof EngineForMainSession, 'candidate' | 'candidateDelivered' | 'decide' | 'attach' | 'reply' | 'requestStatus' | 'note'>,
       people: true satisfies Exact<keyof EngineForPeople, 'stopTicket' | 'retryTicket' | 'reevaluate' | 'unsubscribe' | 'dismiss'>,
       settings: true satisfies Exact<keyof EngineForSettings, 'policyChanged'>,
-      executor: true satisfies Exact<keyof EngineForExecutor, 'assignmentStarted' | 'inputsDelivered' | 'inputsRead' | 'turnEnded' | 'deliveryFailed' | 'assignmentInterrupted' | 'report' | 'markUnrelated' | 'handback' | 'followForContext' | 'reply' | 'bindThread'>,
+      executor: true satisfies Exact<keyof EngineForExecutor, 'assignmentStarted' | 'inputsDelivered' | 'inputsRead' | 'turnEnded' | 'deliveryFailed' | 'assignmentInterrupted' | 'report' | 'limitReached' | 'markUnrelated' | 'handback' | 'followForContext' | 'reply' | 'bindThread'>,
     }
     expect(Object.values(check).every(Boolean)).toBe(true)
   })

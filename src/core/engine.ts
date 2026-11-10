@@ -37,7 +37,7 @@ export class Engine {
     this.replies = new Replies(options)
     this.tickets = new Tickets(options, this.replies)
     this.assignments = new Assignments(options, this.tickets, this.replies)
-    this.evals = new Evals(options, this.tickets)
+    this.evals = new Evals(options, this.tickets, this.replies)
     this.intake = new Intake(options, this.tickets)
   }
 
@@ -242,6 +242,8 @@ export class Engine {
    * answer, or a question or answer that names a message that is not a person's or did not reach the ticket.
    */
   report(ticketId: string, report: WorkerReport): Ticket { return this.repo.atomic(() => this.assignments.report(ticketId, report)) }
+  /** A worker's Session stopped at a turn or budget limit: see `Assignments.limited`. @returns whether the ticket kept its ready report, so no blocked report follows. */
+  limitReached(ticketId: string, assignmentId: string, limit: string): boolean { return this.repo.atomic(() => this.assignments.limited(ticketId, assignmentId, limit)) }
   /**
    * Handles an assignment that was running when the host stopped: restarts it with a recovery note unless its latest report is
    * `waiting`, `ready`, `blocked`, or `failed` and no Input reached its worker after that report, in which case it keeps its
@@ -272,4 +274,4 @@ export type EngineForPeople = Pick<Engine, 'stopTicket' | 'retryTicket' | 'reeva
 export type EngineForSettings = Pick<Engine, 'policyChanged'>
 /** What the Executor tells the Engine, and what its workers ask of it. */
 export type EngineForExecutor = Pick<Engine, 'assignmentStarted' | 'inputsDelivered' | 'inputsRead' | 'turnEnded' | 'deliveryFailed'
-  | 'assignmentInterrupted' | 'report' | 'markUnrelated' | 'handback' | 'followForContext' | 'reply' | 'bindThread'>
+  | 'assignmentInterrupted' | 'report' | 'limitReached' | 'markUnrelated' | 'handback' | 'followForContext' | 'reply' | 'bindThread'>

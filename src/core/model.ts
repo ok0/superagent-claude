@@ -236,6 +236,8 @@ export interface Assignment {
 export type TicketInput =
   /** A Trigger on one of its Threads, or attached to it; `human` when a person wrote it. */
   | { id: string; kind: 'trigger'; triggerId: string; at: string; note?: string; human?: true
+    /** A message no person wrote that reached the ticket while it rested on a ready report: it waits and goes to the worker as an inject with the next delivery (ADR-24). */
+    quiet?: true
     /** It reached the ticket only on a Thread its Executor follows for context. */
     context?: true
     /**

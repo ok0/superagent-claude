@@ -8,6 +8,7 @@ import type { AssessmentOutcome, Candidate, Policy } from './ports.ts'
 import { said, type Reason } from './reasons.ts'
 import { EnginePart, type EngineOptions } from './part.ts'
 import type { Tickets } from './tickets.ts'
+import type { Replies } from './replies.ts'
 
 /** An outcome for the Eval that holds a Trigger; `evalId` names the Eval it was judged for, so a later Eval refuses it. */
 export type Outcome = AssessmentOutcome & { evalId?: string }
@@ -27,8 +28,9 @@ const REQUEUES = 2
  */
 export class Evals extends EnginePart {
   private readonly tickets: Tickets
+  private readonly replies: Replies
   // Port note: parameter property expanded to an explicit field (erasableSyntaxOnly); behavior unchanged.
-  constructor(options: EngineOptions, tickets: Tickets) { super(options); this.tickets = tickets }
+  constructor(options: EngineOptions, tickets: Tickets, replies: Replies) { super(options); this.tickets = tickets; this.replies = replies }
 
   /**
    * Expire a Thread's Eval past its deadline (see `expire`), unless processing is paused: then the Eval notes when the
@@ -291,8 +293,11 @@ export class Evals extends EnginePart {
     }
     // An inferred candidate ignored without an assessment, from its card, says so beside the reason given.
     const unassessed = outcome.kind === 'ignore' && evaluation.strength !== 'explicit' && !outcome.audit ? [{ code: 'ignoredFromCard' }] : []
-    if (outcome.kind === 'ignore' || outcome.kind === 'unavailable') return this.finish(thread, evaluation, { kind: outcome.kind,
-      reason: [...unassessed, ...reasonOf(outcome.reason)], ...audit })
+    if (outcome.kind === 'ignore' || outcome.kind === 'unavailable') {
+      const decision = this.finish(thread, evaluation, { kind: outcome.kind, reason: [...unassessed, ...reasonOf(outcome.reason)], ...audit })
+      if (outcome.kind === 'ignore' && typeof outcome.reason === 'string') this.refuse(evaluation, outcome.reason)
+      return decision
+    }
     if (outcome.kind === 'stop') {
       const ticket = this.repo.tickets.get(outcome.ticketId)
       if (!ticket || !liveTicket(ticket)) return this.finish(thread, evaluation, { kind: 'ignore', reason: [{ code: 'stopUnknown' }],
@@ -304,6 +309,13 @@ export class Evals extends EnginePart {
       return decision
     }
     return this.accept(thread, evaluation, outcome)
+  }
+  /** An explicit request a person on the list addressed to the agent, which the assessor ignored in its own words, gets one refusal where it was written, while the Policy allows refusals (ADR-24). */
+  private refuse(evaluation: Evaluation, reason: string): void {
+    if (evaluation.strength !== 'explicit' || evaluation.basis.via !== 'addressed' || !this.policy().refuses) return
+    const trigger = evaluation.primary ? this.repo.triggers.get(evaluation.primary) : undefined
+    if (!trigger?.human || !trigger.addressed || !trigger.channel) return
+    this.replies.refuse(trigger, reason)
   }
   /** Record an accept with the Mandate the Eval gives, and have Tickets create its ticket. */
   private accept(thread: Thread, evaluation: Evaluation, outcome: Extract<AssessmentOutcome, { kind: 'accept' }>): Decision {
