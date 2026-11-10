@@ -1,7 +1,7 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/passes.ts
 /**
  * Coordinates periodic and on-demand orchestration passes that drive due effects and Engine evaluations.
- * Changes from the reference: the interval timer and clock are injectable through `PassesHost`; the constructor parameter is a declared field; the `Settings` and HTTP route mentions are dropped from the class doc.
+ * Changes from the reference: the interval timer and clock are injectable through `PassesHost`; the constructor parameter is a declared field; the `Settings` and HTTP route mentions are dropped from the class doc; an optional afterPass hook runs at the end of each pass.
  */
 import type { Engine, ReceiveResult, Trigger } from '../core/index.ts'
 import type { HealthEntry } from '../infra/health.ts'
@@ -22,6 +22,8 @@ export interface PassesHost {
   readonly timers?: Timers
   configured(): boolean
   closing(): boolean
+  /** Runs at the end of every pass (retention evaluation and the health snapshot, M18). */
+  afterPass?(): void
 }
 
 /**
@@ -82,5 +84,6 @@ export class Passes {
     if (this.host.closing()) return
     // While processing is paused, the Engine only records the pause on active Evals so they do not expire.
     this.host.engine.evaluateDue()
+    this.host.afterPass?.()
   }
 }

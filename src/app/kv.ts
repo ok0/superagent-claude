@@ -2,7 +2,7 @@
 /**
  * Typed key-value store keys and key families grouped by the single component that owns and writes each family.
  * Readers and writers refer to a record by its entry here so each key is spelled once with its value type.
- * Changes from the reference: only the store, runtime, sessions and sources families are kept; the families of the removed components are dropped.
+ * Changes from the reference: only the store, runtime, sessions and sources families are kept; the families of the removed components are dropped; the health snapshot key is added.
  */
 
 /** Key of a KV record whose value has type `V`; a plain string represents an untyped key. */
@@ -16,7 +16,11 @@ export function family<V, A extends unknown[] = [string]>(prefix: string, format
   return Object.assign((...name: A) => `${prefix}${format(...name)}` as Key<V>, { prefix })
 }
 
+import type { HealthSnapshot } from '../infra/health.ts'
+
 export const KV = {
+  /** Runtime health: the HealthBoard snapshot the daemon writes each pass (at most every 5s) and the status CLI reads. */
+  health: { snapshot: record<HealthSnapshot>('health') },
   /** Store: current database schema version. */
   store: { schema: record<number>('schema') },
   /** Runtime: the Router session's ID and the prompt version it was opened under. */

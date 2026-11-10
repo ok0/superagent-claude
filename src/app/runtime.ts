@@ -1,5 +1,5 @@
 /**
- * The composition root: Store → Engine (Policy, SourceScope, Assessor, WorkerExecutor, Outbox) → Source kinds → AdmissionFilter in front of Passes → effect handlers → recovery. `start()` recovers interrupted work and starts the loops and Source services; `stop()` cleans up within STOP_TIMEOUT_MS. `reload()` re-reads the config file while the runtime runs: the policy part is applied to the next Trigger, startup-only keys are reported and kept, and a refused file keeps the running config. In session mode (`router: 'session'`) the Router session is hosted by `RouterHost` and assesses candidates through `MasterAssessor`; otherwise the assessor is deterministic (`GateAssessor`). The worker instructions are the assembled prompt; worker workspaces are git worktrees (or scratch directories for fake runs) and the worker tools are the executor tools.
+ * The composition root: Store → Engine (Policy, SourceScope, Assessor, WorkerExecutor, Outbox) → Source kinds → AdmissionFilter in front of Passes → effect handlers → recovery. `start()` recovers interrupted work and starts the loops and Source services; `stop()` cleans up within STOP_TIMEOUT_MS. `reload()` re-reads the config file while the runtime runs: the policy part is applied to the next Trigger, startup-only keys are reported and kept, and a refused file keeps the running config. In session mode (`router: 'session'`) the Router session is hosted by `RouterHost` and assesses candidates through `MasterAssessor`; otherwise the assessor is deterministic (`GateAssessor`). The worker instructions are the assembled prompt; worker workspaces are git worktrees (or scratch directories for fake runs) and the worker tools are the executor tools. Each pass also queues the cleanup of ended tickets past retention.endedTicketDays and records the health snapshot the status CLI reads.
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -11,7 +11,7 @@ import { WorkerExecutor, type WorkerDeps, type WorkerTimers } from '../executor/
 import { WorkerStore } from '../executor/worker-store.ts'
 import { ScratchWorkspaces, Workspaces, worktreeName, type RepositoryAccess, type WorkspaceProvider } from '../executor/workspaces.ts'
 import { Commands } from '../infra/commands.ts'
-import { HealthBoard, type Health, type HealthEntry } from '../infra/health.ts'
+import { HealthBoard, HealthRecorder, type Health, type HealthEntry } from '../infra/health.ts'
 import { assessmentOutcome, policyEffects, policyVersion, settingsPolicy, type Assessment, type Settings } from '../policy/policy.ts'
 import { AdmissionFilter } from '../sources/admission-filter.ts'
 import { sourceContext, type LogRecord, type LogSink, type SourceContext, type SourceHost, type SourceService } from '../sources/host.ts'
@@ -22,6 +22,7 @@ import { assertStartupPolicy, type StartupReport } from './credentials.ts'
 import { Effects } from './effects.ts'
 import { Outbox, type OutboxChannels } from './outbox.ts'
 import { Passes, type Timers as PassTimers } from './passes.ts'
+import { Retention } from './retention.ts'
 import { databasePath, Store } from './store.ts'
 import { PromptVersions, Prompts, ruleLines } from './prompts.ts'
 import { executorTools, type ExecutorToolsHost } from './tools/executor.ts'
@@ -38,7 +39,7 @@ import { KV } from './kv.ts'
 export const STOP_TIMEOUT_MS = 10_000
 
 /** The config keys that take effect only on restart; a reload keeps the running value and reports the key. */
-export const RESTART_KEYS = ['auth.mode', 'delivery', 'workers', 'security', 'retention', 'models.router', 'stateDir'] as const
+export const RESTART_KEYS = ['auth.mode', 'delivery', 'workers', 'security', 'models.router', 'stateDir'] as const
 
 export interface ReloadOutcome { applied: boolean; policyChanged: boolean; restartRequired: string[]; warnings: string[]; error?: string }
 
@@ -174,6 +175,7 @@ export class Runtime implements SourceHost {
   readonly executor: WorkerExecutor
   readonly engine: Engine
   readonly passes: Passes
+  readonly retention: Retention
   readonly prompts: Prompts
   readonly workspaces: WorkspaceProvider
   readonly router?: RouterHost
@@ -298,6 +300,11 @@ export class Runtime implements SourceHost {
         limits: { maxTurns: config.workers.maxTurns, maxBudgetUsd: config.workers.maxBudgetUsd }, now, paused: () => this.policy.paused,
         health: board.claim('executor'), ...(timers ? { timers } : {}),
       })
+      this.retention = new Retention({
+        store, effects, workspaces: this.workspaces, workers: new WorkerStore(store, now), days: () => this.current.retention.endedTicketDays, now,
+        cleaned: ticketId => { this.log({ level: 'info', at: this.stamp(), event: 'retention.cleaned', ticketId }) },
+      })
+      const recorder = new HealthRecorder(board, snapshot => { store.set(KV.health.snapshot, snapshot) }, now)
       effects.handle('notice', async payload => {
         const { target, ticketId, id, text } = payload.value
         if (target === 'worker' && typeof ticketId === 'string' && typeof id === 'string' && typeof text === 'string') this.executor.notify(ticketId, { id, text })
@@ -373,6 +380,7 @@ export class Runtime implements SourceHost {
       this.passes = new Passes({
         engine: this.engine, effects, health: this.health, lifetime: this.lifetime.signal, now, configured: () => true,
         closing: () => this.closing, ...(timers ? { timers } : {}),
+        afterPass: () => { this.retention.evaluate(); recorder.record() },
       })
       this.admission = new AdmissionFilter({
         next: trigger => this.passes.receive(trigger),
@@ -417,7 +425,7 @@ export class Runtime implements SourceHost {
     this.passes.request()
   }
 
-  /** Re-reads the config file and applies it: the policy part from the next Trigger on (a changed policy version is an input to open tickets), startup-only keys are kept and reported. A refused file changes nothing. `network.allow` and `models.worker` apply to worker sessions opened after the reload. Calls are serialised. */
+  /** Re-reads the config file and applies it: the policy part from the next Trigger on (a changed policy version is an input to open tickets), startup-only keys are kept and reported. A refused file changes nothing. `network.allow` and `models.worker` apply to worker sessions opened after the reload; `retention.endedTicketDays` applies from the next retention evaluation. Calls are serialised. */
   reload(): Promise<ReloadOutcome> {
     const next = this.reloads.then(() => this.reloadOnce())
     this.reloads = next.catch(() => undefined)
@@ -487,6 +495,7 @@ export class Runtime implements SourceHost {
       repositories: next.repositories,
       policy: next.policy,
       network: next.network,
+      retention: next.retention,
       models: {
         ...(this.current.models.router === undefined ? {} : { router: this.current.models.router }),
         ...(next.models.worker === undefined ? {} : { worker: next.models.worker }),
