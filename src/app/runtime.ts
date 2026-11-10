@@ -1,17 +1,18 @@
 /**
- * The composition root: Store → Engine (Policy, SourceScope, Assessor, WorkerExecutor, Outbox) → Source kinds → AdmissionFilter in front of Passes → effect handlers → recovery. `start()` recovers interrupted work and starts the loops and Source services; `stop()` (also during `start()`, which it waits for after aborting the services' signal) cleans up within STOP_TIMEOUT_MS. `reload()` re-reads the config file while the runtime runs: the policy part is applied to the next Trigger, startup-only keys are reported and kept, and a refused file keeps the running config. In session mode (`router: 'session'`) the Router session is hosted by `RouterHost` and assesses candidates through `MasterAssessor`; otherwise the assessor is deterministic (`GateAssessor`). The worker instructions are the assembled prompt; worker workspaces are git worktrees (or scratch directories for fake runs) and the worker tools are the executor tools. Each pass also queues the cleanup of ended tickets past retention.endedTicketDays and records the health snapshot the status CLI reads.
+ * The composition root: Store → Engine (Policy, SourceScope, Assessor, WorkerExecutor, Outbox) → Source kinds → AdmissionFilter in front of Passes → effect handlers → recovery. `start()` recovers interrupted work and starts the loops and Source services; `stop()` first deletes the readiness marker, stops accepting Triggers, and records running Assignments as interrupted before cleaning up within STOP_TIMEOUT_MS (it also works during `start()`, which it waits for after aborting the services' signal). `reload()` re-reads the config file while the runtime runs: the policy part is applied to the next Trigger, startup-only keys are reported and kept, and a refused file keeps the running config. In session mode (`router: 'session'`) the Router session is hosted by `RouterHost` and assesses candidates through `MasterAssessor`; otherwise the assessor is deterministic (`GateAssessor`). The worker instructions are the assembled prompt; worker workspaces are git worktrees (or scratch directories for fake runs) and the worker tools are the executor tools. Each pass also queues the cleanup of ended tickets past retention.endedTicketDays and records the health snapshot the status CLI reads.
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { Engine, UserError, key, type Assessor, type Candidate, type DomainEvent, type EngineForExecutor, type Policy, type Ticket, type WorkerReport } from '../core/index.ts'
 import type { AgentRuntime, ToolSpec } from '../executor/contract.ts'
-import { recover } from '../executor/recovery.ts'
+import { interruptRunning, recover } from '../executor/recovery.ts'
 import { Slots } from '../executor/slots.ts'
 import { WorkerExecutor, type WorkerDeps, type WorkerTimers } from '../executor/worker-executor.ts'
 import { WorkerStore } from '../executor/worker-store.ts'
 import { ScratchWorkspaces, Workspaces, worktreeName, type RepositoryAccess, type WorkspaceProvider } from '../executor/workspaces.ts'
 import { Commands } from '../infra/commands.ts'
 import { HealthBoard, HealthRecorder, type Health, type HealthEntry } from '../infra/health.ts'
+import { redactor, REDACTED } from '../infra/redact.ts'
 import { assessmentOutcome, policyEffects, policyVersion, settingsPolicy, type Assessment, type Settings } from '../policy/policy.ts'
 import { AdmissionFilter } from '../sources/admission-filter.ts'
 import { sourceContext, type LogRecord, type LogSink, type SourceContext, type SourceHost, type SourceService } from '../sources/host.ts'
@@ -45,8 +46,10 @@ export const RESTART_KEYS = ['auth.mode', 'delivery', 'workers', 'security', 'mo
 
 export interface ReloadOutcome { applied: boolean; policyChanged: boolean; restartRequired: string[]; warnings: string[]; error?: string }
 
-export function jsonLines(write: (line: string) => void): LogSink {
-  return record => { write(JSON.stringify(record) + '\n') }
+export function jsonLines(write: (line: string) => void, env?: Readonly<Record<string, string | undefined>>): LogSink {
+  if (!env) return record => { write(JSON.stringify(record) + '\n') }
+  const mask = redactor(env, REDACTED)
+  return record => { write(mask(JSON.stringify(record)) + '\n') }
 }
 
 /** Executor tools; in deterministic Router mode a ready report also queues its summary as the result, in the same transaction that records the report (so no reader or crash sees the ticket ended without its result). */
@@ -207,6 +210,7 @@ export class Runtime implements SourceHost {
   private readonly health: HealthEntry
   private readonly authHealth: HealthEntry
   private readonly configHealth: HealthEntry
+  private readonly recorder: HealthRecorder
   private consentHash?: string
   private reloads: Promise<unknown> = Promise.resolve()
   private readonly configPath: string | undefined
@@ -236,6 +240,7 @@ export class Runtime implements SourceHost {
     })
     this.store = store
     try {
+      store.delete(KV.runtime.ready)
       const board = new HealthBoard()
       this.board = board
       this.health = board.claim('runtime', { state: 'starting', detail: 'Starting' })
@@ -315,7 +320,7 @@ export class Runtime implements SourceHost {
         store, effects, workspaces: this.workspaces, workers: new WorkerStore(store, now), days: () => this.current.retention.endedTicketDays, now,
         cleaned: ticketId => { this.log({ level: 'info', at: this.stamp(), event: 'retention.cleaned', ticketId }) },
       })
-      const recorder = new HealthRecorder(board, snapshot => { store.set(KV.health.snapshot, snapshot) }, now)
+      this.recorder = new HealthRecorder(board, snapshot => { store.set(KV.health.snapshot, snapshot) }, now)
       effects.handle('notice', async payload => {
         const { target, ticketId, id, text } = payload.value
         if (target === 'worker' && typeof ticketId === 'string' && typeof id === 'string' && typeof text === 'string') this.executor.notify(ticketId, { id, text })
@@ -391,7 +396,7 @@ export class Runtime implements SourceHost {
       this.passes = new Passes({
         engine: this.engine, effects, health: this.health, lifetime: this.lifetime.signal, now, configured: () => true,
         closing: () => this.closing, ...(timers ? { timers } : {}),
-        afterPass: () => { this.retention.evaluate(); recorder.record() },
+        afterPass: () => { this.retention.evaluate(); this.recorder.record() },
       })
       this.admission = new AdmissionFilter({
         next: trigger => this.passes.receive(trigger),
@@ -440,6 +445,8 @@ export class Runtime implements SourceHost {
     }
     if (this.closing) return
     this.health.set({ state: 'ready', detail: 'Orchestrator is ready', at: this.stamp() })
+    this.store.set(KV.runtime.ready, { pid: process.pid, at: this.stamp() })
+    this.recorder.record(true)
     this.log({
       level: 'info', at: this.stamp(), event: 'runtime.started', stateDir: this.config.stateDir, runtime: this.agent.id,
       sources: this.sources.kinds().map(kind => kind.kind),
@@ -563,6 +570,7 @@ export class Runtime implements SourceHost {
 
   private async shutdown(): Promise<void> {
     this.closing = true
+    try { this.store.delete(KV.runtime.ready) } catch (error) { this.log({ level: 'error', at: this.stamp(), event: 'store.error', detail: String(error) }) }
     this.log({ level: 'info', at: this.stamp(), event: 'runtime.stopping' })
     const deadline = Date.now() + this.stopTimeoutMs
     let complete = true
@@ -574,6 +582,10 @@ export class Runtime implements SourceHost {
       complete = await within(Promise.allSettled([passesStopped, ...this.running.map(service => service.stop())]), deadline - Date.now()) && complete
       complete = await within(this.effects.drain(), deadline - Date.now()) && complete
       complete = await within(this.executor.dispose(), deadline - Date.now()) && complete
+      try {
+        const interrupted = interruptRunning({ tickets: this.store.tickets, engine: this.engine })
+        if (interrupted.length) this.log({ level: 'info', at: this.stamp(), event: 'runtime.interrupted', tickets: interrupted })
+      } catch (error) { this.log({ level: 'error', at: this.stamp(), event: 'runtime.interrupt_failed', detail: String(error) }) }
       complete = await within(this.router?.close() ?? Promise.resolve(), deadline - Date.now()) && complete
     } finally {
       for (const dispose of [...this.disposers].reverse()) {

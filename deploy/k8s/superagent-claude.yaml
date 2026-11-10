@@ -1,0 +1,113 @@
+# superagent-claude on Kubernetes: one replica, state on a ReadWriteOnce volume.
+# The Secret below holds empty placeholders only; set the values with kubectl create secret (docs/deploy.md).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: superagent-claude
+  labels:
+    app.kubernetes.io/name: superagent-claude
+data:
+  superagent-claude.json: |
+    {
+      "repositories": ["<owner>/<repository>"],
+      "policy": { "allowed": ["<github-login>"] },
+      "security": { "weakerNestedSandbox": true }
+    }
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: superagent-claude
+  labels:
+    app.kubernetes.io/name: superagent-claude
+    app.kubernetes.io/component: credentials
+type: Opaque
+stringData:
+  SUPERAGENT_CLAUDE_GITHUB_TOKEN: ""
+  ANTHROPIC_API_KEY: ""
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: superagent-claude-state
+  labels:
+    app.kubernetes.io/name: superagent-claude
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: superagent-claude
+  labels:
+    app.kubernetes.io/name: superagent-claude
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: superagent-claude
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: superagent-claude
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: superagent-claude
+          image: superagent-claude:local
+          imagePullPolicy: IfNotPresent
+          args: ["start", "--config", "/etc/superagent-claude/superagent-claude.json", "--log-format", "json"]
+          envFrom:
+            - secretRef:
+                name: superagent-claude
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            exec:
+              command: ["superagent-claude", "health", "--ready", "--config", "/etc/superagent-claude/superagent-claude.json"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["superagent-claude", "health", "--live", "--config", "/etc/superagent-claude/superagent-claude.json"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/superagent-claude
+            - name: config
+              mountPath: /etc/superagent-claude
+              readOnly: true
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: superagent-claude-state
+        - name: config
+          configMap:
+            name: superagent-claude

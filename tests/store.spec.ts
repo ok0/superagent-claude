@@ -1,12 +1,12 @@
 // Ported from dsh-superagent-prototype (MIT) tests/store.spec.ts
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { hostname, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { Store, SCHEMA_VERSION, databasePath, DATABASE_FILE } from '../src/app/store.ts'
+import { Store, SCHEMA_VERSION, databasePath, DATABASE_FILE, lockOwner } from '../src/app/store.ts'
 import { openReadOnly } from '../src/app/store-read.ts'
 import { KV, record, family } from '../src/app/kv.ts'
 import { Versions } from '../src/app/versions.ts'
@@ -253,9 +253,31 @@ it('takes over a lock whose owner process has exited', () => {
   mkdirSync(path + '.lock')
   writeFileSync(path + '.owner', String(gone))
   const store = new Store(path)
-  expect(readFileSync(path + '.owner', 'utf8')).toBe(String(process.pid))
+  expect(readFileSync(path + '.owner', 'utf8')).toBe(`${process.pid} ${hostname()}`)
   store.close()
   expect(existsSync(path + '.owner')).toBe(false)
+})
+it('refuses a fresh lock recorded on another host even when that pid is not running here', () => {
+  const path = databasePath(directory)
+  mkdirSync(directory, { recursive: true })
+  const gone = spawnSync(process.execPath, ['-e', '']).pid!
+  mkdirSync(path + '.lock')
+  try {
+    writeFileSync(path + '.owner', `${gone} other-host`)
+    expect(() => new Store(path)).toThrow('Another superagent-claude process')
+  } finally {
+    rmSync(path + '.lock', { recursive: true, force: true })
+  }
+})
+it('reads the lock owner with and without a host', () => {
+  const path = databasePath(directory)
+  mkdirSync(directory, { recursive: true })
+  writeFileSync(path + '.owner', '123 pod-a')
+  expect(lockOwner(path)).toEqual({ pid: 123, host: 'pod-a' })
+  writeFileSync(path + '.owner', '123')
+  expect(lockOwner(path)).toEqual({ pid: 123 })
+  writeFileSync(path + '.owner', 'x')
+  expect(lockOwner(path)).toBeUndefined()
 })
 it('refuses a fresh lock whose owner still runs or is unknown', () => {
   const path = databasePath(directory)

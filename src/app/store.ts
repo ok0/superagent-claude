@@ -5,6 +5,7 @@
  */
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import { lockSync } from 'proper-lockfile'
 import { key, threadKey, type ChannelRef, type Decision, type OutboundMessage, type ReplyStatus, type Repositories, type Thread, type ThreadFact,
@@ -85,13 +86,26 @@ function toRejected(row: Record<string, SQLInputValue>): RejectedTrigger {
 
 /** The file next to the database that names the pid holding its single-writer lock. */
 const ownerFile = (path: string): string => `${path}.owner`
-/** True when the lock on `path` names an owner pid that no longer runs on this host (it was killed and left its lock behind). */
-export function lockOwnerGone(path: string): boolean {
+/** The process that holds the single-writer lock on the database: its pid and, when recorded, the host it runs on. */
+export interface LockOwner { pid: number; host?: string }
+/** The lock owner recorded on `path` (undefined when the file is missing or names no positive pid); a legacy pid-only file has no host. */
+export function lockOwner(path: string): LockOwner | undefined {
   let text: string
-  try { text = readFileSync(ownerFile(path), 'utf8') } catch { return false }
-  const pid = Number(text.trim())
-  if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return false
-  try { process.kill(pid, 0); return false } catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH' }
+  try { text = readFileSync(ownerFile(path), 'utf8') } catch { return undefined }
+  const [pidText, host] = text.trim().split(/\s+/)
+  const pid = Number(pidText)
+  if (!Number.isInteger(pid) || pid <= 0) return undefined
+  return host ? { pid, host } : { pid }
+}
+/**
+ * True when the lock on `path` names an owner pid that no longer runs on this host (it was killed and left its lock behind).
+ * A lock recorded on another host is never taken over at once.
+ */
+export function lockOwnerGone(path: string): boolean {
+  const owner = lockOwner(path)
+  if (!owner || owner.pid === process.pid) return false
+  if (owner.host !== undefined && owner.host !== hostname()) return false
+  try { process.kill(owner.pid, 0); return false } catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH' }
 }
 /**
  * Takes the single-writer lock on `path`; a lock held by another process is reported as a clear error. Returns the release function.
@@ -110,7 +124,7 @@ function lockDatabase(path: string, report: (error: unknown) => void): () => voi
     rmSync(`${path}.lock`, { recursive: true, force: true })
     try { release = take() } catch (again) { if (locked(again)) throw refused(again); throw again }
   }
-  writeFileSync(ownerFile(path), String(process.pid), { mode: 0o600 })
+  writeFileSync(ownerFile(path), `${process.pid} ${hostname()}`, { mode: 0o600 })
   return () => { try { rmSync(ownerFile(path), { force: true }); release() } catch (error) { report(error) } }
 }
 

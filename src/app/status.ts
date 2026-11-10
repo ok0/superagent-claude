@@ -207,14 +207,4 @@ export function formatNeeds(view: NeedsView, all: boolean): string {
   return lines.join('\n') + '\n'
 }
 
-export function redact(text: string, env: Readonly<Record<string, string | undefined>>): string {
-  let out = text
-  for (const [name, value] of Object.entries(env)) {
-    if (typeof value === 'string' && value.length >= 8 && /(TOKEN|SECRET|PASSWORD|API_KEY|ACCESS_KEY|CREDENTIAL)/i.test(name)) out = out.split(value).join('***')
-  }
-  return out
-    .replace(/\bgh[pousr]_[A-Za-z0-9_]{16,}/g, '***')
-    .replace(/\b[A-Za-z]+_pat_[A-Za-z0-9_]{16,}/g, '***')
-    .replace(/\bsk-ant-[A-Za-z0-9_-]{8,}/g, '***')
-    .replace(/x-access-token:[^@\s]+@/g, 'x-access-token:***@')
-}
+export { redact } from '../infra/redact.ts'

@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { key } from '../src/core/index.ts'
 import { ticketStage } from '../src/core/stage.ts'
-import { recover } from '../src/executor/recovery.ts'
+import { interruptRunning, recover } from '../src/executor/recovery.ts'
 import { accepted, guest, trigger } from './fixtures/engine.ts'
 import { gates, workerHarness } from './fixtures/executor.ts'
 import { waitUntil } from './fixtures/async.ts'
@@ -35,6 +35,26 @@ it('ends a running Assignment on restart and resumes its session with the recove
   expect(w2.runtime.sessions[0]!.sent[0]).toMatchObject({ id: key('input', id, 'restart', t.assignments[1]!.id), mode: 'followup' })
   expect(w2.runtime.sessions[0]!.sent[0]!.text).toContain('The host restarted')
   expect(w2.runtime.sessions[0]!.sent[1]!.id).toBe(`assignment:${t.assignments[1]!.id}`)
+})
+
+it('a graceful stop records the running Assignment as interrupted and the next start resumes it with the recovery note first', async () => {
+  const w1 = workerHarness({ directory, script: () => ({ hold: new Promise(() => {}) }) })
+  const id = accepted(w1, '1').ticketId!
+  await waitUntil(() => !!w1.workers.get(id)?.sessionId && w1.ticket(id).assignments[0]!.state === 'running')
+  await w1.effects.drain()
+  await w1.executor.dispose()
+  expect(interruptRunning({ tickets: w1.store.tickets, engine: w1.engine })).toEqual([id])
+  expect(w1.ticket(id).assignments[0]).toMatchObject({ state: 'ended', endedReason: 'hostRestarted' })
+  expect(w1.ticket(id).assignments[1]!.state).toBe('pending')
+  w1.store.close()
+
+  const w2 = workerHarness({ directory, start: false })
+  recover({ tickets: w2.store.tickets, engine: w2.engine, executor: w2.executor })
+  w2.effects.start()
+  await waitUntil(() => w2.runtime.opened.length === 1)
+  await waitUntil(() => (w2.runtime.sessions[0]?.sent.length ?? 0) >= 1)
+  expect(w2.runtime.sessions[0]!.sent[0]!.text).toContain('The host restarted')
+  expect(w2.runtime.opened.length).toBe(1)
 })
 
 it('recovers running tickets oldest first under the slot rule', async () => {
