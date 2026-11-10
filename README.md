@@ -25,6 +25,7 @@ The config needs `repositories`, `policy.allowed` and `auth.mode`. See [docs/get
 - [Runtime contract](docs/runtime-contract.md)
 - [Deploy](docs/deploy.md): run as a service
 - [Security](docs/security.md): trust policy
+- [Contributing](CONTRIBUTING.md): setup, checks and pull requests
 
 ## Test repositories
 

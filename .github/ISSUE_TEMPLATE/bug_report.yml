@@ -1,0 +1,42 @@
+name: Bug report
+description: Report behavior that does not match the docs
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste tokens, API keys or private repository content into this form.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `superagent-claude --version` or the commit SHA
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: How it runs
+      options:
+        - Host process
+        - Container
+        - Kubernetes
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      render: text
