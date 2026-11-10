@@ -1,5 +1,5 @@
 /**
- * Worker slots under load: at most the slot maximum runs at once, and a person's message wakes an idle ticket ahead of a waiting launch.
+ * Worker slots under load: at most the slot maximum runs at once, a person's message wakes an idle ticket ahead of a waiting launch; an idle ticket holds no slot.
  */
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -62,5 +62,21 @@ it("wakes an idle ticket for a person's message in the extra slot ahead of a wai
     expect(w.runtime.opened.some(spec => spec.key === `worker-${c}`)).toBe(false)
     g.open(`worker-${b}`)
     await waitUntil(() => w.runtime.opened.some(spec => spec.key === `worker-${c}`))
+  } finally { await w.close() }
+})
+
+it('gives a new launch the only worker slot at once while another ticket is idle', async () => {
+  const w = workerHarness({ max: 1 })
+  try {
+    const a = accepted(w, '1', 'tA').ticketId!
+    await waitUntil(() => w.ticket(a).assignments.at(-1)?.idleAt !== undefined && !!w.runtime.sessions[0]?.closed)
+    expect(w.ticket(a).assignments.at(-1)!.state).toBe('running')
+    expect(w.slots.used).toBe(0)
+    const at = w.clock.now()
+    const b = accepted(w, '2', 'tB').ticketId!
+    await w.effects.idle('launch')
+    expect(w.runtime.opened.map(spec => spec.key)).toEqual([`worker-${a}`, `worker-${b}`])
+    expect(w.ticket(b).assignments.at(-1)!.startedAt).toBeDefined()
+    expect(w.clock.now()).toBe(at)
   } finally { await w.close() }
 })

@@ -26,6 +26,7 @@ import { Retention } from './retention.ts'
 import { databasePath, Store } from './store.ts'
 import { PromptVersions, Prompts, ruleLines } from './prompts.ts'
 import { executorTools, type ExecutorToolsHost } from './tools/executor.ts'
+import { issueOf } from './tools/delivery.ts'
 import { RouterHost } from '../executor/router-host.ts'
 import { MasterAssessor } from './assessment.ts'
 import { candidateCard } from './links.ts'
@@ -285,6 +286,7 @@ export class Runtime implements SourceHost {
             repositories: () => this.current.repositories, ...(session ? { notify: notifyRouter } : {}),
             delivery: {
               repositoryOf: id => repositoryOf(store.tickets.get(id)!),
+              originIssue: id => { const found = store.tickets.get(id); return issueOf(found && store.triggers.get(found.origin.triggerId)) },
               push: (id, push) => {
                 const found = store.tickets.get(id)
                 if (!found) throw new Error('Unknown ticket ' + id)

@@ -3,7 +3,7 @@
 import { key } from './ids.ts'
 import { UserError } from './errors.ts'
 import { latestAssignment, liveTicket, ticketOutcome } from './model.ts'
-import type { ChannelRef, Ticket, Trigger } from './model.ts'
+import type { ChannelRef, Ticket, TicketInput, Trigger } from './model.ts'
 import type { ReplyStatus } from './ports.ts'
 import { EnginePart } from './part.ts'
 
@@ -28,7 +28,7 @@ export class Replies extends EnginePart {
   /**
    * Queue a message for the Channel its purpose names: an acknowledgement or an answer goes where that person's message was
    * written, attention where the message that raised the question was (or to the ticket's starting conversation), and a
-   * result to the conversation where the ticket started (`result` is allowed only for a ticket in `ready`, `completed`,
+   * result where the latest person's message to the ticket was written, else to the conversation where the ticket started (`result` is allowed only for a ticket in `ready`, `completed`,
    * `merged`, or `dropped`). Each message is queued at most once (idempotent). An acknowledgement, even one already queued,
    * records that the ticket's worker took the message up.
    * @throws UserError when the ticket or trigger is unknown or the purpose's rule refuses it, such as a result of a ticket
@@ -82,7 +82,9 @@ export class Replies extends EnginePart {
     const ready = !ticket || !trigger || ticket.answers?.includes(trigger.id)
     if (request.purpose === 'answer' && !ready && !existing) throw new UserError('noAnswer')
     const asker = attention?.triggerId ? this.repo.triggers.get(attention.triggerId) : undefined
-    const channel = request.purpose === 'answer' ? trigger!.channel : asker?.channel ?? (ticket ? this.sourceChannel(ticket) : undefined)
+    const channel = request.purpose === 'answer' ? trigger!.channel
+      : request.purpose === 'attention' ? asker?.channel ?? (ticket ? this.sourceChannel(ticket) : undefined)
+      : ticket ? this.replyChannel(ticket) : undefined
     if (!channel) throw new UserError('noChannel')
     this.options.outbox.send({ id, channel, text: request.text, kind: 'reply', ...ticket ? { ticketId: ticket.id } : {} })
     if (request.purpose === 'answer' && ticket && trigger && ticket.answers?.includes(trigger.id)) {
@@ -93,4 +95,10 @@ export class Replies extends EnginePart {
   }
   /** The conversation a ticket started in: its origin Trigger's Channel, else its first Channel. */
   private sourceChannel(ticket: Ticket): ChannelRef | undefined { return this.source(ticket)?.channel ?? ticket.channels[0] }
+  /** Where a ticket's result goes: the Channel of the latest person's message that reached it on a Thread it works on (not one it follows for context), else the conversation it started in. */
+  private replyChannel(ticket: Ticket): ChannelRef | undefined {
+    const latest = ticket.inputs.findLast((input): input is Extract<TicketInput, { kind: 'trigger' }> =>
+      input.kind === 'trigger' && input.human === true && !input.context && this.repo.triggers.get(input.triggerId)?.channel !== undefined)
+    return (latest && this.repo.triggers.get(latest.triggerId)?.channel) ?? this.sourceChannel(ticket)
+  }
 }

@@ -1,7 +1,7 @@
 /**
- * Read models of the status and needs CLI over the read-only database: running and waiting work, recent errors, repository access, consent, and the tickets that need a person; and the masking of secret values in their output.
+ * Read models of the status and needs CLI over the read-only database: running work, idle sessions and waiting work, recent errors, repository access, consent, and the tickets that need a person; and the masking of secret values in their output.
  */
-import { latestAssignment, latestReport, runningAssignment, ticketStage, type Thread, type Ticket, type Trigger } from '../core/index.ts'
+import { latestAssignment, latestReport, runningAssignment, ticketStage, type Assignment, type Thread, type Ticket, type Trigger } from '../core/index.ts'
 import type { Health, HealthSnapshot } from '../infra/health.ts'
 import { KV, record } from './kv.ts'
 import type { StoreReader } from './store-read.ts'
@@ -14,6 +14,7 @@ export interface StatusView {
   daemon: boolean
   snapshot?: { at: string; ageMs: number }
   running: { ticketId: string; title: string; startedAt: string }[]
+  idle: { ticketId: string; title: string; idleAt: string }[]
   waiting: { ticketId: string; title: string; since: string }[]
   errors: { source: string; detail: string; at?: string }[]
   repositories: RepositoryAccessView[]
@@ -38,16 +39,30 @@ function thread(reader: StoreReader, key: string): Thread | undefined {
   return row ? JSON.parse(String(row.value)) as Thread : undefined
 }
 
+/** When a running Assignment's Session went idle: its last turn ended (idleAt), nothing waits to be delivered, and no message delivered to it is unread or was read after that. */
+function idleSince(ticket: Ticket, assignment: Assignment): string | undefined {
+  const at = assignment.idleAt
+  if (!at || ticket.undelivered.length > 0) return undefined
+  const busy = ticket.inputs.some(input => input.kind === 'trigger' && (
+    (input.readAt === null && (input.deliveredTo ?? assignment.id) === assignment.id) ||
+    (typeof input.readAt === 'string' && input.readAt > at)))
+  return busy ? undefined : at
+}
+
 function cut(text: string): string {
   return text.slice(0, 300)
 }
 
 export function statusView(reader: StoreReader, options: { daemon: boolean; now: number }): StatusView {
   const open = rows<Ticket>(reader, 'SELECT value FROM ticket WHERE open = 1 ORDER BY rowid')
-  const running = open.flatMap(t => {
+  const running: StatusView['running'] = [], idle: StatusView['idle'] = []
+  for (const t of open) {
     const a = runningAssignment(t)
-    return a ? [{ ticketId: t.id, title: t.title, startedAt: a.startedAt ?? a.createdAt }] : []
-  })
+    if (!a) continue
+    const since = idleSince(t, a)
+    if (since) idle.push({ ticketId: t.id, title: t.title, idleAt: since })
+    else running.push({ ticketId: t.id, title: t.title, startedAt: a.startedAt ?? a.createdAt })
+  }
   const waiting = open.flatMap(t => {
     const s = ticketStage(t)
     return s.stage === 'working' && s.action === 'queued' ? [{ ticketId: t.id, title: t.title, since: latestAssignment(t)?.createdAt ?? t.createdAt }] : []
@@ -76,6 +91,7 @@ export function statusView(reader: StoreReader, options: { daemon: boolean; now:
     daemon: options.daemon,
     ...snapshot ? { snapshot } : {},
     running,
+    idle,
     waiting,
     errors: [...healthErrors, ...effectErrors],
     repositories,
@@ -98,6 +114,12 @@ export function formatStatus(view: StatusView): string {
     for (const r of view.running) lines.push(`  ${r.ticketId}  ${r.title}  started ${r.startedAt}`)
   } else {
     lines.push('Running assignments: none')
+  }
+  if (view.idle.length) {
+    lines.push(`Idle sessions (${view.idle.length}):`)
+    for (const i of view.idle) lines.push(`  ${i.ticketId}  ${i.title}  idle since ${i.idleAt}`)
+  } else {
+    lines.push('Idle sessions: none')
   }
   if (view.waiting.length) {
     lines.push(`Waiting tickets (${view.waiting.length}):`)

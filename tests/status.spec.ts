@@ -39,6 +39,7 @@ describe('status', () => {
     expect(text).toContain('Daemon: running')
     expect(text).toContain('Running assignments (1):')
     expect(text).toContain(IDS.running)
+    expect(text).toContain('Idle sessions: none')
     expect(text).toContain('Waiting tickets (2):')
     expect(text).toContain(IDS.wait1)
     expect(text).toContain(IDS.wait2)
@@ -49,6 +50,42 @@ describe('status', () => {
     expect(text).toContain('owner/other  not accessible: Not Found (HTTP 404)')
     expect(text).toContain('Subscription consent: given at 2026-01-02T03:04:05.000Z (allowed list hash 0123456789abcdef)')
     expect(text).not.toContain(TOKEN)
+    store.close()
+  })
+
+  it('shows an idle session apart from running work, and as running again while a message waits or was read after it went idle', async () => {
+    const dir = tempDir()
+    const { store, configPath, now } = seedState(dir, { only: ['running'] })
+    const iso = (ms: number) => new Date(ms).toISOString()
+    const ticket = store.tickets.get(IDS.running)!
+    const a = ticket.assignments[0]!
+    a.report = { state: 'ready', summary: 'Opened the pull request', at: iso(now - 50_000) }
+    a.idleAt = iso(now - 40_000)
+    ticket.inputs = [{ id: 'in-1', kind: 'trigger', triggerId: 'tr-1', at: iso(now - 70_000), human: true, readAt: iso(now - 65_000), deliveredTo: a.id }] as never
+    store.tickets.save(ticket)
+    const run = async () => {
+      const { io: cli, out } = io(dir)
+      expect(await main(['status', '--config', configPath], cli)).toBe(0)
+      return out.join('')
+    }
+    const first = await run()
+    expect(first).toContain('Idle sessions (1):')
+    expect(first).toContain(`${IDS.running}  Fix the flaky test  idle since ${a.idleAt}`)
+    expect(first).toContain('Running assignments: none')
+    ticket.inputs.push({ id: 'in-2', kind: 'trigger', triggerId: 'tr-2', at: iso(now - 30_000), human: true, readAt: null, deliveredTo: a.id } as never)
+    store.tickets.save(ticket)
+    const unread = await run()
+    expect(unread).toContain('Running assignments (1):')
+    expect(unread).toContain('Idle sessions: none')
+    ;(ticket.inputs.at(-1) as { readAt?: string | null }).readAt = iso(now - 20_000)
+    store.tickets.save(ticket)
+    const readAfter = await run()
+    expect(readAfter).toContain('Running assignments (1):')
+    expect(readAfter).toContain('Idle sessions: none')
+    a.idleAt = iso(now - 10_000)
+    store.tickets.save(ticket)
+    const nextTurn = await run()
+    expect(nextTurn).toContain('Idle sessions (1):')
     store.close()
   })
 

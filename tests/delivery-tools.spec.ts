@@ -1,6 +1,6 @@
 /** Worker delivery tools: publish opens one PR and binds it, review replies, auto-merge only when allowed, close without merge, and every policy refusal before any git or gh call. Runs against the scripted gh fixture. */
 import { describe, expect, it, vi } from 'vitest'
-import { deliveryTools, type DeliveryToolsHost } from '../src/app/tools/delivery.ts'
+import { deliveryTools, issueOf, linkIssue, type DeliveryToolsHost } from '../src/app/tools/delivery.ts'
 import type { ToolSpec } from '../src/executor/contract.ts'
 import { RepositoryAccessError } from '../src/executor/workspaces.ts'
 import { githubPullRequests } from '../src/sources/github/delivery.ts'
@@ -19,6 +19,7 @@ interface SetupOptions {
   recorded?: boolean
   pushError?: Error
   apiEnv?: Record<string, string>
+  issue?: { repository: string; number: number }
 }
 
 function setup(opts: SetupOptions = {}) {
@@ -52,11 +53,14 @@ function setup(opts: SetupOptions = {}) {
       pulls: githubPullRequests(gh.commands),
       allowAutoMerge: () => opts.allow ?? false,
       recordedPush: () => opts.recorded,
+      originIssue: () => opts.issue,
     },
   }
   const tools = deliveryTools(host, 'T1')
   return { gh, tools, bindThread, push, report }
 }
+
+const prBodies = (gh: ReturnType<typeof fakeGh>): string[] => gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls').map(r => r.fields.body ?? '')
 
 function find(tools: ToolSpec[], name: string): ToolSpec {
   const found = tools.find(item => item.name === name)
@@ -212,5 +216,42 @@ describe('worker delivery tools', () => {
     await expect(find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())).rejects.toThrow(/Ticket ended/)
     expect(push).not.toHaveBeenCalled()
     expect(gh.calls).toHaveLength(0)
+  })
+  it('publish closes the issue the ticket started from once, also when it publishes twice', async () => {
+    const { gh, tools } = setup({ issue: { repository: A, number: 7 } })
+    const publish = find(tools, 'orchestrator_publish')
+    await publish.execute({ title: 'Fix', body: 'Body' }, signal())
+    const second = await publish.execute({ title: 'Fix', body: 'Body' }, signal())
+    expect(prBodies(gh)).toEqual(['Body\n\nCloses #7'])
+    expect(second).toMatchObject({ created: false })
+  })
+  it('publish leaves a body that already closes the issue, and links nothing for a pull request or another repository', async () => {
+    const issue = { repository: A, number: 7 }
+    const cases: [{ repository: string; number: number } | undefined, string, string][] = [
+      [issue, 'Fixes #7.', 'Fixes #7.'],
+      [issue, 'Resolves ACME/Widgets#7', 'Resolves ACME/Widgets#7'],
+      [issue, 'closes: https://github.com/acme/widgets/issues/7', 'closes: https://github.com/acme/widgets/issues/7'],
+      [issue, 'Fixes #70', 'Fixes #70\n\nCloses #7'],
+      [issue, 'Fixes the typo.', 'Fixes the typo.\n\nCloses #7'],
+      [undefined, 'Body', 'Body'],
+      [{ repository: 'acme/other', number: 7 }, 'Body', 'Body'],
+    ]
+    for (const [origin, body, expected] of cases) {
+      const { gh, tools } = setup({ issue: origin })
+      await find(tools, 'orchestrator_publish').execute({ title: 'Fix', body }, signal())
+      expect(prBodies(gh)).toEqual([expected])
+    }
+  })
+})
+
+describe('issue link', () => {
+  it('takes the issue from an issue or issue comment origin, not from a pull request, CI or an unknown origin', () => {
+    expect(issueOf({ meta: { repository: A, number: 3, isPr: false, kind: 'issue' } })).toEqual({ repository: A, number: 3 })
+    expect(issueOf({ meta: { repository: A, number: 3, isPr: false, commentId: 1, kind: 'conversation' } })).toEqual({ repository: A, number: 3 })
+    expect(issueOf({ meta: { repository: A, number: 4, isPr: true, kind: 'pull' } })).toBeUndefined()
+    expect(issueOf({ meta: { repository: A, number: 4, isPr: true, ci: true } })).toBeUndefined()
+    expect(issueOf({ meta: {} })).toBeUndefined()
+    expect(issueOf(undefined)).toBeUndefined()
+    expect(linkIssue('Body', A, undefined)).toBe('Body')
   })
 })

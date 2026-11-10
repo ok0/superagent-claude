@@ -1,5 +1,5 @@
 /**
- * Live PR delivery run against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth, an owner issue becomes one pull request by the agent account, and a follow-up PR comment adds a commit in the same ticket, worktree and session. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1 and the three tokens; never prints a token.
+ * Live PR delivery run against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth, an owner issue becomes one pull request by the agent account, and a follow-up PR comment adds a commit in the same ticket, worktree and session. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1 and the three tokens; never prints a token; the PR body closes the issue, `status` shows the idle session as idle, and the follow-up result goes to the PR, not the issue.
  */
 import { execFile } from 'node:child_process'
 import { EventEmitter } from 'node:events'
@@ -115,6 +115,19 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live pr delive
   let ticketId = ''
   let prNumber = 0
   afterEach(ctx => { if (ctx.task.result?.state === 'fail') failed = true })
+
+  const statusText = async (): Promise<string> => {
+    const out: string[] = []
+    const code = await main(['status', '--config', configPath], { out: s => { out.push(s) }, err: () => {}, cwd: dir, env: process.env, signals: new EventEmitter() })
+    expect(code).toBe(0)
+    return out.join('')
+  }
+  const idleShown = async (): Promise<string | undefined> => {
+    const text = await statusText()
+    return text.includes('Idle sessions (1):') && text.includes(ticketId) && text.includes('Running assignments: none') ? text : undefined
+  }
+  const closing = (n: number): RegExp => new RegExp(String.raw`\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+(?:#|${REPO}#|https://github\.com/${REPO}/issues/)${n}(?![0-9])`, 'i')
+  const replyIds = (): Set<string> => new Set(storeRows<Receipt>('outbox').filter(r => r.ticketId === ticketId && r.kind === 'reply' && r.status === 'sent').map(r => r.id))
 
   const storeRows = <T>(table: string): T[] => {
     const reader = openReadOnly(databasePath(join(dir, 'state')))
@@ -246,16 +259,29 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live pr delive
     }, 900_000, 20_000, 'PR opened by the agent for the ticket')
     prNumber = pull.number
     const branch = pull.head.ref
+    expect(pull.body ?? '').toMatch(closing(issue.number))
+    expect(((pull.body ?? '').match(new RegExp(`Closes #${issue.number}(?![0-9])`, 'g')) ?? []).length).toBeLessThanOrEqual(1)
+    await until(async () => {
+      const r = await owner(['graphql', '-f', `query=query { repository(owner: "ok0", name: "superagent-claude-playground") { pullRequest(number: ${prNumber}) { closingIssuesReferences(first: 10) { nodes { number } } } } }`]) as { data: { repository: { pullRequest: { closingIssuesReferences: { nodes: { number: number }[] } } } } }
+      return r.data.repository.pullRequest.closingIssuesReferences.nodes.some(n => n.number === issue.number) ? true : undefined
+    }, 120_000, 10_000, 'PR closes the issue')
 
+    const idleBefore = await until(idleShown, 900_000, 10_000, 'status shows the idle session before the follow-up')
+    await until(() => Number(storeQuery('SELECT turns FROM worker WHERE ticket_id = ?', ticketId)[0]?.turns ?? 0) > 0 ? true : undefined, 120_000, 5_000, 'worker turn persisted')
     const workerBefore = assertLimits(ticketId)
     const c1 = (await commitsOf(prNumber)).length
     const head1 = (await commitsOf(prNumber)).at(-1)?.sha
     const session1 = workerBefore.session
     const cwd1 = workerBefore.cwd
 
+    const firstOnIssue = await until(async () => { const ids = replyIds(); return (await agentComments(issue.number)).find(c => ids.has(MARKER.exec(c.body)?.[1] ?? '')) }, 300_000, 15_000, 'first result reply on the issue')
     const comment = await addComment(prNumber, FOLLOW_UP)
     const commentTrigger = await until(() => triggerOfComment(comment.id), 300_000, 15_000, 'trigger for the PR comment')
     await until(async () => (await commitsOf(prNumber)).length > c1 ? true : undefined, 720_000, 20_000, 'follow-up commit on the PR')
+    const prReply = await until(async () => { const ids = replyIds(); return (await agentComments(prNumber)).find(c => Date.parse(c.created_at) > Date.parse(comment.created_at) && ids.has(MARKER.exec(c.body)?.[1] ?? '')) }, 900_000, 20_000, 'follow-up result reply on the PR')
+    const idleAfter = await until(idleShown, 900_000, 10_000, 'status shows the idle session after the follow-up')
+    const issueAfter = (await agentComments(issue.number)).filter(c => Date.parse(c.created_at) > Date.parse(comment.created_at))
+    expect(issueAfter).toHaveLength(0)
 
     const tickets = storeRows<Ticket>('ticket')
     expect(tickets).toHaveLength(1)
@@ -297,9 +323,18 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live pr delive
       receipts: receipts.map(row => ({ id: row.id, kind: row.kind, status: row.status })),
       evalCount: count('eval.started'),
       durationMs: Date.now() - t0,
+      followUp: {
+        firstResultOnIssue: firstOnIssue.html_url,
+        resultOnPr: prReply.html_url,
+        newAgentCommentsOnIssue: issueAfter.length,
+        prBodyCloses: true,
+        idleBefore: idleBefore.split('\n').filter(l => l.includes(ticketId)),
+        idleAfter: idleAfter.split('\n').filter(l => l.includes(ticketId)),
+      },
     }
     console.log(`[PR] issue=${issue.html_url} pr=${pull.html_url} comment=${comment.html_url} ticket=${ticketId} sameSession=${String(workerAfter.session === session1)} commits=${c1}->${c2}`)
     console.log(`[PR] turns=${String(workerAfter.turns)} costUsd=${String(workerAfter.costUsd)} evalCount=${count('eval.started')} receipts=${receipts.length}`)
+    console.log(`[FOLLOW-UP] resultOnPr=${prReply.html_url} newAgentCommentsOnIssue=${issueAfter.length} idleBefore=true idleAfter=true closes=#${issue.number}`)
   }, 3_000_000)
 
   it('no live content in the repository names a milestone', async () => {

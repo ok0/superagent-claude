@@ -1,10 +1,11 @@
-/** The worker's host-side delivery tools: publish (push + PR, binds its Thread), review-thread reply, auto-merge, close. Policy is checked before any git or GitHub call: live ticket, configured repository, a PR this ticket bound, delivery.allowAutoMerge. Publish first re-checks push permission and returns published: false without any write when it is missing; repository access errors file a failed report. */
+/** The worker's host-side delivery tools: publish (push + PR, binds its Thread; a new PR's body closes the issue the ticket started from), review-thread reply, auto-merge, close. Policy is checked before any git or GitHub call: live ticket, configured repository, a PR this ticket bound, delivery.allowAutoMerge. Publish first re-checks push permission and returns published: false without any write when it is missing; repository access errors file a failed report. */
 import { z } from 'zod'
 import type { EngineForExecutor } from '../../core/index.ts'
-import { liveTicket, type Ticket } from '../../core/model.ts'
+import { liveTicket, type Ticket, type Trigger } from '../../core/model.ts'
 import type { ToolSpec } from '../../executor/contract.ts'
 import { CO_AUTHOR, RepositoryAccessError, accessStatus, type PushOptions, type PushResult } from '../../executor/workspaces.ts'
 import { CliError } from '../../infra/commands.ts'
+import { escapeRegExp } from '../../infra/text.ts'
 import type { PullRequests } from '../../sources/github/delivery.ts'
 import { configured, threadId, threadKeyOf } from '../../sources/github/trigger.ts'
 import { tool } from './tool.ts'
@@ -16,6 +17,8 @@ export interface DeliveryHost {
   allowAutoMerge(): boolean
   /** The push permission recorded at startup (repo-access), undefined when none. */
   recordedPush?(repository: string): boolean | undefined
+  /** The issue in a repository that the ticket's origin Trigger is on, undefined when the origin is a pull request or not a GitHub issue. */
+  originIssue?(ticketId: string): { repository: string; number: number } | undefined
 }
 
 export interface DeliveryToolsHost {
@@ -23,6 +26,24 @@ export interface DeliveryToolsHost {
   ticket(id: string): Pick<Ticket, 'ended' | 'follows'> | undefined
   repositories?(): readonly string[]
   delivery?: DeliveryHost
+}
+
+/** The issue a Trigger is on: its meta names a repository and a number and isPr is false (an issue or an issue comment). */
+export function issueOf(trigger: Pick<Trigger, 'meta'> | undefined): { repository: string; number: number } | undefined {
+  const meta = trigger?.meta
+  return meta && typeof meta.repository === 'string' && typeof meta.number === 'number' && Number.isInteger(meta.number) && meta.isPr === false
+    ? { repository: meta.repository, number: meta.number } : undefined
+}
+/**
+ * A pull request body that closes `issue` on merge: unchanged when the issue is in another repository or the body already
+ * has a closing keyword (close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved, any case, optional colon) before
+ * `#n`, `owner/repo#n` or the issue URL. Otherwise `Closes #n` is appended once, after a blank line.
+ */
+export function linkIssue(body: string, repository: string, issue: { repository: string; number: number } | undefined): string {
+  if (!issue || issue.repository.toLowerCase() !== repository.toLowerCase()) return body
+  const repo = escapeRegExp(issue.repository)
+  const closing = new RegExp(String.raw`\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+(?:#|${repo}#|https://github\.com/${repo}/issues/)${issue.number}(?![0-9])`, 'i')
+  return closing.test(body) ? body : `${body.trimEnd()}\n\nCloses #${issue.number}`
 }
 
 export function deliveryTools(host: DeliveryToolsHost, ticketId: string): ToolSpec[] {
@@ -90,7 +111,7 @@ export function deliveryTools(host: DeliveryToolsHost, ticketId: string): ToolSp
         }
         let pr: Awaited<ReturnType<PullRequests['open']>>
         try {
-          pr = await pullRequests.open(repository, { head: pushed.branch, base: pushed.base, title: args.title, body: args.body, draft: args.draft ?? false }, signal)
+          pr = await pullRequests.open(repository, { head: pushed.branch, base: pushed.base, title: args.title, body: linkIssue(args.body, repository, deliveryHost().originIssue?.(ticketId)), draft: args.draft ?? false }, signal)
         } catch (error) {
           throw error instanceof CliError && error.code !== undefined && ACCESS.has(error.code) ? accessFailure(repository, error) : error
         }

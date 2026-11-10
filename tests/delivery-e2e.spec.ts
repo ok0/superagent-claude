@@ -1,4 +1,4 @@
-/** Session-mode daemon over the fake gh with real git worktrees: publish opens one PR and binds it; a PR follow-up comment reaches the same ticket, worktree, branch and session, and the next publish only pushes. */
+/** Session-mode daemon over the fake gh with real git worktrees: publish opens one PR and binds it; a PR follow-up comment reaches the same ticket, worktree, branch and session, and the next publish only pushes; the PR body closes the issue, and the follow-up's result goes to the PR, not the issue. */
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -47,7 +47,7 @@ const router: FakeScript = ({ inputs }) => {
     if (relay.kind === 'candidate') {
       tools.push({ name: 'orchestrator_route', args: { decisions: [{ kind: 'accept', trigger_id: relay.trigger_id, title: 'Fix the typo', worktree_name: 'fix-typo', acknowledgement: ACK }] } })
     } else if (relay.kind === 'worker_report' && relay.state === 'ready') {
-      tools.push({ name: 'orchestrator_reply', args: { ticket_id: (relay.ticket as { ticket_id: string }).ticket_id, purpose: 'result', text: RESULT } })
+      tools.push({ name: 'orchestrator_reply', args: { ticket_id: (relay.ticket as { ticket_id: string }).ticket_id, purpose: 'result', text: `${RESULT} ${String(relay.summary)}` } })
     }
   }
   return tools.length > 0 ? { tools } : undefined
@@ -176,4 +176,8 @@ it('publish twice opens one PR bound to the ticket, and a PR follow-up resumes t
   expect(gh.graphql.length).toBe(graphqlBefore)
   const markers = gh.posted.map(post => /<!-- superagent-claude:(.+) -->/.exec(post.body)?.[1]).filter((id): id is string => id !== undefined)
   expect(new Set(markers).size).toBe(markers.length)
+  expect(gh.requests.find(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')!.fields.body).toBe('Fixes the typo.\n\nCloses #1')
+  expect(gh.posted.some(post => post.path === 'issues/1/comments' && post.body.startsWith(`${RESULT} Opened the pull request.`))).toBe(true)
+  await waitUntil(() => gh.posted.some(post => post.path === 'issues/2/comments' && post.body.startsWith(`${RESULT} Pushed the follow-up.`)))
+  expect(gh.posted.filter(post => post.path === 'issues/1/comments' && post.body.includes('Pushed the follow-up.'))).toHaveLength(0)
 })

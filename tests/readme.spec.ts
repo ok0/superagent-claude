@@ -107,6 +107,10 @@ describe('README and public docs', () => {
     ]) expect(gettingStarted).toContain(text)
   })
 
+  it('getting-started says new work needs a mention of the agent account and an unmentioned issue is ignored silently', () => {
+    for (const text of ['`@<login>`', 'ignored silently', 'mentions the agent account']) expect(gettingStarted).toContain(text)
+  })
+
   it('configuration names the required settings', () => {
     for (const text of [
       'Required:',

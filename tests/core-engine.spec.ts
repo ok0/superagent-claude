@@ -1047,7 +1047,26 @@ describe('replies', () => {
     expect(h.outbox.at(-1)!.channel).toEqual(asked.channel)
     h.engine.report(ticketId, { state: 'ready', summary: 'Done' })
     expect(h.engine.reply({ purpose: 'result', ticketId, text: 'Done' })).toMatchObject({ status: 'pending' })
-    expect(h.outbox.at(-1)!.channel).toEqual(trigger('1').channel)
+    // A result goes where the latest person's message to the ticket was written.
+    expect(h.outbox.at(-1)!.channel).toEqual(asked.channel)
+  })
+  it('sends a result where the ticket started until a person writes on its pull request, then there with the acknowledgement, not to both', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    h.engine.bindThread(ticketId, { source: 'chat', id: 'pr' }, true)
+    h.engine.report(ticketId, { state: 'ready', summary: 'Opened' })
+    h.engine.reply({ purpose: 'result', ticketId, text: 'Opened' })
+    expect(h.outbox.at(-1)).toMatchObject({ kind: 'reply', channel: trigger('1').channel })
+    const before = h.outbox.length
+    h.tick(1)
+    const comment = trigger('2', { threads: [{ source: 'chat', id: 'pr' }], channel: { source: 'chat', thread: 'pr', address: { message: '2' } } })
+    h.engine.receive(comment); h.settle()
+    h.engine.receive(trigger('3', { human: false, threads: [{ source: 'chat', id: 'pr' }], channel: { source: 'chat', thread: 'pr', address: { message: '3' } } })); h.settle()
+    h.engine.reply({ purpose: 'acknowledgement', ticketId, triggerId: '2', text: 'On it' })
+    h.engine.report(ticketId, { state: 'ready', summary: 'Pushed' })
+    h.engine.reply({ purpose: 'result', ticketId, text: 'Pushed' })
+    expect(h.outbox.slice(before).map(m => [m.kind, m.channel])).toEqual([['acknowledgement', comment.channel], ['reply', comment.channel]])
+    expect(h.outbox.slice(before).some(m => m.channel.thread === 't1')).toBe(false)
   })
 })
 describe('ticket commands', () => {
