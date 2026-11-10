@@ -1,5 +1,5 @@
 /**
- * The composition root: Store → Engine (Policy, SourceScope, Assessor, WorkerExecutor, Outbox) → Source kinds → AdmissionFilter in front of Passes → effect handlers → recovery. `start()` recovers interrupted work and starts the loops and Source services; `stop()` cleans up within STOP_TIMEOUT_MS. `reload()` re-reads the config file while the runtime runs: the policy part is applied to the next Trigger, startup-only keys are reported and kept, and a refused file keeps the running config. In session mode (`router: 'session'`) the Router session is hosted by `RouterHost` and assesses candidates through `MasterAssessor`; otherwise the assessor is deterministic (`GateAssessor`). The worker instructions are the assembled prompt; worker workspaces are git worktrees (or scratch directories for fake runs) and the worker tools are the executor tools.
+ * The composition root: Store → Engine (Policy, SourceScope, Assessor, WorkerExecutor, Outbox) → Source kinds → AdmissionFilter in front of Passes → effect handlers → recovery. `start()` recovers interrupted work and starts the loops and Source services; `stop()` (also during `start()`, which it waits for after aborting the services' signal) cleans up within STOP_TIMEOUT_MS. `reload()` re-reads the config file while the runtime runs: the policy part is applied to the next Trigger, startup-only keys are reported and kept, and a refused file keeps the running config. In session mode (`router: 'session'`) the Router session is hosted by `RouterHost` and assesses candidates through `MasterAssessor`; otherwise the assessor is deterministic (`GateAssessor`). The worker instructions are the assembled prompt; worker workspaces are git worktrees (or scratch directories for fake runs) and the worker tools are the executor tools.
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -46,20 +46,26 @@ export function jsonLines(write: (line: string) => void): LogSink {
   return record => { write(JSON.stringify(record) + '\n') }
 }
 
-/** Executor tools; a ready report also sends its summary as the result (stand-in until the Router relays results, M14). */
-export function workerTools(host: ExecutorToolsHost, ticket: Pick<Ticket, 'id'>): ToolSpec[] {
-  return executorTools(host, ticket).map(tool => tool.name !== 'orchestrator_report' ? tool : {
-    ...tool,
-    execute: async (args, signal) => {
-      const out = await tool.execute(args, signal)
-      const parsed = tool.schema.safeParse(args)
-      const data = parsed.success ? parsed.data as { state: string; summary: string } : undefined
-      if (data?.state === 'ready') {
-        try { host.engine().reply({ purpose: 'result', ticketId: ticket.id, text: data.summary }) } catch (e) { if (!(e instanceof UserError)) throw e }
-      }
-      return out
-    },
-  })
+/** Executor tools; in deterministic Router mode a ready report also queues its summary as the result, in the same transaction that records the report (so no reader or crash sees the ticket ended without its result). */
+export function workerTools(host: ExecutorToolsHost, ticket: Pick<Ticket, 'id'>, atomic: <T>(operation: () => T) => T): ToolSpec[] {
+  const engine = (): ReturnType<ExecutorToolsHost['engine']> => {
+    const inner = host.engine()
+    return {
+      report: (ticketId, report) => atomic(() => {
+        const updated = inner.report(ticketId, report)
+        if (report.state === 'ready') {
+          try { inner.reply({ purpose: 'result', ticketId, text: report.summary }) } catch (e) { if (!(e instanceof UserError)) throw e }
+        }
+        return updated
+      }),
+      reply: request => inner.reply(request),
+      markUnrelated: (...args) => inner.markUnrelated(...args),
+      handback: (...args) => inner.handback(...args),
+      followForContext: (...args) => inner.followForContext(...args),
+      bindThread: (...args) => inner.bindThread(...args),
+    }
+  }
+  return executorTools({ ...host, engine }, ticket)
 }
 
 export function deterministicAssessment(candidate: Candidate, settings: Settings): Assessment {
@@ -204,7 +210,7 @@ export class Runtime implements SourceHost {
   private readonly agentLogin: (() => string | undefined) | undefined
   private readonly stopTimeoutMs: number
   private closing = false
-  private started = false
+  private starting?: Promise<void>
   private stopping?: Promise<void>
 
   constructor(options: RuntimeOptions) {
@@ -285,7 +291,7 @@ export class Runtime implements SourceHost {
               allowAutoMerge: () => this.current.delivery.allowAutoMerge,
             },
           }
-          return session ? executorTools(host, ticket) : workerTools(host, ticket)
+          return session ? executorTools(host, ticket) : workerTools(host, ticket, operation => store.atomic(operation))
         },
         env: () => ({}),
         promptVersion: () => this.prompts.version('worker'),
@@ -397,8 +403,11 @@ export class Runtime implements SourceHost {
 
   async start(): Promise<void> {
     if (this.closing) throw new Error('The runtime is stopping')
-    if (this.started) return
-    this.started = true
+    this.starting ??= this.startOnce()
+    return this.starting
+  }
+
+  private async startOnce(): Promise<void> {
     recover({ tickets: this.store.tickets, engine: this.engine, executor: this.executor })
     this.passes.start()
     this.effects.start()
@@ -406,9 +415,11 @@ export class Runtime implements SourceHost {
       try { await this.router.ensure() } catch (error) { this.log({ level: 'error', at: this.stamp(), event: 'router.open_failed', detail: String(error) }) }
     }
     for (const service of this.services) {
+      if (this.closing) return
       await service.start(this, this.lifetime.signal)
       this.running.push(service)
     }
+    if (this.closing) return
     this.health.set({ state: 'ready', detail: 'Orchestrator is ready', at: this.stamp() })
     this.log({
       level: 'info', at: this.stamp(), event: 'runtime.started', stateDir: this.config.stateDir, runtime: this.agent.id,
@@ -539,7 +550,8 @@ export class Runtime implements SourceHost {
       const passesStopped = this.passes.stop()
       this.lifetime.abort()
       this.assessor.stop?.()
-      complete = await within(Promise.allSettled([passesStopped, ...this.running.map(service => service.stop())]), deadline - Date.now())
+      complete = await within(this.starting ?? Promise.resolve(), deadline - Date.now())
+      complete = await within(Promise.allSettled([passesStopped, ...this.running.map(service => service.stop())]), deadline - Date.now()) && complete
       complete = await within(this.effects.drain(), deadline - Date.now()) && complete
       complete = await within(this.executor.dispose(), deadline - Date.now()) && complete
       complete = await within(this.router?.close() ?? Promise.resolve(), deadline - Date.now()) && complete

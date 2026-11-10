@@ -1,10 +1,11 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { main } from '../src/cli/main.ts'
+import { STOP_TIMEOUT_MS } from '../src/app/runtime.ts'
 import { waitUntil } from './fixtures/async.ts'
 import { cliEnv, cliIo } from './fixtures/cli.ts'
 
@@ -116,6 +117,25 @@ describe('start in process', () => {
     await waitUntil(() => c.out.join('').includes('"runtime.started"'), 10_000)
     c.listeners.SIGTERM!()
     expect(await p).toBe(0)
+  }, 30_000)
+
+  it('a SIGINT while the runtime starts stops it in order with exit code 0', async () => {
+    const dir = tempDir()
+    const bin = join(dir, 'slow-gh')
+    mkdirSync(bin)
+    const gh = join(bin, 'gh')
+    writeFileSync(gh, '#!/bin/sh\nexec sleep 30\n')
+    chmodSync(gh, 0o755)
+    const c = cliIo(dir, cliEnv(dir, { PATH: `${bin}:/usr/bin:/bin` }))
+    const p = main(['start', '--fake', '--config', writeConfig(dir)], c.io)
+    await waitUntil(() => c.listeners.SIGINT !== undefined, 10_000)
+    const at = Date.now()
+    c.listeners.SIGINT!()
+    expect(await p).toBe(0)
+    expect(Date.now() - at).toBeLessThan(STOP_TIMEOUT_MS)
+    const text = c.out.join('')
+    expect(hasEvent(text, 'runtime.started')).toBe(false)
+    expect(hasEvent(text, 'runtime.stopped')).toBe(true)
   }, 30_000)
 })
 

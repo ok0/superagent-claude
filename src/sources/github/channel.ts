@@ -46,6 +46,7 @@ export function githubChannelAdapter(options: ChannelOptions): SourceChannel<Git
         const marker = MARKER(message.id)
         const mine = (comment: z.infer<typeof CommentSchema>) => sameName(comment.user?.login ?? '', login)
           && (rootId === undefined || comment.in_reply_to_id === rootId) && (comment.body ?? '').includes(marker)
+        // Crash rule: a post that succeeded before the process stopped and before its receipt settled is found here by its marker on restart, so it settles as sent without a second comment. This relies on the comment list showing the created comment; one a person deleted meanwhile is posted again.
         if ((await commands.pages(CommentSchema, path)).some(mine)) return 'sent'
         const post = rootId === undefined ? path : `${path}/${rootId}/replies`
         await commands.api(z.unknown(), post, '--method', 'POST', '-f', `body=${message.text}\n\n${marker}`)

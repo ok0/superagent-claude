@@ -88,5 +88,6 @@ export function storeReads(db: DatabaseSync) {
 export interface StoreReader { readonly db: DatabaseSync; readonly read: ReturnType<typeof storeReads>; get<V>(name: Key<V>): V | undefined; close(): void }
 export function openReadOnly(path: string): StoreReader {
   const db = new DatabaseSync(path, { readOnly: true })
+  db.exec('PRAGMA busy_timeout=5000')
   return { db, read: storeReads(db), get: <V>(name: Key<V>): V | undefined => { const row = db.prepare('SELECT value FROM kv WHERE key=?').get(name); return row === undefined ? undefined : JSON.parse(String(row.value)) as V }, close: () => { db.close() } }
 }

@@ -1,5 +1,6 @@
 // Ported from dsh-superagent-prototype (MIT) tests/store.spec.ts
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -245,6 +246,30 @@ it('gives the Engine the same results as the in-memory repositories, keeps them 
   expect(reopened.tickets.get(memory.tickets[0]!.id)!.assignments).toEqual(memory.tickets[0]!.assignments)
   reopened.close()
 })
+it('takes over a lock whose owner process has exited', () => {
+  const path = databasePath(directory)
+  mkdirSync(directory, { recursive: true })
+  const gone = spawnSync(process.execPath, ['-e', '']).pid!
+  mkdirSync(path + '.lock')
+  writeFileSync(path + '.owner', String(gone))
+  const store = new Store(path)
+  expect(readFileSync(path + '.owner', 'utf8')).toBe(String(process.pid))
+  store.close()
+  expect(existsSync(path + '.owner')).toBe(false)
+})
+it('refuses a fresh lock whose owner still runs or is unknown', () => {
+  const path = databasePath(directory)
+  mkdirSync(directory, { recursive: true })
+  mkdirSync(path + '.lock')
+  try {
+    writeFileSync(path + '.owner', String(process.pid))
+    expect(() => new Store(path)).toThrow('Another superagent-claude process')
+    rmSync(path + '.owner')
+    expect(() => new Store(path)).toThrow('Another superagent-claude process')
+  } finally {
+    rmSync(path + '.lock', { recursive: true, force: true })
+  }
+})
 it('reads through a read-only view while the writer runs, and refuses every write through it', () => {
   const path = databasePath(directory)
   const writer = new Store(path)
@@ -259,4 +284,13 @@ it('reads through a read-only view while the writer runs, and refuses every writ
   const again = openReadOnly(path)
   expect(again.read.recentTriggers().map(item => item.id)).toEqual(['b', 'a'])
   again.close()
+})
+it('waits on a busy database instead of failing at once (busy timeout)', () => {
+  const path = databasePath(directory)
+  const store = new Store(path)
+  expect(Object.values(store.db.prepare('PRAGMA busy_timeout').get()!)[0]).toBe(5000)
+  store.close()
+  const reader = openReadOnly(path)
+  expect(Object.values(reader.db.prepare('PRAGMA busy_timeout').get()!)[0]).toBe(5000)
+  reader.close()
 })
