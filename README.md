@@ -1,7 +1,5 @@
 # superagent-claude
 
-> Research project at an early stage. Behavior, configuration and interfaces will change. It is not ready for production use.
-
 superagent-claude is a proactive coding agent for GitHub repositories. Powered by Claude. It polls the repositories you configure. When a person on the allowlist asks it for work, it opens a ticket, does the work in its own session and git worktree, and answers in the original conversation, for example with a pull request.
 
 Take as little human attention as possible, and give as much value as possible. The agent acts only when an allowed person asks or when a rule you wrote allows it, and it speaks only when someone must act or can use a result.
@@ -27,6 +25,11 @@ The config needs `repositories`, `policy.allowed` and `auth.mode`. See [docs/get
 - [Runtime contract](docs/runtime-contract.md)
 - [Deploy](docs/deploy.md): run as a service
 - [Security](docs/security.md): trust policy
+
+## Test repositories
+
+- [ok0/superagent-claude-playground](https://github.com/ok0/superagent-claude-playground)
+- [ok0/superagent-claude-playground-readonly](https://github.com/ok0/superagent-claude-playground-readonly)
 
 ## License
 
