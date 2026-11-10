@@ -9,6 +9,8 @@
   },
   "files": [
     "lib",
+    "prompts",
+    "skills",
     "LICENSE",
     "NOTICE",
     "README.md"

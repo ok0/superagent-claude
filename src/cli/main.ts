@@ -1,9 +1,10 @@
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import pkg from '../../package.json' with { type: 'json' }
 import { CONFIG_FILE, ConfigError, loadConfig, type Config } from '../app/config.ts'
 import { installedSources } from '../app/sources.ts'
 import { jsonLines, Runtime } from '../app/runtime.ts'
 import { FakeRuntime, type FakeScript } from '../runtimes/fake/runtime.ts'
+import { promptsCommand } from './prompts.ts'
 
 export const VERSION: string = pkg.version
 
@@ -15,9 +16,11 @@ const FAKE_SCRIPT: FakeScript = ({ index }) => index === 0 ? { tools: [{ name: '
 export const HELP: string = [
   'Usage: superagent-claude [--help | --version]',
   '       superagent-claude start [--config <path>] [--fake]',
+  '       superagent-claude prompts diff [--config <path>]',
   '',
   'Commands:',
   '  start          Run the daemon in the foreground',
+  '  prompts diff   Show built-in prompt changes since the team sections were made',
   '',
   'Options:',
   '  -h, --help     Show this help',
@@ -54,6 +57,7 @@ export function run(
 
 export async function main(argv: readonly string[], io: CliIo): Promise<number> {
   if (argv[0] === 'start') return start(argv.slice(1), io)
+  if (argv[0] === 'prompts') return promptsCommand(argv.slice(1), io)
   return run(argv, io.out, io.err)
 }
 
@@ -101,7 +105,7 @@ async function start(argv: readonly string[], io: CliIo): Promise<number> {
 
   let runtime: Runtime
   try {
-    runtime = new Runtime({ config, runtime: new FakeRuntime(FAKE_SCRIPT), log: jsonLines(io.out), ...installedSources(config, io.env) })
+    runtime = new Runtime({ config, configDir: dirname(path), runtime: new FakeRuntime(FAKE_SCRIPT), log: jsonLines(io.out), ...installedSources(config, io.env) })
   } catch (error) {
     io.err(`superagent-claude: ${messageOf(error)}\n`)
     return EXIT_REFUSED

@@ -1,5 +1,5 @@
 /**
- * The composition root: Store → Engine (Policy, SourceScope, Assessor, WorkerExecutor, Outbox) → Source kinds → effect handlers → Passes → recovery. `start()` recovers interrupted work and starts the loops and Source services; `stop()` cleans up within STOP_TIMEOUT_MS. The assessor is deterministic and the worker workspace, instructions and tools are minimal stand-ins until the model runtime milestones.
+ * The composition root: Store → Engine (Policy, SourceScope, Assessor, WorkerExecutor, Outbox) → Source kinds → effect handlers → Passes → recovery. `start()` recovers interrupted work and starts the loops and Source services; `stop()` cleans up within STOP_TIMEOUT_MS. The assessor is deterministic and the worker instructions are the assembled prompt; the worker workspace and tools are minimal stand-ins until the model runtime milestones.
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -20,9 +20,9 @@ import { Effects } from './effects.ts'
 import { Outbox, type OutboxChannels } from './outbox.ts'
 import { Passes, type Timers as PassTimers } from './passes.ts'
 import { databasePath, Store } from './store.ts'
+import { PromptVersions, Prompts, ruleLines } from './prompts.ts'
 
 export const STOP_TIMEOUT_MS = 10_000
-export const WORKER_INSTRUCTIONS = 'Work on the assigned ticket in the current directory. When you finish, call orchestrator_report with state ready and a summary; the summary is sent to the conversation the ticket started in.'
 
 export function jsonLines(write: (line: string) => void): LogSink {
   return record => { write(JSON.stringify(record) + '\n') }
@@ -89,6 +89,8 @@ export class GateAssessor implements Assessor {
 
 export interface RuntimeOptions {
   config: Config
+  /** Directory of the config file; team sections are read from <configDir>/prompts/team. */
+  configDir?: string
   runtime: AgentRuntime
   kinds?: readonly SourceKind[]
   services?: readonly SourceService[]
@@ -123,6 +125,7 @@ export class Runtime implements SourceHost {
   readonly executor: WorkerExecutor
   readonly engine: Engine
   readonly passes: Passes
+  readonly prompts: Prompts
   private readonly agent: AgentRuntime
   private readonly log: LogSink
   private readonly now: () => number
@@ -159,6 +162,8 @@ export class Runtime implements SourceHost {
       this.effects = effects
       const settings = settingsOf(config)
       this.settings = settings
+      this.prompts = new Prompts({ versions: new PromptVersions(store, now), ...(options.configDir === undefined ? {} : { teamDir: join(options.configDir, 'prompts', 'team') }), rules: () => ruleLines(settings.policy.rules) })
+      this.prompts.baseline('worker')
       const sources = new SourceRegistry(() => ({}), board)
       this.sources = sources
       for (const kind of options.kinds ?? []) this.disposers.push(sources.register(kind))
@@ -177,14 +182,19 @@ export class Runtime implements SourceHost {
           mkdirSync(cwd, { recursive: true })
           return { repository, cwd, branch: `agent/${ticket.id}` }
         },
-        instructions: async () => WORKER_INSTRUCTIONS,
+        instructions: async ticket => this.prompts.instructions('worker', [{ source: 'ticket-title', text: ticket.title }]),
         tools: ticket => workerTools(() => this.engine, ticket),
         env: () => ({}),
+        promptVersion: () => this.prompts.version('worker'),
       }
       this.executor = new WorkerExecutor({
         store, effects, engine: () => this.engine, runtime: options.runtime, slots: new Slots(config.workers.max), workers: new WorkerStore(store, now), deps,
         limits: { maxTurns: config.workers.maxTurns, maxBudgetUsd: config.workers.maxBudgetUsd }, now, paused: () => policy.paused,
         health: board.claim('executor'), ...(timers ? { timers } : {}),
+      })
+      effects.handle('notice', async payload => {
+        const { target, ticketId, id, text } = payload.value
+        if (target === 'worker' && typeof ticketId === 'string' && typeof id === 'string' && typeof text === 'string') this.executor.notify(ticketId, { id, text })
       })
       const assessor = new GateAssessor({ effects, engine: () => this.engine, settings: () => settings })
       this.engine = new Engine({
@@ -225,6 +235,18 @@ export class Runtime implements SourceHost {
       sources: this.sources.kinds().map(kind => kind.kind),
     })
     this.passes.request()
+  }
+
+  /** Reassembles the worker prompt; when its team sections or rules changed, queues a notice with the changed sections for every open worker session (same key per ticket: only the latest is delivered). Returns the number queued. M10 calls it on reload. */
+  refreshPrompts(): number {
+    const change = this.prompts.refresh('worker')
+    if (!change?.notice) return 0
+    const tickets = this.executor.liveTickets()
+    const notice = change.notice
+    this.store.atomic(() => {
+      for (const ticketId of tickets) this.effects.enqueue('notice', `worker-prompts:${ticketId}`, { value: { target: 'worker', ticketId, id: `notice:prompts:${change.current.hash}`, text: notice }, summary: `Prompt version ${change.current.hash.slice(0, 12)}` })
+    })
+    return tickets.length
   }
 
   stop(): Promise<void> {
