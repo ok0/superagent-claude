@@ -7,3 +7,4 @@ coverage/
 .superagent-claude/
 *.log
 .DS_Store
+docs/
