@@ -1,0 +1,204 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      dist_tag: ${{ steps.meta.outputs.dist_tag }}
+      image_tags: ${{ steps.meta.outputs.image_tags }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: setup node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: install pnpm
+        run: npm install --global "$(node -p 'require("./package.json").packageManager')"
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: verify tag
+        run: node scripts/release.ts verify-tag "$GITHUB_REF_NAME"
+      - name: release outputs
+        id: meta
+        run: node scripts/release.ts outputs "$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+      - name: tag commit is on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: ci gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node scripts/release.ts ci-gate "$GITHUB_SHA"
+      - name: check all
+        run: pnpm check:all
+      - name: pack check
+        run: node scripts/release.ts pack-check
+      - name: release notes
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          node scripts/changelog.ts notes "$VERSION" > "$RUNNER_TEMP/notes.md"
+          grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"
+      - name: docker build
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: docker build --label org.opencontainers.image.source=https://github.com/ok0/superagent-claude --label "org.opencontainers.image.version=$VERSION" -t superagent-claude:release .
+      - name: image runs as non-root
+        run: test "$(docker image inspect --format '{{.Config.User}}' superagent-claude:release)" = "10001:10001"
+      - name: image secret scan
+        run: bash scripts/check-image-secrets.sh superagent-claude:release
+
+  npm:
+    needs: [verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      DIST_TAG: ${{ needs.verify.outputs.dist_tag }}
+      NPM_BOOTSTRAP: ${{ secrets.NPM_TOKEN != '' && 'true' || 'false' }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: setup node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: install npm
+        run: npm install --global npm@11.6.2
+      - name: install pnpm
+        run: npm install --global "$(node -p 'require("./package.json").packageManager')"
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: build
+        run: pnpm build
+      - name: check published
+        id: published
+        run: |
+          if npm view "superagent-claude@$VERSION" version > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "superagent-claude@$VERSION is already published, skipping publish"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: publish (oidc)
+        if: env.NPM_BOOTSTRAP == 'false' && steps.published.outputs.exists == 'false'
+        run: npm publish --tag "$DIST_TAG" --access public
+      - name: publish (bootstrap token)
+        if: env.NPM_BOOTSTRAP == 'true' && steps.published.outputs.exists == 'false'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          export NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/bootstrap.npmrc"
+          # shellcheck disable=SC2016
+          printf '%s\n' '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}' > "$NPM_CONFIG_USERCONFIG"
+          npm publish --provenance --tag "$DIST_TAG" --access public
+          rm -f "$NPM_CONFIG_USERCONFIG"
+      - name: verify dist-tag
+        run: |
+          actual=""
+          for attempt in 1 2 3 4 5 6; do
+            actual="$(npm view superagent-claude "dist-tags.$DIST_TAG" 2> /dev/null || true)"
+            if [ "$actual" = "$VERSION" ]; then
+              echo "dist-tag $DIST_TAG points to $VERSION (attempt $attempt)"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "dist-tag $DIST_TAG points to '$actual', expected $VERSION. Fix it locally: npm dist-tag add superagent-claude@$VERSION $DIST_TAG" >&2
+          exit 1
+
+  image:
+    needs: [verify, npm]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      IMAGE_TAGS: ${{ needs.verify.outputs.image_tags }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: docker build
+        run: docker build --label org.opencontainers.image.source=https://github.com/ok0/superagent-claude --label "org.opencontainers.image.version=$VERSION" -t superagent-claude:release .
+      - name: login to ghcr.io
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: push to ghcr.io
+        run: |
+          IFS=',' read -r -a tags <<< "$IMAGE_TAGS"
+          for tag in "${tags[@]}"; do
+            docker tag superagent-claude:release "ghcr.io/ok0/superagent-claude:$tag"
+            docker push "ghcr.io/ok0/superagent-claude:$tag"
+          done
+      - name: logout
+        if: always()
+        run: docker logout ghcr.io
+
+  release:
+    needs: [verify, npm, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: setup node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: create GitHub Release
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "GitHub Release $GITHUB_REF_NAME already exists, skipping"
+            exit 0
+          fi
+          node scripts/changelog.ts notes "$VERSION" > "$RUNNER_TEMP/notes.md"
+          if [ "$PRERELEASE" = "true" ]; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" --prerelease
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" --latest
+          fi

@@ -15,6 +15,7 @@ export const PUBLIC_FILES = [
   '.github/ISSUE_TEMPLATE/feature_request.yml',
   '.github/pull_request_template.md',
   '.github/workflows/ci.yml',
+  'docs/releasing.md',
 ] as const
 
 export const REQUIRED_CONTRIBUTING = [
@@ -43,7 +44,75 @@ export const REQUIRED_CONTRIBUTING = [
   'your-name/your-playground',
   '`pnpm live:seed`',
   '`pnpm live:cleanup`',
+  '](docs/releasing.md)',
 ] as const
+
+export const REQUIRED_RELEASING = [
+  'Semantic Versioning',
+  '`vMAJOR.MINOR.PATCH`',
+  'a breaking change bumps MINOR',
+  'under the `next` dist-tag',
+  'under `latest`',
+  'pnpm release:prepare <version>',
+  'chore(release): <version>',
+  'Recommended, not enforced',
+  'pnpm test:live',
+  'git push origin main',
+  'git tag -a v<version> -m v<version>',
+  'git push origin v<version>',
+  '**Settings**',
+  '**Trusted Publisher**',
+  '**GitHub Actions**',
+  'Organization or user: `ok0`',
+  'Repository: `superagent-claude`',
+  'Workflow filename: `release.yml`',
+  'Environment name: leave it empty',
+  'within 2 days',
+  'right before you push the tag',
+  '11.5.1',
+  'has no Settings tab',
+  '**Granular Access Token**',
+  '**Read and write**',
+  '**All packages**',
+  'shortest expiration',
+  'bypass two-factor authentication',
+  'gh secret set NPM_TOKEN',
+  'gh secret delete NPM_TOKEN',
+  'revoke the token',
+  'Do not leave the secret',
+  '`publish (oidc)`',
+  '`publish (bootstrap token)`',
+  'docker login ghcr.io',
+  '**Change visibility**',
+  'org.opencontainers.image.source',
+  'nothing is published',
+  'npm view superagent-claude',
+  'gh release view v<version>',
+  'docker pull ghcr.io/ok0/superagent-claude:',
+  '10001:10001',
+  'npm dist-tag add superagent-claude@<version> <tag>',
+  '**Re-run failed jobs**',
+  'The interface may change',
+] as const
+
+export const RELEASING_ORDER = [
+  '## Versions',
+  '## Prepare the release',
+  '## Run the live tests',
+  '## Push to main and wait for CI',
+  '## Tag and push',
+  '## What the release workflow does',
+  '## Check the release',
+  '## Recovery',
+] as const
+
+export function numberedItems(text: string, heading: string): number {
+  const start = text.indexOf(heading)
+  const rest = text.slice(start + heading.length)
+  const next = rest.search(/^#{2,3} /m)
+  const section = next === -1 ? rest : rest.slice(0, next)
+  return section.split('\n').filter((line) => /^\d+\. /.test(line)).length
+}
 
 export const REQUIRED_CONDUCT = [
   'Contributor Covenant',
@@ -130,6 +199,39 @@ describe('contributing docs', () => {
     expect(missingMarkers(real.replaceAll(marker, ''), REQUIRED_CONTRIBUTING)).toContain(marker)
   })
 
+  it('the releasing guide has every marker', () => {
+    expect(missingMarkers(read('docs/releasing.md'), REQUIRED_RELEASING)).toEqual([])
+  })
+
+  it.each(REQUIRED_RELEASING)('a releasing guide without %s is rejected', (marker) => {
+    const text = read('docs/releasing.md')
+    expect(missingMarkers(text.replaceAll(marker, ''), REQUIRED_RELEASING)).toContain(marker)
+  })
+
+  it('the releasing guide sections are in order', () => {
+    const text = read('docs/releasing.md')
+    const positions = RELEASING_ORDER.map((heading) => text.indexOf('\n' + heading + '\n'))
+    positions.forEach((position) => expect(position).toBeGreaterThan(-1))
+    for (let i = 1; i < positions.length; i++) {
+      expect(positions[i]).toBeGreaterThan(positions[i - 1] ?? -1)
+    }
+  })
+
+  it('the trusted publisher and bootstrap steps are numbered lists', () => {
+    const text = read('docs/releasing.md')
+    expect(numberedItems(text, '### npm trusted publisher')).toBe(8)
+    expect(numberedItems(text, '### First publish with a bootstrap token')).toBe(6)
+    const bootstrap = text.slice(text.indexOf('### First publish with a bootstrap token'))
+    const lines = bootstrap.split('\n')
+    expect(lines.find((line) => line.startsWith('2. ')) ?? '').toContain('gh secret set NPM_TOKEN')
+    expect(lines.find((line) => line.startsWith('5. ')) ?? '').toContain('gh secret delete NPM_TOKEN')
+  })
+
+  it('CONTRIBUTING links the releasing guide on exactly one line', () => {
+    const lines = real.split('\n').filter((line) => line.includes('](docs/releasing.md)'))
+    expect(lines.length).toBe(1)
+  })
+
   it('CODE_OF_CONDUCT references the Contributor Covenant and a reporting path', () => {
     expect(missingMarkers(read('CODE_OF_CONDUCT.md'), REQUIRED_CONDUCT)).toEqual([])
   })
@@ -201,7 +303,7 @@ describe('contributing docs', () => {
     })
   })
 
-  it.each(['CONTRIBUTING.md', 'CODE_OF_CONDUCT.md', '.github/pull_request_template.md', 'SECURITY.md'])(
+  it.each(['CONTRIBUTING.md', 'CODE_OF_CONDUCT.md', '.github/pull_request_template.md', 'SECURITY.md', 'docs/releasing.md'])(
     'relative links in %s resolve',
     (file) => {
       expect(relativeLinkProblems(file, read(file))).toEqual([])

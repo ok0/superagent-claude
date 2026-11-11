@@ -69,6 +69,8 @@ No AI attribution: do not add AI co-author trailers, "generated with" lines, ses
 
 CI runs on every push and pull request. It uses no secrets and runs the same way for forks. A maintainer reviews and merges the change.
 
+Maintainers publish releases by pushing a version tag. See [Releasing](docs/releasing.md).
+
 ## Code of conduct
 
 Participation in this project is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
