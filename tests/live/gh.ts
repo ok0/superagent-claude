@@ -40,15 +40,49 @@ export async function ghRaw(token: string, args: readonly string[], options: { i
   }, options.input)
 }
 
-export async function ghJson<T = unknown>(token: string, args: readonly string[], options: { input?: string; paginate?: boolean; run?: Runner } = {}): Promise<T> {
-  const callArgs = options.paginate ? [...args, '--paginate', '--slurp'] : [...args]
-  const result = await ghRaw(token, callArgs, options)
-  if (result.code !== 0) throw new Error('gh api failed: ' + (args[0] ?? ''))
+function parseResult<T>(result: RunResult, args: readonly string[], paginate: boolean, label: string): T {
+  if (result.code !== 0) throw new Error(label + ': ' + (args[0] ?? ''))
   const text = result.stdout.toString('utf8')
   if (text.trim() === '') return undefined as T
   const parsed: unknown = JSON.parse(text)
-  if (options.paginate) return (parsed as unknown[][]).flat() as T
+  if (paginate) return (parsed as unknown[][]).flat() as T
   return parsed as T
+}
+
+export async function ghJson<T = unknown>(token: string, args: readonly string[], options: { input?: string; paginate?: boolean; run?: Runner } = {}): Promise<T> {
+  const callArgs = options.paginate ? [...args, '--paginate', '--slurp'] : [...args]
+  const result = await ghRaw(token, callArgs, options)
+  return parseResult<T>(result, args, options.paginate === true, 'gh api failed')
+}
+
+export function localGhEnv(): Record<string, string> {
+  const env: Record<string, string> = {
+    PATH: process.env.PATH ?? '',
+    HOME: process.env.HOME ?? '',
+    GH_PROMPT_DISABLED: '1',
+  }
+  if (process.env.GH_CONFIG_DIR) env.GH_CONFIG_DIR = process.env.GH_CONFIG_DIR
+  if (process.env.XDG_CONFIG_HOME) env.XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME
+  return env
+}
+
+export async function ghLocalRaw(args: readonly string[], options: { input?: string; run?: Runner } = {}): Promise<RunResult> {
+  assertApiTarget(args)
+  return (options.run ?? runGh)(['api', ...args], localGhEnv(), options.input)
+}
+
+export async function ghLocalJson<T = unknown>(args: readonly string[], options: { input?: string; run?: Runner } = {}): Promise<T> {
+  return parseResult<T>(await ghLocalRaw(args, options), args, false, 'gh api failed (local gh)')
+}
+
+export async function localIdentity(options: { run?: Runner } = {}): Promise<{ login: string | null; scopes: string[] }> {
+  const result = await ghLocalRaw(['user', '-i'], options)
+  if (result.code !== 0) return { login: null, scopes: [] }
+  const text = result.stdout.toString('utf8')
+  const header = /^x-oauth-scopes:\s*(.*)$/im.exec(text)
+  const scopes = header ? (header[1] ?? '').split(',').map(entry => entry.trim()).filter(entry => entry !== '') : []
+  const login = /"login"\s*:\s*"([^"]+)"/.exec(text)?.[1] ?? null
+  return { login, scopes }
 }
 
 export async function ghStatus(token: string, path: string, options: { run?: Runner } = {}): Promise<number> {

@@ -1,4 +1,4 @@
-export const ALLOWED_REPOS = ['ok0/superagent-claude', 'ok0/superagent-claude-playground', 'ok0/superagent-claude-playground-readonly'] as const
+export const ALLOWED_REPOS = ['ok0/superagent-claude', 'ok0/superagent-claude-playground'] as const
 
 export function isAllowedRepo(repo: unknown): boolean {
   if (typeof repo !== 'string') return false

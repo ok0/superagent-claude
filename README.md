@@ -29,8 +29,7 @@ The config needs `repositories`, `policy.allowed` and `auth.mode`. See [docs/get
 
 ## Test repositories
 
-- [ok0/superagent-claude-playground](https://github.com/ok0/superagent-claude-playground)
-- [ok0/superagent-claude-playground-readonly](https://github.com/ok0/superagent-claude-playground-readonly)
+Live tests touch only this repository and the private ok0/superagent-claude-playground repository. The playground is seeded with `pnpm live:seed` and cleaned with `pnpm live:cleanup`.
 
 ## License
 

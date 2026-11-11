@@ -4,12 +4,13 @@ import { join } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import { ALLOWED_REPOS, assertAllowedRepo, assertApiTarget } from './live/guard.ts'
-import { downloadTree, ghJson, ghStatus, tokenScopes, type RunResult, type Runner } from './live/gh.ts'
+import { downloadTree, ghJson, ghLocalJson, ghLocalRaw, ghStatus, localIdentity, tokenScopes, type RunResult, type Runner } from './live/gh.ts'
 import {
   AGENT_BRANCH,
   WORKFLOW_PATH,
   blobSha,
   changeVerdict,
+  ciBlockedLabel,
   ciVerdict,
   cleanupTargets,
   closesIssue,
@@ -34,19 +35,33 @@ function scratch(): string {
 }
 
 describe('guard', () => {
-  it('allows the three repositories in any case', () => {
+  it('allows exactly the two repositories in any case', () => {
     expect(assertAllowedRepo('OK0/Superagent-Claude-Playground')).toBe('OK0/Superagent-Claude-Playground')
     for (const repo of ALLOWED_REPOS) expect(() => assertAllowedRepo(repo)).not.toThrow()
+    expect([...ALLOWED_REPOS]).toEqual(['ok0/superagent-claude', 'ok0/superagent-claude-playground'])
   })
 
   it('rejects anything else', () => {
-    const bad: unknown[] = ['ok0/superagent-claude-x', 'ok0/superagent-claude-playground-readonly2', 'other/superagent-claude', '', ' ok0/superagent-claude', 'ok0/superagent-claude/extra', 'ok0', undefined, 42]
+    const bad: unknown[] = [
+      'ok0/superagent-claude-x',
+      'ok0/superagent-claude-playground' + '-readonly',
+      'ok0/superagent-claude-playground' + '-readonly2',
+      'ok0/superagent-claude-archived',
+      'ok0/superagent-claude-playground-archived',
+      'OK0/Superagent-Claude-Playground-Archived',
+      'other/superagent-claude',
+      '',
+      ' ok0/superagent-claude',
+      'ok0/superagent-claude/extra',
+      'ok0',
+      undefined,
+      42,
+    ]
     for (const repo of bad) expect(() => assertAllowedRepo(repo)).toThrow(/repository not allowed/)
   })
 
   it('assertApiTarget accepts allowed targets', () => {
     expect(() => assertApiTarget(['repos/ok0/superagent-claude-playground/issues', '-X', 'POST'])).not.toThrow()
-    expect(() => assertApiTarget(['/repos/ok0/superagent-claude-playground-readonly'])).not.toThrow()
     expect(() => assertApiTarget(['user', '-i'])).not.toThrow()
     expect(() => assertApiTarget(['graphql', '-f', 'query=query { repository(owner: "ok0", name: "superagent-claude-playground") { id } }'])).not.toThrow()
   })
@@ -64,6 +79,8 @@ describe('guard', () => {
       ['graphql', '-f', 'query=query { repository(owner: "other", name: "x") { id } }'],
       ['graphql', '-f', 'query=query { viewer { login } }'],
       ['repos/ok0/superagent-claude-playground', '--hostname', 'example.com'],
+      ['/repos/ok0/superagent-claude-playground' + '-readonly'],
+      ['repos/ok0/superagent-claude-playground-archived/issues'],
     ]
     for (const args of bad) expect(() => assertApiTarget(args)).toThrow()
   })
@@ -120,34 +137,78 @@ describe('gh helpers', () => {
     const bare = vi.fn<Runner>(async () => ok('HTTP/2.0 200 OK\r\n\r\n{}'))
     expect(await tokenScopes('t', { run: bare })).toEqual([])
   })
+
+  it('ghLocalRaw refuses a disallowed repository before spawning', async () => {
+    const run = vi.fn<Runner>(async () => ok())
+    await expect(ghLocalRaw(['repos/ok0/superagent-claude-archived'], { run })).rejects.toThrow(/repository not allowed/)
+    expect(run).toHaveBeenCalledTimes(0)
+  })
+
+  it('local gh env carries no token', async () => {
+    vi.stubEnv('GH_TOKEN', 'secret-gh-token')
+    vi.stubEnv('GITHUB_TOKEN', 'secret-github-token')
+    try {
+      const run = vi.fn<Runner>(async () => ok())
+      await ghLocalRaw(['user', '-i'], { run })
+      const env = run.mock.calls[0]?.[1] ?? {}
+      for (const key of Object.keys(env)) expect(['PATH', 'HOME', 'GH_PROMPT_DISABLED', 'GH_CONFIG_DIR', 'XDG_CONFIG_HOME']).toContain(key)
+      expect(env.GH_PROMPT_DISABLED).toBe('1')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('localIdentity reads login and scopes', async () => {
+    const run = vi.fn<Runner>(async () => ok('HTTP/2.0 200 OK\r\nx-oauth-scopes: repo, workflow\r\n\r\n{"login":"ok0"}'))
+    expect(await localIdentity({ run })).toEqual({ login: 'ok0', scopes: ['repo', 'workflow'] })
+    const broken = vi.fn<Runner>(async () => fail('HTTP 401'))
+    expect(await localIdentity({ run: broken })).toEqual({ login: null, scopes: [] })
+  })
+
+  it('ghLocalJson reports the endpoint only', async () => {
+    const run = vi.fn<Runner>(async () => fail('secret-text', 1))
+    await expect(ghLocalJson(['repos/ok0/superagent-claude-playground'], { run })).rejects.toThrow(
+      new Error('gh api failed (local gh): repos/ok0/superagent-claude-playground'),
+    )
+  })
 })
 
 describe('preflight', () => {
+  it('is ready when every check holds', () => {
+    expect(preflight({ repoStatus: 200, localLogin: 'OK0', localScopes: ['repo', 'Workflow'], actionsEnabled: true })).toEqual({ status: 'ready' })
+  })
+
+  it('blocks on repository access', () => {
+    expect(preflight({ repoStatus: 404, localLogin: 'ok0', localScopes: ['repo', 'workflow'], actionsEnabled: true })).toMatchObject({ status: 'BLOCKED', missing: ['repo-access'] })
+  })
+
+  it('blocks on another local gh account', () => {
+    expect(preflight({ repoStatus: 200, localLogin: 'someone', localScopes: ['repo', 'workflow'], actionsEnabled: true })).toMatchObject({ status: 'BLOCKED', missing: ['local-gh-account'] })
+    expect(preflight({ repoStatus: 200, localLogin: null, localScopes: ['repo', 'workflow'], actionsEnabled: true })).toMatchObject({ status: 'BLOCKED', missing: ['local-gh-account'] })
+  })
+
   it('blocks without the workflow scope', () => {
-    const result = preflight({ scopes: ['notifications', 'repo'], actionsEnabled: true })
-    expect(result.status).toBe('BLOCKED')
+    const result = preflight({ repoStatus: 200, localLogin: 'ok0', localScopes: ['repo'], actionsEnabled: true })
+    expect(result).toMatchObject({ status: 'BLOCKED', missing: ['workflow-scope'] })
     if (result.status !== 'BLOCKED') return
-    expect(result.missing).toEqual(['workflow-scope'])
-    expect(result.actions[0]).toContain('workflow')
+    expect(result.actions[0]).toContain('gh auth refresh')
   })
 
   it('blocks with Actions disabled', () => {
-    const result = preflight({ scopes: ['repo', 'workflow'], actionsEnabled: false })
-    expect(result.status).toBe('BLOCKED')
-    if (result.status !== 'BLOCKED') return
-    expect(result.missing).toEqual(['actions-disabled'])
+    expect(preflight({ repoStatus: 200, localLogin: 'ok0', localScopes: ['repo', 'workflow'], actionsEnabled: false })).toMatchObject({ status: 'BLOCKED', missing: ['actions-disabled'] })
   })
 
-  it('lists both', () => {
-    const result = preflight({ scopes: ['repo'], actionsEnabled: false })
+  it('lists all four', () => {
+    const result = preflight({ repoStatus: 404, localLogin: null, localScopes: ['repo'], actionsEnabled: false })
     expect(result.status).toBe('BLOCKED')
     if (result.status !== 'BLOCKED') return
-    expect(result.missing).toHaveLength(2)
-    expect(result.actions).toHaveLength(2)
+    expect(result.missing).toHaveLength(4)
+    expect(result.actions).toHaveLength(4)
   })
 
-  it('is ready when both hold', () => {
-    expect(preflight({ scopes: ['repo', 'Workflow'], actionsEnabled: true })).toEqual({ status: 'ready' })
+  it('labels the CI state', () => {
+    expect(ciBlockedLabel(['workflow-scope'])).toBe('BLOCKED(no-workflow-scope)')
+    expect(ciBlockedLabel(['actions-disabled'])).toBe('BLOCKED(actions-disabled)')
   })
 })
 

@@ -93,4 +93,19 @@ describe('live guard static scan', () => {
       expect(text(name), name).not.toMatch(/^describe\(/m)
     }
   })
+
+  it('contents writes only in the seed script', () => {
+    for (const [name, body] of contents) {
+      for (const line of body.split('\n')) {
+        if (!line.includes("'PUT'")) continue
+        expect(line, name).toContain('/contents/')
+        expect(name, line.trim()).toBe('seed-playground.ts')
+      }
+    }
+  })
+
+  it('local gh credential only in the seed script and read-only checks', () => {
+    expect(withPattern(/\bghLocal(?:Json|Raw)\b/)).toEqual(['gh.ts', 'seed-playground.ts'])
+    for (const name of withPattern(/localIdentity\(/)) expect(['gh.ts', 'seed-playground.ts', 'code-change.spec.ts']).toContain(name)
+  })
 })

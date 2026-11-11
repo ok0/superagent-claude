@@ -11,9 +11,9 @@ import { main } from '../../src/cli/main.ts'
 import { DATABASE_FILE, databasePath } from '../../src/app/store.ts'
 import { openReadOnly } from '../../src/app/store-read.ts'
 import { sleep } from '../fixtures/async.ts'
-import { downloadTree, ghJson, ghStatus } from './gh.ts'
+import { downloadTree, ghJson, ghStatus, localIdentity } from './gh.ts'
 import { assertAllowedRepo } from './guard.ts'
-import { AGENT_BRANCH, assertClean, changeVerdict, ciVerdict, closesIssue, commitProblems, contentProblems, isTestFile, runNodeTests, runTag, seedPlan, WORKFLOW_PATH } from './rules.ts'
+import { AGENT_BRANCH, assertClean, changeVerdict, ciVerdict, closesIssue, commitProblems, contentProblems, isTestFile, preflight, runNodeTests, runTag, seedPlan, WORKFLOW_PATH } from './rules.ts'
 import { loadSeed } from './seed-playground.ts'
 
 const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
@@ -195,6 +195,13 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
     ciMode = hasWorkflow && actions.enabled ? 'github' : 'local'
     evidence.ciMode = ciMode
     expect(seedPlan(loadSeed(hasWorkflow), mainTree).kind, 'playground is not seeded: run pnpm live:seed').toBe('unchanged')
+    if (hasWorkflow && !actions.enabled) expect.fail('GitHub Actions is disabled for the playground')
+    if (!hasWorkflow) {
+      const local = await localIdentity()
+      const pf = preflight({ repoStatus: 200, localLogin: local.login, localScopes: local.scopes, actionsEnabled: actions.enabled })
+      if (pf.status === 'BLOCKED') evidence.blocked = pf.missing
+      else expect.fail('playground CI workflow is not seeded although the local gh login can add it: run node tests/live/seed-playground.ts')
+    }
     if (ciMode === 'local') {
       evidence.prChecks = 'BLOCKED(no-workflow-scope)'
       console.log('[BLOCKED] playground CI workflow not seeded; PR heads are judged with node --test locally')

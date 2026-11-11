@@ -55,14 +55,25 @@ export function changeVerdict(files: readonly string[]): ChangeVerdict {
   return { source, tests, other, pass, reason }
 }
 
-export type Preflight = { status: 'ready' } | { status: 'BLOCKED'; missing: ('workflow-scope' | 'actions-disabled')[]; actions: string[] }
+export const LOCAL_GH_ACCOUNT = 'ok0'
 
-export function preflight(input: { scopes: readonly string[]; actionsEnabled: boolean }): Preflight {
-  const missing: ('workflow-scope' | 'actions-disabled')[] = []
+export type PreflightMissing = 'repo-access' | 'local-gh-account' | 'workflow-scope' | 'actions-disabled'
+export type Preflight = { status: 'ready' } | { status: 'BLOCKED'; missing: PreflightMissing[]; actions: string[] }
+
+export function preflight(input: { repoStatus: number; localLogin: string | null; localScopes: readonly string[]; actionsEnabled: boolean }): Preflight {
+  const missing: PreflightMissing[] = []
   const actions: string[] = []
-  if (!input.scopes.some(scope => scope.toLowerCase() === 'workflow')) {
+  if (input.repoStatus !== 200) {
+    missing.push('repo-access')
+    actions.push('Make sure the empty private repository ok0/superagent-claude-playground exists and that SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN can read and write it.')
+  }
+  if ((input.localLogin ?? '').toLowerCase() !== LOCAL_GH_ACCOUNT) {
+    missing.push('local-gh-account')
+    actions.push('Log in the local gh CLI as ok0 (gh auth login, or gh auth switch --user ok0).')
+  }
+  if (!input.localScopes.some(scope => scope.toLowerCase() === 'workflow')) {
     missing.push('workflow-scope')
-    actions.push('Give the owner token the workflow scope (for example "gh auth refresh --scopes workflow", or a new classic token with repo and workflow) and export it as SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN.')
+    actions.push('Add the workflow scope to the local gh login: gh auth refresh --scopes workflow.')
   }
   if (!input.actionsEnabled) {
     missing.push('actions-disabled')
@@ -70,6 +81,10 @@ export function preflight(input: { scopes: readonly string[]; actionsEnabled: bo
   }
   if (missing.length === 0) return { status: 'ready' }
   return { status: 'BLOCKED', missing, actions }
+}
+
+export function ciBlockedLabel(missing: readonly PreflightMissing[]): string {
+  return missing.length > 0 && missing.every(entry => entry === 'actions-disabled') ? 'BLOCKED(actions-disabled)' : 'BLOCKED(no-workflow-scope)'
 }
 
 export const WORKFLOW_PATH = '.github/workflows/test.yml'
@@ -163,7 +178,7 @@ export async function runNodeTests(dir: string, timeoutMs = 180_000): Promise<{ 
 }
 
 export const AGENT_BRANCH = /^agent\/[A-Za-z0-9._-]+$/
-export const PLAYGROUND_REPOS = ['ok0/superagent-claude-playground', 'ok0/superagent-claude-playground-readonly'] as const
+export const PLAYGROUND_REPOS = ['ok0/superagent-claude-playground'] as const
 
 export interface RemoteIssue { number: number; state: string; user: { login: string }; pull_request?: unknown }
 export interface RemotePull { number: number; state: string; user: { login: string }; head: { ref: string } }
