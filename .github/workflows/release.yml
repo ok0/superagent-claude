@@ -113,7 +113,7 @@ jobs:
       - name: verify dist-tag
         run: |
           actual=""
-          for attempt in 1 2 3 4 5 6; do
+          for attempt in $(seq 1 30); do
             actual="$(npm view superagent-claude "dist-tags.$DIST_TAG" 2> /dev/null || true)"
             if [ "$actual" = "$VERSION" ]; then
               echo "dist-tag $DIST_TAG points to $VERSION (attempt $attempt)"

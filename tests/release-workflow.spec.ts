@@ -25,6 +25,8 @@ export const ALLOWED_TOKEN_NAMES = ['GITHUB_TOKEN', 'GH_TOKEN'];
 
 export const MIN_NPM = [11, 5, 1] as const;
 
+export const MIN_DIST_TAG_WINDOW_SECONDS = 300;
+
 const OIDC_RUN = 'npm publish --provenance --tag "$DIST_TAG" --access public';
 const DOCKER_BUILD_LINE =
   'docker build --label org.opencontainers.image.source=https://github.com/ok0/superagent-claude --label "org.opencontainers.image.version=$VERSION"';
@@ -122,6 +124,15 @@ function stepIndex(job: string, name: string): number {
 function stepNamed(job: string, name: string): string | undefined {
   const index = stepIndex(job, name);
   return index === -1 ? undefined : steps(job)[index];
+}
+
+function retryAttempts(step: string): number {
+  const list = /for attempt in ([^;\n]+); do/.exec(step)?.[1]?.trim();
+  if (list === undefined) return Number.NaN;
+  const seq = /^\$\(seq 1 (\d+)\)$/.exec(list);
+  if (seq) return Number(seq[1]);
+  const items = list.split(/\s+/);
+  return items.every((item) => /^\d+$/.test(item)) ? items.length : Number.NaN;
 }
 
 function mapLines(job: string, key: string): string[] {
@@ -291,6 +302,15 @@ export function releaseWorkflowProblems(text: string): string[] {
   ) {
     problems.push('dist-tag check must be an unconditional final step that fails on mismatch');
   }
+  const pause = Number(/^\s*sleep (\d+)\s*$/m.exec(dist)?.[1] ?? Number.NaN);
+  const distWindow = retryAttempts(dist) * pause;
+  const timeout = Number(/^\s*timeout-minutes:\s*(\d+)\s*$/m.exec(jobHead(npm))?.[1] ?? Number.NaN);
+  if (!Number.isFinite(distWindow) || distWindow < MIN_DIST_TAG_WINDOW_SECONDS) {
+    problems.push(`dist-tag retry window must be at least ${MIN_DIST_TAG_WINDOW_SECONDS}s, found ${distWindow}`);
+  }
+  if (!Number.isFinite(timeout) || !(distWindow <= timeout * 60)) {
+    problems.push('dist-tag retry window must fit within the npm job timeout-minutes');
+  }
 
   const published = stepNamed(npm, 'check published') ?? '';
   if (!published.includes('npm view "superagent-claude@$VERSION" version')) {
@@ -418,6 +438,11 @@ const MUTATIONS: Array<{ name: string; mutate: (text: string) => string }> = [
   { name: 'release without --verify-tag', mutate: (t) => replaceAllOf(t, ' --verify-tag', '') },
   { name: 'npm too old', mutate: (t) => replaceFirst(t, 'npm@11.6.2', 'npm@11.4.0') },
   { name: 'checkout keeps credentials', mutate: (t) => replaceFirst(t, 'persist-credentials: false', 'persist-credentials: true') },
+  { name: 'short dist-tag window', mutate: (t) => replaceFirst(t, 'for attempt in $(seq 1 30); do', 'for attempt in 1 2 3 4 5 6; do') },
+  { name: 'short dist-tag sleep', mutate: (t) => replaceFirst(t, '            sleep 10\n', '            sleep 5\n') },
+  { name: 'dist-tag window beyond timeout', mutate: (t) => replaceFirst(t, 'for attempt in $(seq 1 30); do', 'for attempt in $(seq 1 200); do') },
+  { name: 'npm job timeout too short', mutate: (t) => replaceFirst(t, '    timeout-minutes: 30\n', '    timeout-minutes: 4\n') },
+  { name: 'npm job without timeout', mutate: (t) => replaceFirst(t, '    timeout-minutes: 30\n', '') },
 ];
 
 describe('release workflow', () => {
