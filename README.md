@@ -32,7 +32,7 @@ The config needs `repositories`, `policy.allowed` and `auth.mode`. See [docs/get
 
 ## Test repositories
 
-Live tests write only to the repository named by `SUPERAGENT_CLAUDE_LIVE_REPO` and may read the optional `SUPERAGENT_CLAUDE_LIVE_REPORT_REPO`. Without these settings the live tests that need GitHub are skipped. Seed the playground with `pnpm live:seed` (`pnpm live:seed --upgrade` replaces an older seed in one commit) and clean it with `pnpm live:cleanup`. See [Run live tests against your own playground](CONTRIBUTING.md#run-live-tests-against-your-own-playground).
+Live tests write only to the repository named by `SUPERAGENT_CLAUDE_LIVE_REPO` and may read the optional `SUPERAGENT_CLAUDE_LIVE_REPORT_REPO`. Without these settings the live tests that need GitHub are skipped. Seed the playground with `pnpm live:seed` (`pnpm live:seed --upgrade` replaces an older seed in one commit) and clean it with `pnpm live:cleanup`. See [Run live tests against your own playground](CONTRIBUTING.md#run-live-tests-against-your-own-playground). The project's own live runs use [ok0/superagent-claude-playground](https://github.com/ok0/superagent-claude-playground) as the playground.
 
 ## License
 

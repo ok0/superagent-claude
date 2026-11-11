@@ -139,13 +139,17 @@ describe('contributing docs', () => {
     expect(read('README.md')).toContain('](CONTRIBUTING.md)')
   })
 
-  it('README test repositories section names no repository', () => {
+  it('README test repositories section names only the allowed playground example', () => {
+    const allowedExample =
+      "The project's own live runs use [ok0/superagent-claude-playground](https://github.com/ok0/superagent-claude-playground) as the playground."
     const readme = read('README.md')
     const start = readme.indexOf('## Test repositories')
     const end = readme.indexOf('\n## ', start + 1)
     const section = readme.slice(start, end === -1 ? undefined : end)
-    expect(section).not.toMatch(/superagent-claude-playground/)
-    expect(section).not.toMatch(/\bok0\b/)
+    expect(section.split(allowedExample).length - 1).toBeLessThanOrEqual(1)
+    const rest = section.replaceAll(allowedExample, '')
+    expect(rest).not.toMatch(/superagent-claude-playground/)
+    expect(rest).not.toMatch(/\bok0\b/)
     expect(section).toContain('SUPERAGENT_CLAUDE_LIVE_REPO')
     expect(section).toContain('](CONTRIBUTING.md#run-live-tests-against-your-own-playground)')
   })
