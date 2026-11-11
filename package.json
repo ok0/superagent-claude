@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "A proactive agent for GitHub repositories. Powered by Claude.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ok0/superagent-claude.git"
+  },
+  "homepage": "https://github.com/ok0/superagent-claude#readme",
+  "bugs": {
+    "url": "https://github.com/ok0/superagent-claude/issues"
+  },
   "type": "module",
   "bin": {
     "superagent-claude": "lib/cli.js"
@@ -15,6 +23,9 @@
     "NOTICE",
     "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsdown && node -e \"require('node:fs').chmodSync('lib/cli.js', 0o755)\"",
     "typecheck": "tsc --noEmit",
@@ -25,6 +36,8 @@
     "check:all": "pnpm check && pnpm check:branding && pnpm check:commits",
     "check:commits": "node scripts/check-commits.ts",
     "check:branding": "node scripts/check-branding.ts",
+    "release:prepare": "node scripts/changelog.ts prepare",
+    "release:check": "node scripts/release.ts",
     "live:seed": "node tests/live/seed-playground.ts",
     "live:cleanup": "node tests/live/cleanup-playground.ts",
     "spike:sdk": "node spikes/sdk/run.ts"
