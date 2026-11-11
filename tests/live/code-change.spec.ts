@@ -1,10 +1,10 @@
 /**
- * Live code-change scenarios against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth, a bug report and a feature request each become one pull request by the agent account with source and test changes, the new bug test fails on the base code, and a PR review adds a commit to the same branch and ticket. A PR head is judged by the playground CI when the workflow is seeded, otherwise by node --test at the root of the head tree (the api workspace tests). Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1 and the three tokens; never prints a token; all GitHub access goes through the guarded helper; cleanup closes only this run's own issues and pull requests and deletes their agent branches.
+ * Live code-change scenarios against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth. Scenarios come from the registry in tests/live/scenarios (core always, extended by SUPERAGENT_CLAUDE_LIVE_SCENARIOS). Each initial scenario's issue becomes one agent PR. A scenario passes only when the PR head checks succeed (playground CI, or node --test locally at the root of the head tree when the workflow is not seeded), its hidden acceptance tests pass on the PR head, and the diff check passes; the bug scenario also needs its new test to fail on the base. A review follow-up is judged again on the new head with the cumulative PR diff. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1 and the three tokens; never prints a token; all GitHub access goes through the guarded helper; cleanup closes only this run's own issues and pull requests and deletes their agent branches.
  */
 import { EventEmitter } from 'node:events'
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { Ticket, Trigger } from '../../src/core/index.ts'
 import { main } from '../../src/cli/main.ts'
@@ -14,8 +14,11 @@ import { sleep } from '../fixtures/async.ts'
 import { downloadTree, ghJson, ghStatus, localIdentity } from './gh.ts'
 import { assertAllowedRepo } from './guard.ts'
 import { LIVE_LIMITS, liveConfig } from './code-change-config.ts'
-import { AGENT_BRANCH, assertClean, attributionProblems, changeVerdict, ciVerdict, closesIssue, commitProblems, contentProblems, isTestFile, preflight, runNodeTests, runTag, seedPlan, WORKFLOW_PATH } from './rules.ts'
+import { AGENT_BRANCH, assertClean, attributionProblems, checkDiff, ciVerdict, closesIssue, commitProblems, contentProblems, isTestFile, preflight, pullPatch, runNodeTests, runTag, seedPlan, WORKFLOW_PATH } from './rules.ts'
 import { loadSeed } from './seed-playground.ts'
+import { judgeScenario, loadScenarios, scenarioFlows } from './scenarios.ts'
+import type { LiveScenario } from './scenarios.ts'
+import { runHidden, testsFailOnBase } from './hidden.ts'
 
 const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
 const AGENT_TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
@@ -25,15 +28,13 @@ const REPO = assertAllowedRepo('ok0/superagent-claude-playground')
 const AGENT = 'ok0-worker'
 const OWNER = 'ok0'
 const RUN = runTag()
-const BUG_TITLE = 'Paging through tasks drops the last one'
-const BUG_BODY = `@ok0-worker With five tasks, GET /tasks?limit=2 returns two tasks, then two more with nextCursor null, so the fifth task is never listed. A single page drops its last task too. The paging goes through api/src/http/cursor.ts, api/src/http/routes/tasks.ts, api/src/services/task-service.ts and api/src/store/memory-store.ts. Please fix it, add a test under api/test that pages through every task, make sure npm run typecheck and npm test pass at the repository root, and open a pull request.\n\n<!-- live-test ${RUN} -->`
-const FEATURE_TITLE = 'Add partial updates for tasks'
-const FEATURE_BODY = `@ok0-worker Please add PATCH /tasks/:id that changes only the given fields (title, status, dueDate) of a task. Validate them like task creation, return 400 for invalid fields, 404 for an unknown id and 403 when the caller does not own the task, and respond with the updated task. Add a service-level update with unit tests and an HTTP test in api/test, make sure npm run typecheck and npm test pass at the repository root, and open a pull request.\n\n<!-- live-test ${RUN} -->`
-const REVIEW_BODY = 'Please also answer GET /tasks with 400 when limit is 0, negative or not a whole number, and add a test for that case.'
+const SCENARIOS = await loadScenarios(process.env)
+const FLOWS = scenarioFlows(SCENARIOS)
+const issueBody = (s: LiveScenario): string => s.issue.body + '\n\n<!-- live-test ' + RUN + ' -->'
 
 type Line = Record<string, unknown>
 interface PullInfo { number: number; html_url: string; title: string; body?: string | null; state: string; merged?: boolean; created_at: string; user: { login: string }; head: { ref: string; sha: string }; base: { sha: string } }
-interface ChangedFile { filename: string; status: string }
+interface ChangedFile { filename: string; status: string; patch?: string; previous_filename?: string }
 interface Judgement { mode: 'github' | 'local'; verdict: 'success' | 'failure'; detail: string }
 
 const evidence: Record<string, unknown> = {}
@@ -93,16 +94,10 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
   let scanned = false
   const created = { issues: [] as number[], pulls: [] as { number: number; ref: string }[] }
   const cleanupErrors: string[] = []
-  let bugIssue = 0
-  let featureIssue = 0
-  let bugPull: PullInfo | undefined
-  let featurePull: PullInfo | undefined
+  const flowState = new Map<string, { issue: number; pull: PullInfo }>()
+  const verdicts: Record<string, unknown>[] = []
   afterEach(ctx => { if (ctx.task.result?.state === 'fail') failed = true })
 
-  const requireBug = (): PullInfo => {
-    if (!bugPull) throw new Error('bug PR was not found by the first scenario')
-    return bugPull
-  }
   const storeRows = <T>(table: string): T[] => {
     const reader = openReadOnly(databasePath(join(dir, 'state')))
     try {
@@ -141,6 +136,27 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
       const result = await runNodeTests(root)
       return { mode: 'local', verdict: result.code === 0 ? 'success' : 'failure', detail: result.output.slice(-2000) }
     })
+  }
+
+  const baseCheck = async (scenario: LiveScenario, baseSha: string, head: string, files: ChangedFile[]) => {
+    const root = mkdtempSync(join(tmpdir(), 'sac-code-change-prefix-'))
+    try {
+      await downloadTree(OWNER_TOKEN!, REPO, baseSha, join(root, 'base'))
+      await downloadTree(OWNER_TOKEN!, REPO, head, join(root, 'head'))
+      const testFiles = files.filter(f => isTestFile(f.filename) && f.status !== 'removed').map(f => f.filename)
+      return await testsFailOnBase({ base: join(root, 'base'), head: join(root, 'head'), testFiles, cwd: scenario.hidden?.workspace ?? '' })
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  }
+  const judgeScenarioHead = async (scenario: LiveScenario, pull: PullInfo, head: string) => {
+    const started = Date.now()
+    const files = await filesOf(pull.number)
+    const diff = checkDiff(files, pullPatch(files), scenario.diff, { hiddenDest: scenario.hidden?.dest })
+    const checks = await judgeHead(head)
+    const hidden = scenario.hidden ? await runHidden(head, scenario, { fetchTree: (sha, d) => downloadTree(OWNER_TOKEN!, REPO, sha, d) }) : null
+    const base = scenario.diff.newTestFailsOnBase === true ? await baseCheck(scenario, pull.base.sha, head, files) : null
+    const verdict = judgeScenario(scenario, { checks: checks.verdict, hidden, diff, base })
+    verdicts.push({ id: scenario.id, pr: pull.number, url: pull.html_url, head, files: files.map(f => ({ filename: f.filename, status: f.status })), checks, hidden: hidden && { passed: hidden.passed, runs: hidden.runs, output: hidden.output.slice(-2000) }, diff, base: base && { ...base, output: base.output.slice(-2000) }, verdict, seconds: Math.round((Date.now() - started) / 1000) })
+    return verdict
   }
 
   const cleanup = async (): Promise<{ pulls: { number: number; state: string; merged: boolean }[]; branches: { ref: string; status: number }[]; issues: { number: number; state: string }[] }> => {
@@ -194,6 +210,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
     const actions = await owner<{ enabled: boolean }>(['repos/' + REPO + '/actions/permissions'])
     ciMode = hasWorkflow && actions.enabled ? 'github' : 'local'
     evidence.ciMode = ciMode
+    evidence.scenarioIds = SCENARIOS.map(s => s.id)
     expect(seedPlan(loadSeed(hasWorkflow), mainTree).kind, 'playground is not seeded: run pnpm live:seed').toBe('unchanged')
     if (hasWorkflow && !actions.enabled) expect.fail('GitHub Actions is disabled for the playground')
     if (!hasWorkflow) {
@@ -229,6 +246,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
   afterAll(async () => {
     if (!dir) return
     try {
+      try { evidence.workers = storeQuery('SELECT ticket_id, turns, cost_usd FROM worker') } catch (error) { evidence.workers = String((error as Error).message) }
       signals.emit('SIGTERM')
       expect(await done).toBe(0)
 
@@ -242,6 +260,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
       evidence.tokenScan = { files: fileHits, captured: lineHits }
     } finally {
       evidence.cleanup = await cleanup()
+      evidence.elapsedSeconds = Math.round((Date.now() - Date.parse(startedAt)) / 1000)
     }
     evidence.cleanupErrors = cleanupErrors
     try {
@@ -266,90 +285,77 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
     }
   }, 900_000)
 
-  it('a bug report and a feature request each become a pull request with source and tests', async () => {
-    const bug = await createIssue(assertClean('bug title', BUG_TITLE), assertClean('bug body', BUG_BODY))
-    created.issues.push(bug.number)
-    bugIssue = bug.number
-    const feature = await createIssue(assertClean('feature title', FEATURE_TITLE), assertClean('feature body', FEATURE_BODY))
-    created.issues.push(feature.number)
-    featureIssue = feature.number
-    evidence.issues = { bug: bug.html_url, feature: feature.html_url }
-
-    const [bugPr, featurePr] = await Promise.all([prFor(bug.number), prFor(feature.number)])
-    created.pulls.push({ number: bugPr.number, ref: bugPr.head.ref }, { number: featurePr.number, ref: featurePr.head.ref })
-    bugPull = bugPr
-    featurePull = featurePr
-
-    const scenarios: Record<string, unknown>[] = []
-    for (const [label, pr, issueNumber] of [['bug', bugPr, bug.number], ['feature', featurePr, feature.number]] as const) {
-      const changed = await filesOf(pr.number)
-      expect(changeVerdict(changed.map(file => file.filename)).pass, label + ' PR changes').toBe(true)
-      const judged = await judgeHead(pr.head.sha)
-      expect(judged.verdict, label + ' PR head judged by ' + judged.mode).toBe('success')
-      scenarios.push({ label, issue: issueNumber, pr: pr.number, url: pr.html_url, head: pr.head.sha, files: changed, ci: judged })
+  it('every core issue becomes a pull request that passes checks, hidden tests and the diff check', async () => {
+    const issueUrls: Record<string, string> = {}
+    evidence.issues = issueUrls
+    const pending = [] as { flow: (typeof FLOWS)[number]; issue: number }[]
+    for (const flow of FLOWS) {
+      const s = flow.initial
+      const issue = await createIssue(assertClean(s.id + ' title', s.issue.title), assertClean(s.id + ' body', issueBody(s)))
+      created.issues.push(issue.number)
+      issueUrls[s.id] = issue.html_url
+      pending.push({ flow, issue: issue.number })
     }
-    const featureSource = changeVerdict((await filesOf(featurePr.number)).map(f => f.filename)).source
-    expect(new Set(featureSource.map(p => p.split('/').slice(0, 3).join('/'))).size, 'feature touches several modules').toBeGreaterThanOrEqual(2)
-    const routes = await withTree(featurePr.head.sha, async root => readFileSync(join(root, 'api/src/http/routes/tasks.ts'), 'utf8'))
-    expect(routes).toContain('PATCH')
-    evidence.scenarios = scenarios
-  }, 3_600_000)
+    const pulls = await Promise.all(pending.map(p => prFor(p.issue)))
+    for (let i = 0; i < pending.length; i++) {
+      const pull = pulls[i]!
+      created.pulls.push({ number: pull.number, ref: pull.head.ref })
+      flowState.set(pending[i]!.flow.initial.id, { issue: pending[i]!.issue, pull })
+    }
 
-  it('the new bug test fails on the code before the fix', async () => {
-    const bugPr = requireBug()
-    const testFiles = (await filesOf(bugPr.number)).filter(file => isTestFile(file.filename) && file.status !== 'removed').map(file => file.filename)
-    const root = mkdtempSync(join(tmpdir(), 'sac-code-change-prefix-'))
-    try {
-      const base = join(root, 'base')
-      const head = join(root, 'head')
-      await downloadTree(OWNER_TOKEN!, REPO, bugPr.base.sha, base)
-      await downloadTree(OWNER_TOKEN!, REPO, bugPr.head.sha, head)
-      const pristine = await runNodeTests(base)
-      for (const file of testFiles) {
-        mkdirSync(dirname(join(base, file)), { recursive: true })
-        copyFileSync(join(head, file), join(base, file))
+    const failures: string[] = []
+    for (const flow of FLOWS) {
+      const pull = flowState.get(flow.initial.id)!.pull
+      const verdict = await judgeScenarioHead(flow.initial, pull, pull.head.sha)
+      if (!verdict.passed) failures.push(flow.initial.id + ': ' + verdict.failed.join(', '))
+    }
+    evidence.scenarios = verdicts
+    expect(failures, 'failed verdict parts').toEqual([])
+  }, 5_400_000)
+
+  it('a review follow-up adds a commit in the same ticket and branch and passes on the new head', async () => {
+    const failures: string[] = []
+    const reviews: Record<string, unknown>[] = []
+    evidence.reviews = reviews
+    for (const flow of FLOWS) {
+      for (const followUp of flow.followUps) {
+        const state = flowState.get(flow.initial.id)
+        if (!state) throw new Error('no pull request for ' + flow.initial.id)
+        const number = state.pull.number
+        const commitCount = async (): Promise<number> => (await owner<unknown[]>(['repos/' + REPO + '/pulls/' + number + '/commits?per_page=100'])).length
+        const before = {
+          tickets: storeRows<Ticket>('ticket').map(ticket => ticket.id).sort(),
+          pulls: (await agentPullsSince()).length,
+          head: (await owner<PullInfo>(['repos/' + REPO + '/pulls/' + number])).head,
+          commits: await commitCount(),
+        }
+
+        const review = await owner<{ html_url: string }>(['repos/' + REPO + '/pulls/' + number + '/reviews', '-X', 'POST', '--input', '-'], { input: JSON.stringify({ event: 'COMMENT', body: assertClean('review', followUp.review!.body) }) })
+        const newHead = await until(async () => {
+          const current = await owner<PullInfo>(['repos/' + REPO + '/pulls/' + number])
+          return current.head.sha !== before.head.sha ? current.head.sha : undefined
+        }, 1_800_000, 30_000, 'new head on the pull request of ' + flow.initial.id)
+
+        const now = await owner<PullInfo>(['repos/' + REPO + '/pulls/' + number])
+        expect(now.head.ref).toBe(before.head.ref)
+        expect(now.state).toBe('open')
+        const commits = await commitCount()
+        expect(commits).toBeGreaterThan(before.commits)
+        expect(await agentPullsSince()).toHaveLength(before.pulls)
+        expect(storeRows<Ticket>('ticket').map(ticket => ticket.id).sort()).toEqual(before.tickets)
+        const trigger = triggerOfIssue(state.issue)
+        const ticket = storeRows<Ticket>('ticket').find(row => row.origin.triggerId === trigger?.id)
+        expect(ticket).toBeDefined()
+        const [worker] = storeQuery('SELECT * FROM worker WHERE ticket_id = ?', ticket!.id)
+        expect(worker?.branch).toBe(now.head.ref)
+        const current = await owner<PullInfo>(['repos/' + REPO + '/pulls/' + number])
+        const verdict = await judgeScenarioHead(followUp, current, newHead)
+        if (!verdict.passed) failures.push(followUp.id + ': ' + verdict.failed.join(', '))
+        reviews.push({ id: followUp.id, review: review.html_url, newHead, commits: { before: before.commits, after: commits } })
       }
-      const preFix = await runNodeTests(base)
-      evidence.preFix = { pristineCode: pristine.code, preFixCode: preFix.code, testFiles, output: preFix.output.slice(-2000) }
-      expect(pristine.code).toBe(0)
-      expect(preFix.code).not.toBe(0)
-    } finally {
-      rmSync(root, { recursive: true, force: true })
     }
-  }, 600_000)
-
-  it('a review on the bug pull request adds a commit in the same ticket and branch', async () => {
-    const bugPr = requireBug()
-    const number = bugPr.number
-    const commitCount = async (): Promise<number> => (await owner<unknown[]>(['repos/' + REPO + '/pulls/' + number + '/commits?per_page=100'])).length
-    const before = {
-      tickets: storeRows<Ticket>('ticket').map(ticket => ticket.id).sort(),
-      pulls: (await agentPullsSince()).length,
-      head: (await owner<PullInfo>(['repos/' + REPO + '/pulls/' + number])).head,
-      commits: await commitCount(),
-    }
-
-    const review = await owner<{ html_url: string }>(['repos/' + REPO + '/pulls/' + number + '/reviews', '-X', 'POST', '--input', '-'], { input: JSON.stringify({ event: 'COMMENT', body: assertClean('review', REVIEW_BODY) }) })
-    const newHead = await until(async () => {
-      const current = await owner<PullInfo>(['repos/' + REPO + '/pulls/' + number])
-      return current.head.sha !== before.head.sha ? current.head.sha : undefined
-    }, 1_800_000, 30_000, 'new head on the bug PR')
-
-    const now = await owner<PullInfo>(['repos/' + REPO + '/pulls/' + number])
-    expect(now.head.ref).toBe(before.head.ref)
-    expect(now.state).toBe('open')
-    const commits = await commitCount()
-    expect(commits).toBeGreaterThan(before.commits)
-    expect(await agentPullsSince()).toHaveLength(before.pulls)
-    expect(storeRows<Ticket>('ticket').map(ticket => ticket.id).sort()).toEqual(before.tickets)
-    const trigger = triggerOfIssue(bugIssue)
-    const ticket = storeRows<Ticket>('ticket').find(row => row.origin.triggerId === trigger?.id)
-    expect(ticket).toBeDefined()
-    const [worker] = storeQuery('SELECT * FROM worker WHERE ticket_id = ?', ticket!.id)
-    expect(worker?.branch).toBe(now.head.ref)
-    expect((await judgeHead(newHead)).verdict).toBe('success')
-    evidence.review = { review: review.html_url, newHead, commits: { before: before.commits, after: commits } }
-  }, 2_400_000)
+    expect(failures).toEqual([])
+  }, 3_000_000)
 
   it('posted text has no milestone references and commits follow the convention', async () => {
     const problems: string[] = []
@@ -359,7 +365,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
       texts++
       problems.push(...contentProblems(label, text ?? ''))
     }
-    for (const number of [bugIssue, featureIssue]) {
+    for (const number of created.issues) {
       const issue = await owner<{ title: string; body?: string | null }>(['repos/' + REPO + '/issues/' + number])
       check('issue ' + number + ' title', issue.title)
       check('issue ' + number + ' body', issue.body)

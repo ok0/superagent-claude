@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { spawn } from 'node:child_process'
+import { basename } from 'node:path'
 import { ATTRIBUTION_PATTERNS, checkMessage } from '../../scripts/check-commits.ts'
 import { isAiAttributionLine } from '../../src/infra/text.ts'
 import { assertAllowedRepo } from './guard.ts'
@@ -261,4 +262,82 @@ export function cleanupTargets(input: { repo: string; defaultBranch: string; iss
     .map(branch => branch.name)
     .sort((a, b) => a.localeCompare(b))
   return { repo: input.repo, reportOnly, issues, pulls, branches }
+}
+
+export interface DiffRule { requireSourceAndTest: boolean; allowedRoots?: readonly string[]; allowLockfile?: boolean; newTestFailsOnBase?: boolean }
+export interface DiffFile { filename: string; status: string; previous_filename?: string; patch?: string }
+export interface DiffVerdict { pass: boolean; reasons: string[] }
+export const LOCKFILES: readonly string[] = ['package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml']
+
+export function pullPatch(files: readonly DiffFile[]): string {
+  return files.map(f => 'diff --git a/' + (f.previous_filename ?? f.filename) + ' b/' + f.filename + '\n' + (f.patch ?? '')).join('\n')
+}
+
+export function patchSections(patch: string): Map<string, { added: string[]; removed: string[] }> {
+  const sections = new Map<string, { added: string[]; removed: string[] }>()
+  let current: { added: string[]; removed: string[] } | undefined
+  for (const line of patch.split('\n')) {
+    const header = /^diff --git a\/(.+?) b\/(.+)$/.exec(line)
+    if (header) {
+      current = { added: [], removed: [] }
+      sections.set(header[2] ?? '', current)
+      continue
+    }
+    if (!current) continue
+    if (line.startsWith('+++ ') || line.startsWith('--- ')) continue
+    if (line.startsWith('+')) current.added.push(line.slice(1))
+    else if (line.startsWith('-')) current.removed.push(line.slice(1))
+  }
+  return sections
+}
+
+const TEST_CALL = /(?<![\w$.])(?:test|it)\s*(?:\.\s*(?:skip|only|todo)\s*)?\(/g
+const FOCUS_MARK = /(?<![\w$])(?:test|it|describe|suite|t)\s*\.\s*(?:skip|only|todo)\b|\b(?:skip|only|todo)\s*:\s*(?!false\b)[^\s,}]/g
+const count = (lines: readonly string[], re: RegExp): number => lines.reduce((n, l) => n + (l.match(re)?.length ?? 0), 0)
+
+export function checkDiff(files: readonly DiffFile[], patch: string, rule: DiffRule, extra: { hiddenDest?: string } = {}): DiffVerdict {
+  const sections = patchSections(patch)
+  const paths = (f: DiffFile): string[] => [f.filename, ...(f.previous_filename ? [f.previous_filename] : [])]
+  const reasons: string[] = []
+  const add = (reason: string): void => {
+    if (!reasons.includes(reason)) reasons.push(reason)
+  }
+  const allPaths = [...new Set(files.flatMap(paths))]
+  const hiddenDest = extra.hiddenDest?.replace(/\/$/, '')
+
+  for (const p of allPaths) {
+    if (p.startsWith('.github/workflows/')) add('CI workflow changed: ' + p)
+  }
+  if (hiddenDest) {
+    for (const p of allPaths) {
+      if (p === hiddenDest || p.startsWith(hiddenDest + '/')) add('hidden test path changed: ' + p)
+    }
+  }
+  for (const p of allPaths) {
+    if (LOCKFILES.includes(basename(p)) && rule.allowLockfile !== true) add('lockfile changed: ' + p)
+  }
+  if (rule.allowedRoots) {
+    const roots = rule.allowedRoots
+    for (const p of allPaths) {
+      if (rule.allowLockfile === true && LOCKFILES.includes(basename(p))) continue
+      if (!roots.some(root => p.startsWith(root))) add('outside allowed roots: ' + p)
+    }
+  }
+  for (const f of files.filter(f => isTestFile(f.filename))) {
+    const section = sections.get(f.filename)
+    if (f.status === 'removed') add('test file removed: ' + f.filename)
+    if (f.status !== 'removed' && f.status !== 'renamed' && (!section || (section.added.length === 0 && section.removed.length === 0))) add('no patch for test file: ' + f.filename)
+    if (section && count(section.added, FOCUS_MARK) > count(section.removed, FOCUS_MARK)) add('new skip/only/todo: ' + f.filename)
+  }
+  let calls = 0
+  for (const f of files.filter(f => isTestFile(f.filename))) {
+    const section = sections.get(f.filename)
+    if (section) calls += count(section.removed, TEST_CALL) - count(section.added, TEST_CALL)
+  }
+  if (calls > 0) add('test count decreased by ' + calls)
+  if (rule.requireSourceAndTest) {
+    const verdict = changeVerdict(files.map(f => f.filename))
+    if (!verdict.pass) add('source and test not both changed: ' + verdict.reason)
+  }
+  return { pass: reasons.length === 0, reasons }
 }
