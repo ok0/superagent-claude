@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { collectCommits, extractNotes, previousTag, renderSection } from '../scripts/changelog.ts'
+import { CATEGORIES, collectCommits, extractNotes, previousTag, renderSection } from '../scripts/changelog.ts'
 import { checkText } from '../scripts/check-branding.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -12,6 +12,21 @@ const SCRIPT = fileURLToPath(new URL('../scripts/changelog.ts', import.meta.url)
 
 function cli(args: string[], cwd: string = ROOT) {
   return spawnSync(process.execPath, [SCRIPT, ...args], { cwd, encoding: 'utf8' })
+}
+
+export const ALLOWED_HEADINGS = ['Breaking changes', 'Features', 'Fixes', 'Performance'] as const
+
+export function changelogProblems(content: string): string[] {
+  const problems: string[] = []
+  const lines = content.split('\n')
+  if (lines[0] !== '# Changelog') problems.push('first line is not # Changelog')
+  for (const l of lines.filter((x) => x.startsWith('## ['))) {
+    if (!/^## \[\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?\] - \d{4}-\d{2}-\d{2}$/.test(l)) problems.push(`bad release heading: ${l}`)
+  }
+  for (const l of lines.filter((x) => x.startsWith('### '))) {
+    if (!(ALLOWED_HEADINGS as readonly string[]).includes(l.slice(4))) problems.push(`heading not allowed: ${l}`)
+  }
+  return problems
 }
 
 const dirs: string[] = []
@@ -232,14 +247,28 @@ describe('root CHANGELOG.md', () => {
   const content = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8')
 
   it('has the header and well-formed release sections only', () => {
-    const lines = content.split('\n')
-    expect(lines[0]).toBe('# Changelog')
-    for (const l of lines.filter((x) => x.startsWith('## ['))) {
-      expect(l).toMatch(/^## \[\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?\] - \d{4}-\d{2}-\d{2}$/)
-    }
-    for (const l of lines.filter((x) => x.startsWith('### '))) {
-      expect(l).toMatch(/^### (Features|Fixes|Breaking changes)$/)
-    }
+    expect(changelogProblems(content)).toEqual([])
+  })
+
+  it('allows exactly the headings the script can emit', () => {
+    expect([...ALLOWED_HEADINGS].sort()).toEqual(CATEGORIES.map(([, title]) => title).sort())
+  })
+
+  it('accepts a changelog generated from a history with a perf commit', () => {
+    const dir = repo()
+    commit(dir, 'feat: add a')
+    commit(dir, 'perf: speed up b')
+    commit(dir, 'fix: c')
+    const result = cli(['prepare', '0.2.0', '--date', '2026-01-02'], dir)
+    expect(result.status).toBe(0)
+    const text = readFileSync(join(dir, 'CHANGELOG.md'), 'utf8')
+    expect(text).toContain('### Performance')
+    expect(text).toContain('speed up b')
+    expect(changelogProblems(text)).toEqual([])
+  })
+
+  it.each(['### Chores', '### Documentation', '### Misc'])('rejects the heading %s', (heading) => {
+    expect(changelogProblems(content + '\n' + heading + '\n').length).toBeGreaterThan(0)
   })
 
   it('passes branding and contains no milestone IDs or .docs links', () => {
