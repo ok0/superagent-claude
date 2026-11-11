@@ -1,6 +1,6 @@
 /** Replays recorded Claude SDK message sequences through the event mapper and checks the runtime events, costs and background counts they produce. */
 import { describe, expect, it } from 'vitest'
-import { EventMapper, outcomeOf } from '../src/runtimes/claude/events.ts'
+import { EventMapper, outcomeOf, subagentMessage } from '../src/runtimes/claude/events.ts'
 import { RECORDED, replay, type Step } from './fixtures/claude-recorded.ts'
 
 const rec = (key: string): Step[] => {
@@ -96,6 +96,18 @@ describe('claude event mapping', () => {
       { type: 'session', sessionId: 'S2' },
     ])
   })
+})
+
+it('subagent messages do not end the turn or set the API error', () => {
+  const mapper = new EventMapper('S')
+  const events = [
+    ...mapper.message({ type: 'assistant', parent_tool_use_id: 'toolu_1', agent_id: 'a1', error: 'rate_limit', message: { id: 'm1', content: [] } } as never),
+    ...mapper.message({ type: 'result', subtype: 'success', agent_id: 'a1', total_cost_usd: 0.01, num_turns: 1 } as never),
+    ...mapper.message({ type: 'result', subtype: 'success', total_cost_usd: 0.02, num_turns: 1 } as never),
+  ]
+  expect(events.filter(e => e.type === 'turnEnded')).toEqual([expect.objectContaining({ type: 'turnEnded', outcome: 'success', costUsd: expect.closeTo(0.02, 8) })])
+  expect(events.some(e => e.type === 'error')).toBe(false)
+  expect(subagentMessage({ type: 'assistant', parent_tool_use_id: null })).toBe(false)
 })
 
 it('a result suppressed by interrupt still reports its usage as discarded', () => {

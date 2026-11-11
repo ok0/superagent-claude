@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { agentEnv, createAgent } from '../src/app/agent.ts'
+import { agentEnv, createAgent, toolDeniedRecord } from '../src/app/agent.ts'
 import type { LogRecord } from '../src/sources/host.ts'
 import { ConfigSchema } from '../src/app/config.ts'
 import { resolveCredential } from '../src/app/credentials.ts'
@@ -130,10 +130,32 @@ describe('agent wiring', () => {
     expect(logs).toHaveLength(1)
     expect(denials).toHaveLength(1)
     expect(denials[0]).toMatchObject({ event: 'worker.tool_denied', level: 'warn', ticketId: 't1', tool: 'Bash' })
+    expect('agentId' in denials[0]!).toBe(false)
     const serialized = JSON.stringify(logs)
     expect(serialized).not.toContain('HEAD:main')
     expect(serialized).not.toContain('git push origin')
     await session.close()
+  })
+
+  it('a subagent guard denial is logged with agentId', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'agent-wiring-'))
+    const sdk = stubSdk()
+    const logs: LogRecord[] = []
+    const agent = createAgent({ config: cfg('api-key'), credential: resolveCredential('api-key', ALL), env: ALL, query: sdk.query, log: r => logs.push(r) })
+    const session = await agent.runtime.open(contractSpec('followup starts a new turn', { key: 'worker-t1', builtins: { fs: 'write', shell: true, web: false } }).spec)
+    await sdk.queries[0]!.hook('PreToolUse', { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git push origin HEAD:main' }, agent_id: 'a1' })
+    const denials = logs.filter(r => r.event === 'worker.tool_denied')
+    expect(logs).toHaveLength(1)
+    expect(denials).toHaveLength(1)
+    expect(denials[0]).toMatchObject({ ticketId: 't1', tool: 'Bash', agentId: 'a1' })
+    const serialized = JSON.stringify(logs)
+    expect(serialized).not.toContain('HEAD:main')
+    await session.close()
+  })
+
+  it('the tool_denied record carries agentId only for subagent denials', () => {
+    expect(toolDeniedRecord({ key: 'worker-t1', tool: 'Bash', reason: 'r', agentId: 'a1' }, '2026-01-01T00:00:00Z')).toMatchObject({ event: 'worker.tool_denied', ticketId: 't1', tool: 'Bash', reason: 'r', agentId: 'a1' })
+    expect('agentId' in toolDeniedRecord({ key: 'worker-t1', tool: 'Bash', reason: 'r' }, '2026-01-01T00:00:00Z')).toBe(false)
   })
 
   it('worker sessions expose the executor tools through the superagent MCP server', async () => {

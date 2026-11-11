@@ -37,7 +37,7 @@ function scannedFiles(): [string, string][] {
 }
 
 const GITHUB_SPECS = ['code-change.spec.ts', 'conversation-quality.spec.ts', 'conversation.spec.ts', 'crash-restart.spec.ts', 'issue-reply.spec.ts', 'pr-delivery.spec.ts', 'private-workspace.spec.ts']
-const CLAUDE_ONLY_SPECS = ['claude-auth.spec.ts', 'claude-contract.spec.ts', 'claude-resume.spec.ts', 'guard-denial.spec.ts', 'repo-config.spec.ts', 'sandbox-linux.spec.ts']
+const CLAUDE_ONLY_SPECS = ['claude-auth.spec.ts', 'claude-contract.spec.ts', 'claude-resume.spec.ts', 'guard-denial.spec.ts', 'repo-config.spec.ts', 'sandbox-linux.spec.ts', 'subagent.spec.ts']
 
 describe('live target', () => {
   it('no target without the repository setting', () => {

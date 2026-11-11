@@ -40,6 +40,7 @@ export function toolDeniedRecord(d: ToolDenial, at: string): LogRecord {
     session: d.key,
     tool: d.tool,
     reason: d.reason,
+    ...(d.agentId !== undefined ? { agentId: d.agentId } : {}),
   }
 }
 

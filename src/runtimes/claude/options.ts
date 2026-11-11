@@ -1,4 +1,4 @@
-/** Maps a SessionSpec to the SDK Options: a whitelisted environment, the builtin tool sets, the fixed permission posture (dontAsk, never bypass), the guard and read hooks, the sandbox and the limits. */
+/** Maps a SessionSpec to the SDK Options: a whitelisted environment, the builtin tool sets, the fixed permission posture (dontAsk, never bypass), the guard and read hooks, the worker-only Agent with the subagent guard, the sandbox and the limits. */
 import type { Options, HookCallback, HookCallbackMatcher, McpServerConfig, SandboxSettings, Settings, SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk'
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve, relative, isAbsolute, dirname, basename, join } from 'node:path'
@@ -19,6 +19,17 @@ export const CLAUDE_INHERITED_ENV = [...INHERITED_ENV, 'USER', 'LOGNAME', 'SHELL
 
 export const ALWAYS_DISALLOWED = ['AskUserQuestion', 'WebFetch', 'WebSearch'] as const
 
+export const AGENT_TOOL = 'Agent'
+/** Built-in subagent types measured on SDK 0.3.321 / CLI 2.1.321; update when the pinned CLI changes. */
+export const SUBAGENT_TYPES: readonly string[] = ['general-purpose', 'Explore', 'Plan'] as const
+export const HOST_TOOL_PREFIX = mcpToolName('')
+
+const AGENT_NOT_ALLOWED = 'Agent is not allowed in this session'
+const SUBAGENT_TYPE = `Only these subagent types are allowed: ${SUBAGENT_TYPES.join(', ')}`
+const SUBAGENT_ISOLATION = 'Subagent isolation is not allowed'
+const SUBAGENT_NESTED = 'A subagent cannot start another subagent'
+const SUBAGENT_HOST_TOOL = 'Host tools are only available to the main worker, not to subagents'
+
 /** Turns off the CLI's commit and PR attribution in every session through the flag settings layer; settingSources stays as it is (ADR-34). */
 export const ATTRIBUTION_OFF = { attribution: { commit: '', pr: '', sessionUrl: false }, includeCoAuthoredBy: false } as const satisfies Settings
 
@@ -37,7 +48,7 @@ export interface OptionsContext {
   /** security.trustRepoConfig: load the repository's project settings. Repository MCP config stays ignored (strictMcpConfig). */
   trustRepoConfig?: boolean
   /** Called once per guard denial with the tool name and the fixed reason (never the command). */
-  onDeny?: (tool: string, reason: string) => void
+  onDeny?: (tool: string, reason: string, agentId?: string) => void
   spawn?: (options: SpawnOptions) => SpawnedProcess
 }
 
@@ -126,8 +137,16 @@ function globLiteralPrefix(pattern: string): string {
   return parts.join('/')
 }
 
-export function guardDecision(spec: SessionSpec, toolName: string, input: unknown): string | undefined {
+export function guardDecision(spec: SessionSpec, toolName: string, input: unknown, agentId?: string): string | undefined {
   const args = (input ?? {}) as Record<string, unknown>
+  if (toolName === AGENT_TOOL) {
+    if (spec.role !== 'worker') return AGENT_NOT_ALLOWED
+    if (agentId !== undefined) return SUBAGENT_NESTED
+    if (args.isolation !== undefined) return SUBAGENT_ISOLATION
+    if (args.subagent_type !== undefined && !(typeof args.subagent_type === 'string' && SUBAGENT_TYPES.includes(args.subagent_type))) return SUBAGENT_TYPE
+    return undefined
+  }
+  if (agentId !== undefined && toolName.startsWith(HOST_TOOL_PREFIX)) return SUBAGENT_HOST_TOOL
   if (toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit') {
     const path = toolName === 'NotebookEdit' ? args.notebook_path : args.file_path
     if (typeof path !== 'string') return 'A file path is required'
@@ -156,16 +175,25 @@ export function guardDecision(spec: SessionSpec, toolName: string, input: unknow
   return undefined
 }
 
+export function foregroundInput(input: unknown): Record<string, unknown> {
+  return { ...(input ?? {}) as Record<string, unknown>, run_in_background: false }
+}
+
 export function sdkOptions(spec: SessionSpec, ctx: OptionsContext): Options {
   const tools = builtinTools(spec.builtins)
   const guard: HookCallback = async input => {
     if (input.hook_event_name !== 'PreToolUse') return {}
-    const reason = guardDecision(spec, input.tool_name, input.tool_input)
-    if (reason === undefined) return {}
-    try { ctx.onDeny?.(input.tool_name, reason) } catch {}
+    const agentId = typeof (input as { agent_id?: unknown }).agent_id === 'string' ? (input as { agent_id: string }).agent_id : undefined
+    const reason = guardDecision(spec, input.tool_name, input.tool_input, agentId)
+    if (reason === undefined) {
+      if (input.tool_name === AGENT_TOOL) return { hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: foregroundInput(input.tool_input) } }
+      return {}
+    }
+    try { agentId === undefined ? ctx.onDeny?.(input.tool_name, reason) : ctx.onDeny?.(input.tool_name, reason, agentId) } catch {}
     return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }
   }
-  const read: HookCallback = async () => {
+  const read: HookCallback = async input => {
+    if (typeof (input as { agent_id?: unknown }).agent_id === 'string') return {}
     ctx.onRead()
     return {}
   }
@@ -179,8 +207,8 @@ export function sdkOptions(spec: SessionSpec, ctx: OptionsContext): Options {
     permissionMode: 'dontAsk',
     abortController: ctx.abortController,
     systemPrompt: spec.role === 'worker' ? { type: 'preset', preset: 'claude_code', append: spec.instructions } : spec.instructions,
-    allowedTools: [...tools.allowed, ...spec.tools.map(t => mcpToolName(t.name))],
-    disallowedTools: tools.disallowed,
+    allowedTools: [...tools.allowed, ...(spec.role === 'worker' ? [AGENT_TOOL] : []), ...spec.tools.map(t => mcpToolName(t.name))],
+    disallowedTools: spec.role === 'worker' ? tools.disallowed : [...tools.disallowed, AGENT_TOOL],
     canUseTool: async toolName => ({ behavior: 'deny', message: `${toolName} is not allowed in this session` }),
     mcpServers: ctx.mcp ? { superagent: ctx.mcp } : {},
     strictMcpConfig: true,

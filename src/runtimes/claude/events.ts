@@ -13,6 +13,12 @@ export const RETRYABLE_API_ERRORS: ReadonlySet<string> = new Set(['rate_limit', 
 
 interface Group { uuid: string; ids: string[] }
 
+export function subagentMessage(msg: unknown): boolean {
+  if (typeof msg !== 'object' || msg === null) return false
+  const m = msg as Record<string, unknown>
+  return typeof m.agent_id === 'string' || (typeof m.parent_tool_use_id === 'string' && m.parent_tool_use_id !== '')
+}
+
 export class EventMapper {
   private sessionId: string
   private readonly fifo: Group[] = []
@@ -47,6 +53,7 @@ export class EventMapper {
 
   message(msg: SDKMessage): RuntimeEvent[] {
     const m = msg as Record<string, unknown>
+    if (subagentMessage(msg) && (m.type === 'assistant' || m.type === 'result')) return []
     switch (m.type) {
       case 'system':
         return this.system(m)

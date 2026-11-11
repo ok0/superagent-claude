@@ -10,7 +10,7 @@ import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import type { AgentRuntime, AgentSession, RuntimeEvent, RuntimeInput, RuntimeProbe, SessionSpec } from '../../executor/contract.ts'
 import { sdkOptions, type AuthMode, type OptionsContext } from './options.ts'
-import { EventMapper } from './events.ts'
+import { EventMapper, subagentMessage } from './events.ts'
 import { mcpServer } from './mcp.ts'
 import { ChildRegistry, reapChildren, trackedSpawn } from './children.ts'
 
@@ -24,7 +24,7 @@ export interface QueryHandle extends AsyncIterable<SDKMessage> {
 
 export type QueryFn = (params: { prompt: AsyncIterable<SDKUserMessage>; options: Options }) => QueryHandle
 
-export interface ToolDenial { key: string; tool: string; reason: string }
+export interface ToolDenial { key: string; tool: string; reason: string; agentId?: string }
 
 export interface ClaudeRuntimeOptions {
   mode: AuthMode
@@ -130,7 +130,7 @@ export class ClaudeSession implements AgentSession {
       abortController: this.abort,
       stderr: config.stderr,
       trustRepoConfig: config.trustRepoConfig,
-      onDeny: config.onDeny ? (tool, reason) => config.onDeny!({ key: spec.key, tool, reason }) : undefined,
+      onDeny: config.onDeny ? (tool, reason, agentId?: string) => config.onDeny!({ key: spec.key, tool, reason, ...(agentId !== undefined ? { agentId } : {}) }) : undefined,
       spawn: config.spawn,
     })
     this.q = queryFn({ prompt: this.stream, options })
@@ -207,7 +207,7 @@ export class ClaudeSession implements AgentSession {
       for await (const msg of this.q) {
         const events = this.mapper.message(msg)
         this.emitAll(events)
-        if (msg.type === 'result') {
+        if (msg.type === 'result' && !subagentMessage(msg)) {
           if (this.suppressed > 0) {
             this.suppressed -= 1
             continue
