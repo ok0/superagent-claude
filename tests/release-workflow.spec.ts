@@ -21,12 +21,11 @@ export const EXPECTED_NEEDS: Record<(typeof JOBS)[number], string[]> = {
   release: ['verify', 'npm', 'image'],
 };
 
-export const ALLOWED_TOKEN_NAMES = ['GITHUB_TOKEN', 'GH_TOKEN', 'NPM_TOKEN', 'NODE_AUTH_TOKEN'];
+export const ALLOWED_TOKEN_NAMES = ['GITHUB_TOKEN', 'GH_TOKEN'];
 
 export const MIN_NPM = [11, 5, 1] as const;
 
-const BOOTSTRAP_SECRET_LINE = "NPM_BOOTSTRAP: ${{ secrets.NPM_TOKEN != '' && 'true' || 'false' }}";
-const NODE_AUTH_SECRET_LINE = 'NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}';
+const OIDC_RUN = 'npm publish --provenance --tag "$DIST_TAG" --access public';
 const DOCKER_BUILD_LINE =
   'docker build --label org.opencontainers.image.source=https://github.com/ok0/superagent-claude --label "org.opencontainers.image.version=$VERSION"';
 const VERIFY_LITERALS = [
@@ -256,13 +255,21 @@ export function releaseWorkflowProblems(text: string): string[] {
     })();
     if (isLess) problems.push(`npm version pin below ${MIN_NPM.join('.')}: ${pin[0]}`);
   }
-  for (const name of ['publish (oidc)', 'publish (bootstrap token)', 'check published', 'verify dist-tag']) {
+  for (const name of ['publish (oidc)', 'check published', 'verify dist-tag']) {
     if (stepNamed(npm, name) === undefined) problems.push(`npm missing step: ${name}`);
+  }
+
+  const publishSteps = steps(npm).filter((step) => step.includes('npm publish') || /^\s*-?\s*name: publish\b/m.test(step));
+  if (publishSteps.length !== 1 || stepIndex(npm, 'publish (oidc)') === -1) {
+    problems.push('exactly one publish step, named publish (oidc), is allowed');
   }
 
   const oidc = stepNamed(npm, 'publish (oidc)') ?? '';
   const oidcIf = /^\s*if:\s*(.*)$/m.exec(oidc)?.[1] ?? '';
-  if (!oidcIf.includes("env.NPM_BOOTSTRAP == 'false'")) problems.push('oidc step must run only when NPM_BOOTSTRAP is false');
+  if (oidcIf.trim() !== "steps.published.outputs.exists == 'false'") {
+    problems.push('oidc step must run only when the version is not published');
+  }
+  if (!oidc.includes(OIDC_RUN)) problems.push('oidc step must publish with provenance');
   if (
     /[A-Z0-9_]*TOKEN[A-Z0-9_]*/.test(oidc) ||
     oidc.includes('secrets.') ||
@@ -273,20 +280,9 @@ export function releaseWorkflowProblems(text: string): string[] {
     problems.push('oidc step must not use tokens, secrets, .npmrc or env');
   }
 
-  const bootstrap = stepNamed(npm, 'publish (bootstrap token)') ?? '';
-  const bootstrapIf = /^\s*if:\s*(.*)$/m.exec(bootstrap)?.[1] ?? '';
-  if (
-    !bootstrapIf.includes("env.NPM_BOOTSTRAP == 'true'") ||
-    !bootstrap.includes(NODE_AUTH_SECRET_LINE) ||
-    !bootstrap.includes('NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/') ||
-    !bootstrap.includes('--provenance')
-  ) {
-    problems.push('bootstrap step must run only when NPM_BOOTSTRAP is true, use NODE_AUTH_TOKEN, a temporary npmrc and provenance');
-  }
-
   const dist = stepNamed(npm, 'verify dist-tag') ?? '';
   const distIndex = stepIndex(npm, 'verify dist-tag');
-  const publishIndexes = [stepIndex(npm, 'publish (oidc)'), stepIndex(npm, 'publish (bootstrap token)')];
+  const publishIndexes = [stepIndex(npm, 'publish (oidc)')];
   if (
     /^\s*if:/m.test(dist) ||
     publishIndexes.some((index) => index === -1 || index >= distIndex) ||
@@ -300,19 +296,10 @@ export function releaseWorkflowProblems(text: string): string[] {
   if (!published.includes('npm view "superagent-claude@$VERSION" version')) {
     problems.push('publish skip check missing');
   }
-  if (!jobHead(npm).includes(BOOTSTRAP_SECRET_LINE)) problems.push('NPM_BOOTSTRAP expression missing');
-
-  const bootstrapStepText = bootstrap;
   const secretLines = text.split('\n').filter((line) => SECRETS_CONTEXT.test(line));
-  for (const line of secretLines) {
-    const trimmed = line.trim();
-    const allowedBootstrap = trimmed === BOOTSTRAP_SECRET_LINE && jobHead(npm).includes(line);
-    const allowedNodeAuth = trimmed === NODE_AUTH_SECRET_LINE && bootstrapStepText.includes(line);
-    if (!allowedBootstrap && !allowedNodeAuth) problems.push(`secrets reference not allowed: ${trimmed}`);
-  }
-  if (secretLines.length !== 2) problems.push(`expected 2 secrets references, found ${secretLines.length}`);
-  if (count(text, 'NODE_AUTH_TOKEN') !== count(bootstrapStepText, 'NODE_AUTH_TOKEN')) {
-    problems.push('NODE_AUTH_TOKEN outside bootstrap step');
+  for (const line of secretLines) problems.push(`secrets reference not allowed: ${line.trim()}`);
+  for (const word of ['bootstrap', 'NPM_TOKEN', '.npmrc', 'NPM_CONFIG_USERCONFIG', 'NODE_AUTH_TOKEN']) {
+    if (text.toLowerCase().includes(word.toLowerCase())) problems.push(`forbidden in release workflow: ${word}`);
   }
   for (const match of text.matchAll(/\b[A-Z0-9_]*TOKEN[A-Z0-9_]*\b/g)) {
     if (!ALLOWED_TOKEN_NAMES.includes(match[0])) problems.push(`token name not allowed: ${match[0]}`);
@@ -412,10 +399,22 @@ const MUTATIONS: Array<{ name: string; mutate: (text: string) => string }> = [
       return t.slice(0, start) + t.slice(end);
     },
   },
+  { name: 'secrets in npm', mutate: (t) => replaceFirst(t, '      DIST_TAG: ${{ needs.verify.outputs.dist_tag }}\n', '      DIST_TAG: ${{ needs.verify.outputs.dist_tag }}\n      X: ${{ secrets.X }}\n') },
+  { name: 'oidc without provenance', mutate: (t) => replaceFirst(t, 'npm publish --provenance', 'npm publish') },
   {
-    name: 'publish steps not exclusive',
-    mutate: (t) => replaceFirst(t, "env.NPM_BOOTSTRAP == 'true'", "env.NPM_BOOTSTRAP == 'false'"),
+    name: 'oidc runs even when published',
+    mutate: (t) => replaceFirst(t, "        if: steps.published.outputs.exists == 'false'\n        run: npm publish", '        run: npm publish'),
   },
+  {
+    name: 'bootstrap step re-added',
+    mutate: (t) =>
+      replaceFirst(
+        t,
+        '      - name: verify dist-tag\n',
+        "      - name: publish (bootstrap token)\n        if: steps.published.outputs.exists == 'false'\n        run: npm publish --tag \"$DIST_TAG\" --access public\n      - name: verify dist-tag\n",
+      ),
+  },
+  { name: 'npmrc in npm job', mutate: (t) => replaceFirst(t, '        run: pnpm build\n', '        run: pnpm build && touch .npmrc\n') },
   { name: 'release without --verify-tag', mutate: (t) => replaceAllOf(t, ' --verify-tag', '') },
   { name: 'npm too old', mutate: (t) => replaceFirst(t, 'npm@11.6.2', 'npm@11.4.0') },
   { name: 'checkout keeps credentials', mutate: (t) => replaceFirst(t, 'persist-credentials: false', 'persist-credentials: true') },
@@ -424,6 +423,15 @@ const MUTATIONS: Array<{ name: string; mutate: (text: string) => string }> = [
 describe('release workflow', () => {
   it('the real workflow has no problems', () => {
     expect(releaseWorkflowProblems(real)).toEqual([]);
+  });
+
+  it('the npm job has one OIDC publish step and no secrets', () => {
+    const npm = jobText(real, 'npm') ?? '';
+    expect(real).not.toMatch(/(?<![A-Za-z0-9_-])secrets\./);
+    expect(steps(npm).filter((s) => s.includes('npm publish'))).toHaveLength(1);
+    expect(stepNamed(npm, 'publish (oidc)')).toContain('--provenance');
+    expect(stepNamed(npm, 'publish (bootstrap token)')).toBeUndefined();
+    expect(real).not.toMatch(/bootstrap|NPM_TOKEN|\.npmrc/i);
   });
 
   it('publishing jobs cannot run before verify, and verify publishes nothing', () => {

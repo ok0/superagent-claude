@@ -79,7 +79,6 @@ jobs:
     env:
       VERSION: ${{ needs.verify.outputs.version }}
       DIST_TAG: ${{ needs.verify.outputs.dist_tag }}
-      NPM_BOOTSTRAP: ${{ secrets.NPM_TOKEN != '' && 'true' || 'false' }}
     steps:
       - name: checkout
         uses: actions/checkout@v5
@@ -109,18 +108,8 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
       - name: publish (oidc)
-        if: env.NPM_BOOTSTRAP == 'false' && steps.published.outputs.exists == 'false'
-        run: npm publish --tag "$DIST_TAG" --access public
-      - name: publish (bootstrap token)
-        if: env.NPM_BOOTSTRAP == 'true' && steps.published.outputs.exists == 'false'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          export NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/bootstrap.npmrc"
-          # shellcheck disable=SC2016
-          printf '%s\n' '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}' > "$NPM_CONFIG_USERCONFIG"
-          npm publish --provenance --tag "$DIST_TAG" --access public
-          rm -f "$NPM_CONFIG_USERCONFIG"
+        if: steps.published.outputs.exists == 'false'
+        run: npm publish --provenance --tag "$DIST_TAG" --access public
       - name: verify dist-tag
         run: |
           actual=""
