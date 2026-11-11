@@ -108,6 +108,15 @@ export function underProc(path: string): boolean {
   return isProcPath(join(resolved, ...rest))
 }
 
+function canonical(path: string): string {
+  let existing = path
+  const rest: string[] = []
+  while (!existsSync(existing) && dirname(existing) !== existing) { rest.unshift(basename(existing)); existing = dirname(existing) }
+  let real = existing
+  try { real = realpathSync(existing) } catch {}
+  return join(real, ...rest)
+}
+
 function globLiteralPrefix(pattern: string): string {
   const parts: string[] = []
   for (const segment of pattern.split('/')) {
@@ -122,8 +131,8 @@ export function guardDecision(spec: SessionSpec, toolName: string, input: unknow
   if (toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit') {
     const path = toolName === 'NotebookEdit' ? args.notebook_path : args.file_path
     if (typeof path !== 'string') return 'A file path is required'
-    const cwd = resolve(spec.cwd)
-    const rel = relative(cwd, resolve(cwd, path))
+    const cwd = canonical(resolve(spec.cwd))
+    const rel = relative(cwd, canonical(resolve(resolve(spec.cwd), path)))
     if (rel === '..' || rel.startsWith('../') || isAbsolute(rel)) return OUTSIDE_CWD
     return undefined
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -184,6 +184,29 @@ describe('fixed safety defaults', () => {
     expect('filesystem' in def).toBe(false)
     const off = sdkOptions(spec(), ctx('api-key', { sandbox: false, weakerNestedSandbox: true }))
     expect(off.sandbox).toBeUndefined()
+  })
+
+  it('the write guard compares canonical paths for a symlinked cwd and denies symlinks that escape', () => {
+    const base = mkdtempSync(join(tmpdir(), 'guard-canon-'))
+    try {
+      const realdir = join(base, 'real')
+      mkdirSync(realdir)
+      const linkParent = join(base, 'parent')
+      mkdirSync(linkParent)
+      const link = join(linkParent, 'link')
+      symlinkSync(realdir, link)
+      const outside = join(base, 'outside')
+      mkdirSync(outside)
+      const s = spec({ cwd: link })
+      expect(guardDecision(s, 'Edit', { file_path: join(link, 'a.ts') })).toBeUndefined()
+      expect(guardDecision(s, 'Edit', { file_path: join(realdir, 'a.ts') })).toBeUndefined()
+      expect(guardDecision(s, 'Edit', { file_path: join(realdir, '..', 'x') })).toBeDefined()
+      expect(guardDecision(s, 'Write', { file_path: '/tmp/x' })).toBeDefined()
+      symlinkSync(outside, join(realdir, 'escape'))
+      expect(guardDecision(s, 'Write', { file_path: join(realdir, 'escape', 'a.ts') })).toBeDefined()
+    } finally {
+      rmSync(base, { recursive: true, force: true })
+    }
   })
 
   it('the guard denies the file tools under /proc', () => {
