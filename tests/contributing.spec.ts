@@ -34,6 +34,14 @@ export const REQUIRED_CONTRIBUTING = [
   'pnpm check:all',
   'docker build -t superagent-claude:local .',
   '](CODE_OF_CONDUCT.md)',
+  '## Run live tests against your own playground',
+  '`SUPERAGENT_CLAUDE_LIVE_REPO`',
+  '`SUPERAGENT_CLAUDE_LIVE_OWNER_LOGIN`',
+  '`SUPERAGENT_CLAUDE_LIVE_AGENT_LOGIN`',
+  '`SUPERAGENT_CLAUDE_LIVE_REPORT_REPO`',
+  'your-name/your-playground',
+  '`pnpm live:seed`',
+  '`pnpm live:cleanup`',
 ] as const
 
 export const REQUIRED_CONDUCT = [
@@ -129,6 +137,17 @@ describe('contributing docs', () => {
 
   it('README links CONTRIBUTING', () => {
     expect(read('README.md')).toContain('](CONTRIBUTING.md)')
+  })
+
+  it('README test repositories section names no repository', () => {
+    const readme = read('README.md')
+    const start = readme.indexOf('## Test repositories')
+    const end = readme.indexOf('\n## ', start + 1)
+    const section = readme.slice(start, end === -1 ? undefined : end)
+    expect(section).not.toMatch(/superagent-claude-playground/)
+    expect(section).not.toMatch(/\bok0\b/)
+    expect(section).toContain('SUPERAGENT_CLAUDE_LIVE_REPO')
+    expect(section).toContain('](CONTRIBUTING.md#run-live-tests-against-your-own-playground)')
   })
 
   it.each(PUBLIC_FILES)('%s passes the public wording rules', (path) => {

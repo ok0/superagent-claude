@@ -21,6 +21,28 @@ pnpm build
 
 CI never runs the live tests.
 
+## Run live tests against your own playground
+
+The live tests write only to the repository you name. Without that setting, every live test that needs GitHub is skipped, and `pnpm live:seed` and `pnpm live:cleanup` exit without calling GitHub.
+
+1. Create an empty private repository, for example `your-name/your-playground`.
+2. Add the agent account as a collaborator with write access.
+3. Log in the local `gh` CLI as the owner with the `workflow` scope. The seed adds the CI workflow through it.
+4. Set the variables below.
+5. Run `pnpm live:seed`, then `pnpm test:live`, then `pnpm live:cleanup`. `pnpm live:cleanup --apply` closes what it lists.
+
+| Variable | Required | Value |
+| --- | --- | --- |
+| `SUPERAGENT_CLAUDE_LIVE` | yes | `1` |
+| `SUPERAGENT_CLAUDE_LIVE_REPO` | yes | `your-name/your-playground`, the only repository written to |
+| `SUPERAGENT_CLAUDE_LIVE_OWNER_LOGIN` | yes | the owner login, for example `your-name` |
+| `SUPERAGENT_CLAUDE_LIVE_AGENT_LOGIN` | yes | the agent login, for example `your-agent` |
+| `SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN` | yes | a token of the owner login |
+| `SUPERAGENT_CLAUDE_GITHUB_TOKEN` | yes | a token of the agent login |
+| `CLAUDE_CODE_OAUTH_TOKEN` | yes | model auth |
+| `SUPERAGENT_CLAUDE_LIVE_REPORT_REPO` | no | a second repository that cleanup only reads and reports on |
+| `SUPERAGENT_CLAUDE_LIVE_SCENARIOS` | no | extra code-change scenarios, comma separated |
+
 ## Checks
 
 `pnpm check:all` runs every check CI runs: typecheck, the offline tests, the build, `check:branding` and `check:commits`. It stops at the first failure and exits non-zero. It does not build the container image.

@@ -11,9 +11,12 @@ Take as little human attention as possible, and give as much value as possible. 
 ```sh
 pnpm install && pnpm build
 export SUPERAGENT_CLAUDE_GITHUB_TOKEN=<agent account token>
-export ANTHROPIC_API_KEY=<API key>
+export ANTHROPIC_API_KEY=<API key>                     # either: API key
+export CLAUDE_CODE_OAUTH_TOKEN=<token>                 # or: Claude subscription (token from `claude setup-token`)
 node lib/cli.js start --config superagent-claude.json
 ```
+
+`auth.mode` picks which one (`api-key` or `subscription`); Bedrock and Vertex also work. See [docs/authentication.md](docs/authentication.md) for both modes and the subscription terms warning.
 
 The config needs `repositories`, `policy.allowed` and `auth.mode`. See [docs/getting-started.md](docs/getting-started.md).
 
@@ -29,7 +32,7 @@ The config needs `repositories`, `policy.allowed` and `auth.mode`. See [docs/get
 
 ## Test repositories
 
-Live tests touch only this repository and the private ok0/superagent-claude-playground repository. The playground is seeded with `pnpm live:seed` (`pnpm live:seed --upgrade` replaces an older seed in one commit) and cleaned with `pnpm live:cleanup`.
+Live tests write only to the repository named by `SUPERAGENT_CLAUDE_LIVE_REPO` and may read the optional `SUPERAGENT_CLAUDE_LIVE_REPORT_REPO`. Without these settings the live tests that need GitHub are skipped. Seed the playground with `pnpm live:seed` (`pnpm live:seed --upgrade` replaces an older seed in one commit) and clean it with `pnpm live:cleanup`. See [Run live tests against your own playground](CONTRIBUTING.md#run-live-tests-against-your-own-playground).
 
 ## License
 
