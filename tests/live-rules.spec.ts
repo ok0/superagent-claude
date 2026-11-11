@@ -417,6 +417,9 @@ describe('seed', () => {
       fixture.replace('node-version: 24', 'node-version: 22'),
     )
     for (const mutated of mutations) expect(seedWorkflowProblems(mutated).length).toBeGreaterThan(0)
+    const secretProblems = (text: string) => seedWorkflowProblems(text).filter(p => p.includes('secrets'))
+    expect(secretProblems(fixture.replace('      - run: npm test', '      - run: npm test\n      - run: bash scripts/check-image-secrets.sh x'))).toEqual([])
+    expect(secretProblems(fixture.replace('      - run: npm test', '      - run: npm test\n      - run: echo ${{ secrets.X }}'))).toHaveLength(1)
   })
 })
 

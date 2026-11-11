@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const SECRETS_CONTEXT = /\$\{\{(?:(?!\}\})[^\n])*?(?<![\w.-])secrets\b/;
 const read = (path: string): string => readFileSync(`${ROOT}${path}`, 'utf8');
 
 const JOB_NAMES = ['check', 'image'] as const;
@@ -84,7 +85,8 @@ export function workflowProblems(text: string): string[] {
     }
   }
 
-  const forbidden = ['secrets.', 'test:live', 'SUPERAGENT_CLAUDE_LIVE', 'docker push', 'push: true', 'docker login'];
+  if (SECRETS_CONTEXT.test(text)) problems.push('forbidden: ${{ secrets }} reference');
+  const forbidden = ['test:live', 'SUPERAGENT_CLAUDE_LIVE', 'docker push', 'push: true', 'docker login'];
   for (const word of forbidden) {
     if (text.includes(word)) problems.push(`forbidden: ${word}`);
   }
@@ -105,6 +107,13 @@ describe('ci workflow', () => {
 
   it('the real workflow has no problems', () => {
     expect(workflowProblems(real)).toEqual([]);
+  });
+
+  it('flags only ${{ secrets }} references, not file names', () => {
+    const script = real + '      - run: bash scripts/check-image-secrets.sh superagent-claude:ci\n';
+    expect(workflowProblems(script).filter((p) => p.includes('secrets'))).toEqual([]);
+    const secret = real + '      - run: echo ${{ secrets.X }}\n';
+    expect(workflowProblems(secret).filter((p) => p.includes('secrets'))).toHaveLength(1);
   });
 
   it.each<[string, (text: string) => string]>([

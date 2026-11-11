@@ -206,6 +206,8 @@ export function seedPlan(expected: readonly SeedFile[], remote: ReadonlyMap<stri
   return { kind: 'diff', problems: missing.map(path => path + ': missing while other seed files exist') }
 }
 
+const SECRETS_CONTEXT = /\$\{\{(?:(?!\}\})[^\n])*?(?<![\w.-])secrets\b/
+
 export function seedWorkflowProblems(text: string): string[] {
   const problems: string[] = []
   const lines = text.split('\n')
@@ -239,7 +241,7 @@ export function seedWorkflowProblems(text: string): string[] {
   for (const match of text.matchAll(/uses:\s*(\S+)/g)) {
     if (!/^actions\/[A-Za-z0-9_.-]+@v\d+$/.test(match[1] ?? '')) problems.push('uses must be a pinned official action: ' + (match[1] ?? ''))
   }
-  if (text.includes('secrets.')) problems.push('secrets. is not allowed')
+  if (SECRETS_CONTEXT.test(text)) problems.push('${{ secrets }} references are not allowed')
   if (!text.includes('npm test')) problems.push('npm test is required')
   if (!/^\s+node-version:\s*24\s*$/m.test(text)) problems.push('node-version must be 24')
   const runs = [...text.matchAll(/^\s+- run: (.+)$/gm)].map(match => match[1] ?? '')

@@ -49,7 +49,7 @@ const VERIFY_OUTPUTS = [
   'prerelease: ${{ steps.meta.outputs.prerelease }}',
   'version: ${{ steps.meta.outputs.version }}',
 ];
-const SECRETS_CONTEXT = /(?<![A-Za-z0-9_-])secrets\./;
+export const SECRETS_CONTEXT = /\$\{\{(?:(?!\}\})[^\n])*?(?<![\w.-])secrets\b/;
 const PUBLISH_WORDS:Array<[string, (typeof JOBS)[number]]> = [
   ['npm publish', 'npm'],
   ['docker push', 'image'],
@@ -272,7 +272,7 @@ export function releaseWorkflowProblems(text: string): string[] {
   if (!oidc.includes(OIDC_RUN)) problems.push('oidc step must publish with provenance');
   if (
     /[A-Z0-9_]*TOKEN[A-Z0-9_]*/.test(oidc) ||
-    oidc.includes('secrets.') ||
+    SECRETS_CONTEXT.test(oidc) ||
     oidc.includes('.npmrc') ||
     oidc.includes('NPM_CONFIG_USERCONFIG') ||
     oidc.includes('env:')
@@ -427,11 +427,25 @@ describe('release workflow', () => {
 
   it('the npm job has one OIDC publish step and no secrets', () => {
     const npm = jobText(real, 'npm') ?? '';
-    expect(real).not.toMatch(/(?<![A-Za-z0-9_-])secrets\./);
+    expect(real).not.toMatch(SECRETS_CONTEXT);
     expect(steps(npm).filter((s) => s.includes('npm publish'))).toHaveLength(1);
     expect(stepNamed(npm, 'publish (oidc)')).toContain('--provenance');
     expect(stepNamed(npm, 'publish (bootstrap token)')).toBeUndefined();
     expect(real).not.toMatch(/bootstrap|NPM_TOKEN|\.npmrc/i);
+  });
+
+  it('secret checks match only the ${{ secrets }} context', () => {
+    expect(SECRETS_CONTEXT.test('run: bash scripts/check-image-secrets.sh superagent-claude:release')).toBe(false);
+    for (const ref of ['${{ secrets.X }}', '${{secrets.X}}', '${{ toJSON(secrets) }}', "${{ secrets['X'] }}"]) {
+      expect(SECRETS_CONTEXT.test(ref)).toBe(true);
+    }
+    const script = replaceFirst(real, OIDC_RUN, `${OIDC_RUN} && bash scripts/check-image-secrets.sh superagent-claude:release`);
+    expect(script).not.toBe(real);
+    expect(releaseWorkflowProblems(script)).toEqual([]);
+    const secret = replaceFirst(real, OIDC_RUN, `${OIDC_RUN} && echo \${{ secrets.X }}`);
+    const problems = releaseWorkflowProblems(secret);
+    expect(problems.filter((p) => p.startsWith('oidc step must not use'))).toHaveLength(1);
+    expect(problems.filter((p) => p.startsWith('secrets reference not allowed'))).toHaveLength(1);
   });
 
   it('publishing jobs cannot run before verify, and verify publishes nothing', () => {
