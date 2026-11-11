@@ -6,6 +6,8 @@ This repository is the test playground for superagent-claude. It is not a real p
 
 The `api` workspace is a small HTTP task API. Its source is split into the `src/config`, `src/auth`, `src/store`, `src/services`, `src/http` and `src/log` layers.
 
+The `web` workspace is a React + Vite UI for the task list, status filter and new-task form (`npm run dev --workspace web` proxies `/api` to the API on port 3000; set `VITE_API_TOKEN` to a token from `API_TOKENS`).
+
 ## Commands
 
 - `npm ci`

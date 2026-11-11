@@ -342,7 +342,7 @@ describe('fixtures', () => {
     const root = readJson(join(SEED, 'package.json'))
     const rootScripts = root.scripts as Record<string, string>
     expect(root.private).toBe(true)
-    expect(root.workspaces).toEqual(['api'])
+    expect(root.workspaces).toEqual(['api', 'web'])
     expect((root.engines as Record<string, string>).node).toBe('^24.15.0')
     expect(rootScripts.typecheck).toBe('npm run typecheck --workspaces --if-present')
     expect(rootScripts.test).toBe('npm test --workspaces --if-present')
@@ -359,13 +359,12 @@ describe('fixtures', () => {
     const lock = readJson(join(SEED, 'package-lock.json'))
     expect(lock.lockfileVersion).toBe(3)
     const packages = lock.packages as Record<string, { workspaces?: string[]; version?: string; optional?: boolean }>
-    expect(packages['']?.workspaces).toEqual(['api'])
+    expect(packages['']?.workspaces).toEqual(['api', 'web'])
     expect(packages['node_modules/typescript']?.version).toBe('6.0.3')
     expect(packages['node_modules/@types/node']?.version).toBe('22.20.5')
-    expect(Object.values(packages).some(entry => entry.optional === true)).toBe(false)
 
-    expect(loadSeed(false).length).toBeGreaterThanOrEqual(38)
-    expect(loadSeed(false).length).toBeLessThanOrEqual(46)
+    expect(loadSeed(false).length).toBeGreaterThanOrEqual(60)
+    expect(loadSeed(false).length).toBeLessThanOrEqual(72)
     expect(apiFiles('src', '.ts').length).toBeGreaterThanOrEqual(22)
     expect(apiFiles('src', '.ts').length).toBeLessThanOrEqual(28)
     expect(apiFiles('test', '.ts').length).toBeGreaterThanOrEqual(10)

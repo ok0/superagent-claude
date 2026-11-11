@@ -79,9 +79,9 @@ async function reportCi(o: SeedOptions, sha: string): Promise<{ verdict: 'succes
   }
 }
 
-const gitMessage = 'feat: add a task tracker api workspace'
+const gitMessage = 'feat: add a task tracker with api and web workspaces'
 const workflowMessage = 'ci: add test workflow'
-const UPGRADE_MESSAGE = 'feat: replace the seed with a task tracker api workspace'
+const UPGRADE_MESSAGE = 'feat: update the task tracker seed with api and web workspaces'
 const WORKFLOW_UPDATE_MESSAGE = 'ci: install, typecheck and test every workspace'
 
 interface UpgradeContext {
