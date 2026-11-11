@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'vitest'
 import { run } from '../src/cli/main.ts'
 
-const pkg = JSON.parse(readFileSync(join(fileURLToPath(new URL('..', import.meta.url)), 'package.json'), 'utf8')) as { version: string }
+const pkg = JSON.parse(readFileSync(join(fileURLToPath(new URL('..', import.meta.url)), 'package.json'), 'utf8')) as {
+  version: string
+}
 
 function collect() {
   const out: string[] = []

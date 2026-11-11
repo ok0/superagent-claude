@@ -16,8 +16,12 @@ import { AGENT, fakeGh, issue } from './fixtures/fake-gh.ts'
 const A = 'acme/widgets'
 const B = 'acme/gadgets'
 const issueUrl = (repository: string, number: number): string => `https://github.com/${repository}/issues/${number}`
-const message = (id: string, repository: string, number: number, text: string, url?: string): OutboundMessage =>
-  ({ id, channel: githubChannel(repository, number, url), text, kind: 'reply' })
+const message = (id: string, repository: string, number: number, text: string, url?: string): OutboundMessage => ({
+  id,
+  channel: githubChannel(repository, number, url),
+  text,
+  kind: 'reply',
+})
 const repositories = (): Parameters<typeof fakeGh>[0] => ({
   repositories: { 'acme/widgets': { issues: { 5: issue(A, 5) } }, 'acme/gadgets': { issues: { 5: issue(B, 5) } } },
 })
@@ -64,8 +68,13 @@ it('posts once through the Outbox for the same message id', async () => {
     const clock = Date.parse('2026-09-09T00:00:00Z')
     const effects = new Effects(store, new HealthBoard(), () => clock)
     const outbox = new Outbox({
-      store, effects,
-      channels: { enabled: source => registry.enabled(source), allowed: channel => registry.channelAllowed(channel), send: outbound => registry.send(outbound) },
+      store,
+      effects,
+      channels: {
+        enabled: source => registry.enabled(source),
+        allowed: channel => registry.channelAllowed(channel),
+        send: outbound => registry.send(outbound),
+      },
       paused: () => false,
     })
     effects.start()
@@ -89,10 +98,16 @@ it('returns gone for a deleted target', async () => {
 
 it('replies in a review thread', async () => {
   const url = 'https://github.com/acme/widgets/pull/9#discussion_r12'
-  const gh = fakeGh({ repositories: { 'acme/widgets': { reviewComments: { 9: [
-    { id: 12, body: 'x', user: { login: 'carol', type: 'User' }, html_url: url },
-  ] } } } })
+  const gh = fakeGh({
+    repositories: {
+      'acme/widgets': {
+        reviewComments: { 9: [{ id: 12, body: 'x', user: { login: 'carol', type: 'User' }, html_url: url }] },
+      },
+    },
+  })
   const adapter = githubChannelAdapter({ commands: gh.commands, repositories: [A, B], login: () => AGENT })
   expect(await adapter.send(message('m12', A, 9, 'reply', url))).toBe('sent')
-  expect(gh.posted).toEqual([{ repository: A, path: 'pulls/9/comments/12/replies', body: 'reply\n\n<!-- superagent-claude:m12 -->' }])
+  expect(gh.posted).toEqual([
+    { repository: A, path: 'pulls/9/comments/12/replies', body: 'reply\n\n<!-- superagent-claude:m12 -->' },
+  ])
 })

@@ -34,14 +34,18 @@ describe('github delivery', () => {
 
     const resolved = await pulls.replyReviewThread(A, 3, 71, 'Done.', true)
     expect(resolved.resolved).toBe(true)
-    expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls/3/comments/70/replies')).toHaveLength(1)
+    expect(
+      gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls/3/comments/70/replies'),
+    ).toHaveLength(1)
     expect(gh.graphql.filter(g => g.query.includes('resolveReviewThread'))).toHaveLength(1)
     expect(repo.resolved?.has(70)).toBe(true)
 
     const graphqlBefore = gh.graphql.length
     const noted = await pulls.replyReviewThread(A, 3, 70, 'Noted.', false)
     expect(noted.resolved).toBe(false)
-    expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls/3/comments/70/replies')).toHaveLength(2)
+    expect(
+      gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls/3/comments/70/replies'),
+    ).toHaveLength(2)
     expect(gh.graphql.length).toBe(graphqlBefore)
 
     await expect(pulls.replyReviewThread(A, 3, 80, 'x', false)).rejects.toThrow(/not a review comment on PR #3/)
@@ -53,7 +57,12 @@ describe('github delivery', () => {
     expect(await pulls.pushPermission(A)).toBe(false)
     expect(await pulls.pushPermission('acme/tools')).toBe(true)
     const denied = fakeGh({ repositories: { [A]: { access: { status: 404 } } } })
-    const error = await githubPullRequests(denied.commands).pushPermission(A).then(() => undefined, (e: unknown) => e)
+    const error = await githubPullRequests(denied.commands)
+      .pushPermission(A)
+      .then(
+        () => undefined,
+        (e: unknown) => e,
+      )
     expect(error).toBeInstanceOf(CliError)
     expect((error as CliError).code).toBe(404)
   })
@@ -75,8 +84,17 @@ describe('github delivery', () => {
     const gh = fakeGh({ repositories: { [A]: repo } })
     const pulls = githubPullRequests(gh.commands)
     expect(await pulls.close(A, 4, 'Superseded.')).toEqual({ closed: true })
-    expect(gh.requests.some(r => r.method === 'POST' && r.path === 'repos/acme/widgets/issues/4/comments' && r.fields.body === 'Superseded.')).toBe(true)
-    expect(gh.requests.some(r => r.method === 'PATCH' && r.path === 'repos/acme/widgets/pulls/4' && r.fields.state === 'closed')).toBe(true)
+    expect(
+      gh.requests.some(
+        r =>
+          r.method === 'POST' && r.path === 'repos/acme/widgets/issues/4/comments' && r.fields.body === 'Superseded.',
+      ),
+    ).toBe(true)
+    expect(
+      gh.requests.some(
+        r => r.method === 'PATCH' && r.path === 'repos/acme/widgets/pulls/4' && r.fields.state === 'closed',
+      ),
+    ).toBe(true)
     expect(gh.requests.filter(r => r.path.includes('merge'))).toHaveLength(0)
   })
 })

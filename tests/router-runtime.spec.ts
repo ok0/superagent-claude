@@ -6,8 +6,16 @@ import { waitUntil } from './fixtures/async.ts'
 
 const ACCEPT = {
   decision: 'accept',
-  rule_assessments: [{ rule_id: 'copy', matched: true, reason: 'A typo' }, { rule_id: 'visual', matched: false, reason: 'No styling' }],
-  direction: { implementation_requested: true, target_basis: 'specified', requires_design_decision: false, evidence: 'Fix the typo' },
+  rule_assessments: [
+    { rule_id: 'copy', matched: true, reason: 'A typo' },
+    { rule_id: 'visual', matched: false, reason: 'No styling' },
+  ],
+  direction: {
+    implementation_requested: true,
+    target_basis: 'specified',
+    requires_design_decision: false,
+    evidence: 'Fix the typo',
+  },
   title: 'Fix the typo',
   worktree_name: 'fix-typo',
   scope: 'The typo',
@@ -24,28 +32,34 @@ afterEach(async () => {
 })
 
 describe('Router session at runtime level', () => {
-  it('relays an inferred candidate, and the Router\'s accept opens one ticket and its worker', async () => {
+  it("relays an inferred candidate, and the Router's accept opens one ticket and its worker", async () => {
     host = await startRuntime()
     host.receive(message('1'))
     await host.idle()
     expect(host.candidates()).toEqual(['1'])
     expect(host.relays().find(relay => relay.kind === 'candidate')).toMatchObject({ strength: 'inferred' })
     await expect(host.routerTool('orchestrator_eval', { trigger_id: '1' })).resolves.toBeDefined()
-    await expect(host.routerTool('orchestrator_eval_decide', { trigger_id: '1', ...ACCEPT })).resolves.toMatchObject({ decision: 'accept' })
+    await expect(host.routerTool('orchestrator_eval_decide', { trigger_id: '1', ...ACCEPT })).resolves.toMatchObject({
+      decision: 'accept',
+    })
     await host.pump()
     expect(host.runtime.store.tickets.open()).toHaveLength(1)
     const ticketId = host.runtime.store.tickets.open()[0]!.id
     await waitUntil(() => host!.workerSession(ticketId) !== undefined)
     expect(host.receive(message('1'))).toBe('duplicate')
-    await expect(host.routerTool('orchestrator_eval_decide', { trigger_id: '1', ...ACCEPT })).rejects.toThrow(/No assessment is in progress/)
+    await expect(host.routerTool('orchestrator_eval_decide', { trigger_id: '1', ...ACCEPT })).rejects.toThrow(
+      /No assessment is in progress/,
+    )
     expect(host.runtime.store.tickets.open()).toHaveLength(1)
   })
 
-  it('the host mode wins over the Router\'s accept', async () => {
+  it("the host mode wins over the Router's accept", async () => {
     host = await startRuntime({ acceptMode: 'observe' })
     host.receive(message('1'))
     await host.idle()
-    await expect(host.routerTool('orchestrator_eval_decide', { trigger_id: '1', ...ACCEPT })).resolves.toMatchObject({ decision: 'ignore' })
+    await expect(host.routerTool('orchestrator_eval_decide', { trigger_id: '1', ...ACCEPT })).resolves.toMatchObject({
+      decision: 'ignore',
+    })
     await host.pump()
     expect(host.runtime.store.tickets.open()).toHaveLength(0)
     host.receive(message('5', { actor: guest, threads: [{ source: 'chat', id: 't9' }] }))
@@ -79,10 +93,14 @@ describe('Router session at runtime level', () => {
       if (round === 1) expect(host.candidates().filter(id => id === '1')).toHaveLength(2)
     }
     expect(host.runtime.store.threads.get(THREAD)?.evaluating).toBeUndefined()
-    expect(host.runtime.store.decisions.byThread(THREAD).some(decision => decision.kind === 'unavailable' && decision.triggerIds.includes('1'))).toBe(true)
+    expect(
+      host.runtime.store.decisions
+        .byThread(THREAD)
+        .some(decision => decision.kind === 'unavailable' && decision.triggerIds.includes('1')),
+    ).toBe(true)
   })
 
-  it('delivers a person\'s message on a ticket\'s thread to its worker without an Eval, and a hand-back starts one Eval once', async () => {
+  it("delivers a person's message on a ticket's thread to its worker without an Eval, and a hand-back starts one Eval once", async () => {
     host = await startRuntime()
     const { ticket } = await host.acceptedTicket(mention('1'))
     host.receive(message('2', { meta: { repository: 'owner/repo', parent: '1' } }))
@@ -90,18 +108,21 @@ describe('Router session at runtime level', () => {
     expect(host.candidates()).not.toContain('2')
     expect(host.workerInputs(ticket.id).filter(text => text.includes('"trigger_id":"2"'))).toHaveLength(1)
     expect(host.followups().filter(relay => relay.trigger_id === '2')).toHaveLength(1)
-    await expect(host.workerTool(ticket.id, 'orchestrator_trigger_handback', { trigger_id: '2', reason: 'Another request.' }))
-      .resolves.toMatchObject({ trigger_id: '2', queued: true })
+    await expect(
+      host.workerTool(ticket.id, 'orchestrator_trigger_handback', { trigger_id: '2', reason: 'Another request.' }),
+    ).resolves.toMatchObject({ trigger_id: '2', queued: true })
     await host.pump()
     const handed = host.relays().filter(relay => relay.kind === 'candidate' && relay.trigger_id === '2')
     expect(handed).toHaveLength(1)
     expect((handed[0]!.handed_back as { ticket_id: string }[])[0]!.ticket_id).toBe(ticket.id)
-    await expect(host.workerTool(ticket.id, 'orchestrator_trigger_handback', { trigger_id: '2', reason: 'Again.' })).rejects.toThrow(/handed that trigger back/)
+    await expect(
+      host.workerTool(ticket.id, 'orchestrator_trigger_handback', { trigger_id: '2', reason: 'Again.' }),
+    ).rejects.toThrow(/handed that trigger back/)
     await host.pump()
     expect(host.candidates().filter(id => id === '2')).toHaveLength(1)
   })
 
-  it('relays a worker\'s ready report to the Router instead of replying for it', async () => {
+  it("relays a worker's ready report to the Router instead of replying for it", async () => {
     host = await startRuntime()
     const { ticket } = await host.acceptedTicket(mention('1'))
     await host.workerTool(ticket.id, 'orchestrator_report', { state: 'ready', summary: 'Done' })

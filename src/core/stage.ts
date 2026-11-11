@@ -3,8 +3,11 @@
 import { latestAssignment, waitsForPerson, type Ticket } from './model.ts'
 
 /** High-level execution stage of a ticket: waiting on a person, actively working or queued, idle between turns, or ended. */
-export type TicketStage = { stage: 'person'; action: 'delivery' | 'answer' | 'review' | 'blocked' | 'failed' }
-  | { stage: 'working'; action?: 'queued' } | { stage: 'idle' } | { stage: 'ended' }
+export type TicketStage =
+  | { stage: 'person'; action: 'delivery' | 'answer' | 'review' | 'blocked' | 'failed' }
+  | { stage: 'working'; action?: 'queued' }
+  | { stage: 'idle' }
+  | { stage: 'ended' }
 
 /** Classifies a ticket's stage; the rules follow the table in docs/003 in order, where the first matching row wins. */
 export function ticketStage(ticket: Ticket): TicketStage {
@@ -15,7 +18,8 @@ export function ticketStage(ticket: Ticket): TicketStage {
   const report = assignment?.report?.state
   if (report === 'ready') return { stage: 'person', action: 'review' }
   // A human follow-up after a blocked or failed report returns the ticket to the executor.
-  if ((report === 'blocked' || report === 'failed') && waitsForPerson(ticket)) return { stage: 'person', action: report }
+  if ((report === 'blocked' || report === 'failed') && waitsForPerson(ticket))
+    return { stage: 'person', action: report }
   if (!assignment || assignment.state === 'pending') return { stage: 'working', action: 'queued' }
   if (report === 'waiting' || assignment.state === 'ended') return { stage: 'idle' }
   return { stage: 'working' }

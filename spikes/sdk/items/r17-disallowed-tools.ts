@@ -11,7 +11,7 @@ function toolsOf(init: Record<string, unknown> | undefined): string[] {
 }
 
 function toolUseNames(entries: TimelineEntry[]): string[] {
-  return entries.flatMap((e) => (e.toolUses ?? []).map((u) => u.name))
+  return entries.flatMap(e => (e.toolUses ?? []).map(u => u.name))
 }
 
 async function run(ctx: SpikeContext): Promise<ItemResult> {
@@ -73,15 +73,20 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
 
   const tools1 = toolsOf(s1.init)
   const toolsControl = toolsOf(s2.init)
-  const removedPresent = REMOVED.filter((name) => tools1.includes(name))
-  const usedRemoved = toolUseNames(s1.timeline).filter((name) => REMOVED.includes(name))
-  const controlOk = ['Bash', 'Write', 'WebFetch'].every((n) => toolsControl.includes(n))
+  const removedPresent = REMOVED.filter(name => tools1.includes(name))
+  const usedRemoved = toolUseNames(s1.timeline).filter(name => REMOVED.includes(name))
+  const controlOk = ['Bash', 'Write', 'WebFetch'].every(n => toolsControl.includes(n))
   const controlAskInInit = toolsControl.includes('AskUserQuestion')
   const controlAskReply = s3.results.at(-1)?.result?.resultText ?? ''
-  const controlAskToolUseIds = s3.timeline.flatMap((e) => (e.toolUses ?? []).filter((u) => u.name === 'ToolSearch').map((u) => u.id))
-  const controlAskToolResults = s3.timeline.flatMap((e) => (e.toolResults ?? []).filter((r) => controlAskToolUseIds.includes(r.toolUseId)))
+  const controlAskToolUseIds = s3.timeline.flatMap(e =>
+    (e.toolUses ?? []).filter(u => u.name === 'ToolSearch').map(u => u.id),
+  )
+  const controlAskToolResults = s3.timeline.flatMap(e =>
+    (e.toolResults ?? []).filter(r => controlAskToolUseIds.includes(r.toolUseId)),
+  )
   const controlAskMatch =
-    controlAskToolResults.some((r) => !r.content.includes('No matching deferred tools found')) || controlAskReply.includes('MATCHED')
+    controlAskToolResults.some(r => !r.content.includes('No matching deferred tools found')) ||
+    controlAskReply.includes('MATCHED')
 
   observations.push(
     `session1 tools=${tools1.length}`,

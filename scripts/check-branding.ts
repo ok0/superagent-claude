@@ -19,11 +19,7 @@ export const FORBIDDEN_PATTERN = /\bclaude[ \t]+code\b/i
 
 export const BRANDING_RULES = {
   excludedPathPrefixes: ['.ensemble/', '.r/', 'tests/fixtures/branding/'],
-  allowedPatterns: [
-    /CLAUDE_CODE_[A-Z0-9_]*/g,
-    /@anthropic-ai\/claude-[a-z0-9-]+/gi,
-    /claude-code/gi,
-  ],
+  allowedPatterns: [/CLAUDE_CODE_[A-Z0-9_]*/g, /@anthropic-ai\/claude-[a-z0-9-]+/gi, /claude-code/gi],
   allowLineMarker: 'branding:allow',
 } as const
 
@@ -31,7 +27,7 @@ export type Violation = { path: string; line: number; text: string }
 
 export function isExcluded(path: string): boolean {
   const normalized = path.replace(/\\/g, '/')
-  return BRANDING_RULES.excludedPathPrefixes.some((prefix) => normalized.startsWith(prefix))
+  return BRANDING_RULES.excludedPathPrefixes.some(prefix => normalized.startsWith(prefix))
 }
 
 export function checkText(path: string, content: string): Violation[] {
@@ -61,14 +57,14 @@ export function listRepositoryFiles(cwd: string): { root: string; files: string[
     stdio: 'pipe',
     encoding: 'utf8',
   })
-  const files = output.split('\0').filter((file) => file !== '' && !isExcluded(file))
+  const files = output.split('\0').filter(file => file !== '' && !isExcluded(file))
   return { root, files }
 }
 
 export function main(argv: readonly string[], cwd: string = process.cwd()): number {
   let items: { label: string; abs: string }[]
   if (argv.length > 0) {
-    items = argv.map((arg) => ({ label: arg, abs: resolve(cwd, arg) }))
+    items = argv.map(arg => ({ label: arg, abs: resolve(cwd, arg) }))
   } else {
     let listing: { root: string; files: string[] }
     try {
@@ -77,7 +73,7 @@ export function main(argv: readonly string[], cwd: string = process.cwd()): numb
       process.stderr.write(`not a git repository: ${cwd}\n`)
       return 2
     }
-    items = listing.files.map((file) => ({ label: file, abs: resolve(listing.root, file) }))
+    items = listing.files.map(file => ({ label: file, abs: resolve(listing.root, file) }))
   }
 
   let checked = 0

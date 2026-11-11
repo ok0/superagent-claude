@@ -12,13 +12,27 @@ let directory: string
 let store: Store
 let workers: WorkerStore
 const now = () => Date.parse('2026-09-23T00:00:00Z')
-const rec = { ticketId: 't1', assignmentId: 'a1', runtime: 'fake', sessionId: 's1', repository: 'owner/repo', cwd: '/work/t1', branch: 'agent/t1', turns: 0, costUsd: 0, promptVersion: 'p1' }
+const rec = {
+  ticketId: 't1',
+  assignmentId: 'a1',
+  runtime: 'fake',
+  sessionId: 's1',
+  repository: 'owner/repo',
+  cwd: '/work/t1',
+  branch: 'agent/t1',
+  turns: 0,
+  costUsd: 0,
+  promptVersion: 'p1',
+}
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'worker-store-'))
   store = new Store(join(directory, 'db.sqlite'))
   workers = new WorkerStore(store, now)
 })
-afterEach(() => { store.close(); rmSync(directory, { recursive: true, force: true }) })
+afterEach(() => {
+  store.close()
+  rmSync(directory, { recursive: true, force: true })
+})
 
 it('puts, gets and clears a worker record', () => {
   workers.put(rec)
@@ -66,7 +80,23 @@ it('setPromptVersion updates only the prompt version', () => {
 
 it('declares the worker table in schema version 1', () => {
   expect(SCHEMA_VERSION).toBe(1)
-  expect(store.db.prepare("SELECT name FROM pragma_table_info('worker')").all().map(row => row.name)).toEqual([
-    'ticket_id', 'assignment_id', 'runtime', 'session_id', 'repository', 'cwd', 'branch', 'push_remote', 'turns', 'cost_usd', 'prompt_version', 'updated_at',
+  expect(
+    store.db
+      .prepare("SELECT name FROM pragma_table_info('worker')")
+      .all()
+      .map(row => row.name),
+  ).toEqual([
+    'ticket_id',
+    'assignment_id',
+    'runtime',
+    'session_id',
+    'repository',
+    'cwd',
+    'branch',
+    'push_remote',
+    'turns',
+    'cost_usd',
+    'prompt_version',
+    'updated_at',
   ])
 })

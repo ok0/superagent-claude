@@ -8,14 +8,25 @@
  * process's sessions and background work is dropped because they ended with that process; the note text stays in core.
  * `interruptRunning` records the same at a graceful stop (SIGTERM), so the next start only launches what it queued.
  */
-import { latestAssignment, runningAssignment, waitsForPerson, type EngineForExecutor, type Executor, type Repositories, type Ticket } from '../core/index.ts'
+import {
+  latestAssignment,
+  runningAssignment,
+  waitsForPerson,
+  type EngineForExecutor,
+  type Executor,
+  type Repositories,
+  type Ticket,
+} from '../core/index.ts'
 
 export interface RecoveryHost {
   tickets: Pick<Repositories['tickets'], 'open'>
   engine: Pick<EngineForExecutor, 'assignmentInterrupted'>
   executor: Pick<Executor, 'start'>
 }
-export interface InterruptHost { tickets: Pick<Repositories['tickets'], 'open'>; engine: Pick<EngineForExecutor, 'assignmentInterrupted'> }
+export interface InterruptHost {
+  tickets: Pick<Repositories['tickets'], 'open'>
+  engine: Pick<EngineForExecutor, 'assignmentInterrupted'>
+}
 
 function oldestFirst(tickets: Pick<Repositories['tickets'], 'open'>): Ticket[] {
   return [...tickets.open()].reverse().sort((a, b) => a.createdAt.localeCompare(b.createdAt))
@@ -24,7 +35,8 @@ function oldestFirst(tickets: Pick<Repositories['tickets'], 'open'>): Ticket[] {
 export function recover(host: RecoveryHost): string[] {
   const tickets = oldestFirst(host.tickets)
   for (const ticket of tickets) {
-    const running = runningAssignment(ticket), latest = latestAssignment(ticket)
+    const running = runningAssignment(ticket),
+      latest = latestAssignment(ticket)
     if (running) host.engine.assignmentInterrupted(ticket.id, running.id)
     else if (latest?.state === 'pending' && !waitsForPerson(ticket)) host.executor.start(ticket, latest)
   }

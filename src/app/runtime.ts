@@ -3,19 +3,50 @@
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { Engine, UserError, key, type Assessor, type Candidate, type DomainEvent, type EngineForExecutor, type Policy, type Ticket, type WorkerReport } from '../core/index.ts'
+import {
+  Engine,
+  UserError,
+  key,
+  type Assessor,
+  type Candidate,
+  type DomainEvent,
+  type EngineForExecutor,
+  type Policy,
+  type Ticket,
+  type WorkerReport,
+} from '../core/index.ts'
 import type { AgentRuntime, ToolSpec } from '../executor/contract.ts'
 import { interruptRunning, recover } from '../executor/recovery.ts'
 import { Slots } from '../executor/slots.ts'
 import { WorkerExecutor, type WorkerDeps, type WorkerTimers } from '../executor/worker-executor.ts'
 import { WorkerStore } from '../executor/worker-store.ts'
-import { ScratchWorkspaces, Workspaces, worktreeName, type RepositoryAccess, type WorkspaceProvider } from '../executor/workspaces.ts'
+import {
+  ScratchWorkspaces,
+  Workspaces,
+  worktreeName,
+  type RepositoryAccess,
+  type WorkspaceProvider,
+} from '../executor/workspaces.ts'
 import { Commands } from '../infra/commands.ts'
 import { HealthBoard, HealthRecorder, type Health, type HealthEntry } from '../infra/health.ts'
 import { redactor, REDACTED } from '../infra/redact.ts'
-import { assessmentOutcome, policyEffects, policyVersion, settingsPolicy, type Assessment, type Settings } from '../policy/policy.ts'
+import {
+  assessmentOutcome,
+  policyEffects,
+  policyVersion,
+  settingsPolicy,
+  type Assessment,
+  type Settings,
+} from '../policy/policy.ts'
 import { AdmissionFilter } from '../sources/admission-filter.ts'
-import { sourceContext, type LogRecord, type LogSink, type SourceContext, type SourceHost, type SourceService } from '../sources/host.ts'
+import {
+  sourceContext,
+  type LogRecord,
+  type LogSink,
+  type SourceContext,
+  type SourceHost,
+  type SourceService,
+} from '../sources/host.ts'
 import type { SourceKind } from '../sources/kind.ts'
 import { SourceRegistry } from '../sources/registry.ts'
 import { loadConfig, settingsOf, StartupRefused, type Config } from './config.ts'
@@ -44,26 +75,46 @@ export const STOP_TIMEOUT_MS = 10_000
 /** The config keys that take effect only on restart; a reload keeps the running value and reports the key. */
 export const RESTART_KEYS = ['auth.mode', 'delivery', 'workers', 'security', 'models.router', 'stateDir'] as const
 
-export interface ReloadOutcome { applied: boolean; policyChanged: boolean; restartRequired: string[]; warnings: string[]; error?: string }
+export interface ReloadOutcome {
+  applied: boolean
+  policyChanged: boolean
+  restartRequired: string[]
+  warnings: string[]
+  error?: string
+}
 
 export function jsonLines(write: (line: string) => void, env?: Readonly<Record<string, string | undefined>>): LogSink {
-  if (!env) return record => { write(JSON.stringify(record) + '\n') }
+  if (!env)
+    return record => {
+      write(JSON.stringify(record) + '\n')
+    }
   const mask = redactor(env, REDACTED)
-  return record => { write(mask(JSON.stringify(record)) + '\n') }
+  return record => {
+    write(mask(JSON.stringify(record)) + '\n')
+  }
 }
 
 /** Executor tools; in deterministic Router mode a ready report also queues its summary as the result, in the same transaction that records the report (so no reader or crash sees the ticket ended without its result). */
-export function workerTools(host: ExecutorToolsHost, ticket: Pick<Ticket, 'id'>, atomic: <T>(operation: () => T) => T): ToolSpec[] {
+export function workerTools(
+  host: ExecutorToolsHost,
+  ticket: Pick<Ticket, 'id'>,
+  atomic: <T>(operation: () => T) => T,
+): ToolSpec[] {
   const engine = (): ReturnType<ExecutorToolsHost['engine']> => {
     const inner = host.engine()
     return {
-      report: (ticketId, report) => atomic(() => {
-        const updated = inner.report(ticketId, report)
-        if (report.state === 'ready') {
-          try { inner.reply({ purpose: 'result', ticketId, text: report.summary }) } catch (e) { if (!(e instanceof UserError)) throw e }
-        }
-        return updated
-      }),
+      report: (ticketId, report) =>
+        atomic(() => {
+          const updated = inner.report(ticketId, report)
+          if (report.state === 'ready') {
+            try {
+              inner.reply({ purpose: 'result', ticketId, text: report.summary })
+            } catch (e) {
+              if (!(e instanceof UserError)) throw e
+            }
+          }
+          return updated
+        }),
       reply: request => inner.reply(request),
       markUnrelated: (...args) => inner.markUnrelated(...args),
       handback: (...args) => inner.handback(...args),
@@ -76,13 +127,23 @@ export function workerTools(host: ExecutorToolsHost, ticket: Pick<Ticket, 'id'>,
 
 export function deterministicAssessment(candidate: Candidate, settings: Settings): Assessment {
   const explicit = candidate.strength === 'explicit'
-  const reason = explicit ? 'An allowed sender addressed the agent' : 'Only explicit requests are accepted without a model assessment'
-  const primary = candidate.triggers.find(trigger => trigger.id === candidate.thread.evaluating?.primary) ?? candidate.triggers[0]
+  const reason = explicit
+    ? 'An allowed sender addressed the agent'
+    : 'Only explicit requests are accepted without a model assessment'
+  const primary =
+    candidate.triggers.find(trigger => trigger.id === candidate.thread.evaluating?.primary) ?? candidate.triggers[0]
   const first = (primary?.text.trim() ?? '').split('\n')[0] ?? ''
   return {
     decision: explicit ? 'accept' : 'ignore',
-    rule_assessments: settings.policy.rules.filter(rule => rule.enabled).map(rule => ({ rule_id: rule.id, matched: explicit, reason })),
-    direction: { implementation_requested: explicit, target_basis: explicit ? 'specified' : 'undetermined', requires_design_decision: false, evidence: reason },
+    rule_assessments: settings.policy.rules
+      .filter(rule => rule.enabled)
+      .map(rule => ({ rule_id: rule.id, matched: explicit, reason })),
+    direction: {
+      implementation_requested: explicit,
+      target_basis: explicit ? 'specified' : 'undetermined',
+      requires_design_decision: false,
+      evidence: reason,
+    },
     title: (first || 'Request').slice(0, 80),
     scope: 'As the request states',
     reason,
@@ -114,7 +175,11 @@ export class GateAssessor implements Assessor {
     if (candidate?.evalId !== evalId) return
     const settings = this.host.settings()
     const outcome = assessmentOutcome(deterministicAssessment(candidate, settings), settings, candidate.strength)
-    try { this.host.engine().decide(triggerId, { ...outcome, evalId }) } catch (error) { if (!(error instanceof UserError)) throw error }
+    try {
+      this.host.engine().decide(triggerId, { ...outcome, evalId })
+    } catch (error) {
+      if (!(error instanceof UserError)) throw error
+    }
   }
 }
 
@@ -152,7 +217,9 @@ export interface RuntimeOptions {
 function eventRecord(event: DomainEvent): LogRecord {
   const data = event.data as Record<string, unknown>
   return {
-    level: 'info', at: event.at, event: event.type,
+    level: 'info',
+    at: event.at,
+    event: event.type,
     ...(typeof data.ticketId === 'string' ? { ticketId: data.ticketId } : {}),
     ...(typeof data.assignmentId === 'string' ? { assignmentId: data.assignmentId } : {}),
   }
@@ -160,8 +227,23 @@ function eventRecord(event: DomainEvent): LogRecord {
 
 function within(work: Promise<unknown>, ms: number): Promise<boolean> {
   let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<boolean>(resolve => { timer = setTimeout(() => { resolve(false) }, Math.max(0, ms)) })
-  return Promise.race([work.then(() => true, () => true), timeout]).finally(() => { clearTimeout(timer) })
+  const timeout = new Promise<boolean>(resolve => {
+    timer = setTimeout(
+      () => {
+        resolve(false)
+      },
+      Math.max(0, ms),
+    )
+  })
+  return Promise.race([
+    work.then(
+      () => true,
+      () => true,
+    ),
+    timeout,
+  ]).finally(() => {
+    clearTimeout(timer)
+  })
 }
 
 function authState(mode: Config['auth']['mode'], report: StartupReport | undefined, at: string): Health {
@@ -169,7 +251,10 @@ function authState(mode: Config['auth']['mode'], report: StartupReport | undefin
     state: 'ready',
     detail: report?.warnings.length ? report.warnings.join(' ') : `Authentication mode ${mode}`,
     at,
-    values: { mode, ...(report?.consent ? { consentAt: report.consent.at, allowedHash: report.consent.allowedHash } : {}) },
+    values: {
+      mode,
+      ...(report?.consent ? { consentAt: report.consent.at, allowedHash: report.consent.allowedHash } : {}),
+    },
   }
 }
 
@@ -196,7 +281,9 @@ export class Runtime implements SourceHost {
   private mainHost?: MainToolsHost
   private quiet = 0
   private current: Config
-  get config(): Config { return this.current }
+  get config(): Config {
+    return this.current
+  }
   private readonly agent: AgentRuntime
   private readonly log: LogSink
   private readonly now: () => number
@@ -251,7 +338,11 @@ export class Runtime implements SourceHost {
       this.effects = effects
       const settings = settingsOf(config)
       this.settings = settings
-      this.prompts = new Prompts({ versions: new PromptVersions(store, now), ...(options.configDir === undefined ? {} : { teamDir: join(options.configDir, 'prompts', 'team') }), rules: () => ruleLines(this.settings.policy.rules) })
+      this.prompts = new Prompts({
+        versions: new PromptVersions(store, now),
+        ...(options.configDir === undefined ? {} : { teamDir: join(options.configDir, 'prompts', 'team') }),
+        rules: () => ruleLines(this.settings.policy.rules),
+      })
       this.prompts.baseline('worker')
       if (session) this.prompts.baseline('router')
       const sources = new SourceRegistry(() => ({}), board)
@@ -269,29 +360,49 @@ export class Runtime implements SourceHost {
         return typeof origin?.meta.repository === 'string' ? origin.meta.repository : config.repositories[0]!
       }
       this.resources = {
-        store, pages: new TextCache(4_000_000), repositories: () => this.current.repositories, repositoryOf,
-        skill: () => this.prompts.skill('github'), ...(options.githubRead ? { github: options.githubRead } : {}),
+        store,
+        pages: new TextCache(4_000_000),
+        repositories: () => this.current.repositories,
+        repositoryOf,
+        skill: () => this.prompts.skill('github'),
+        ...(options.githubRead ? { github: options.githubRead } : {}),
       }
       if (options.workspaces === 'git' && !options.access) throw new Error('Git workspaces need repository access')
-      this.workspaces = options.workspaces === 'git'
-        ? new Workspaces({ stateDir: config.stateDir, commands: new Commands({ apiProgram: 'gh', baseEnv: this.env, env: { GIT_TERMINAL_PROMPT: '0' } }), repositoryOf, access: options.access! })
-        : new ScratchWorkspaces({ stateDir: config.stateDir, repositoryOf })
+      this.workspaces =
+        options.workspaces === 'git'
+          ? new Workspaces({
+              stateDir: config.stateDir,
+              commands: new Commands({ apiProgram: 'gh', baseEnv: this.env, env: { GIT_TERMINAL_PROMPT: '0' } }),
+              repositoryOf,
+              access: options.access!,
+            })
+          : new ScratchWorkspaces({ stateDir: config.stateDir, repositoryOf })
       const notifyRouter = (notice: Notice): void => {
         const [name, value, summary] = notice
         const text = JSON.stringify(value)
-        effects.enqueue('notice', name, { value: { target: 'router', id: `notice:${name}:${key(text)}`, text }, summary })
+        effects.enqueue('notice', name, {
+          value: { target: 'router', id: `notice:${name}:${key(text)}`, text },
+          summary,
+        })
       }
       const deps: WorkerDeps = {
         prepare: ticket => this.workspaces.prepare(ticket, worktreeName(ticket)),
-        instructions: async ticket => this.prompts.instructions('worker', [{ source: 'ticket-title', text: ticket.title }]),
+        instructions: async ticket =>
+          this.prompts.instructions('worker', [{ source: 'ticket-title', text: ticket.title }]),
         tools: ticket => {
           const host: ExecutorToolsHost = {
-            engine: () => this.executorEngine, ticket: id => store.tickets.get(id),
-            read: (resource, offset, limit, signal) => readResource(this.resources, resource, offset, limit, ticket.id, signal),
-            repositories: () => this.current.repositories, ...(session ? { notify: notifyRouter } : {}),
+            engine: () => this.executorEngine,
+            ticket: id => store.tickets.get(id),
+            read: (resource, offset, limit, signal) =>
+              readResource(this.resources, resource, offset, limit, ticket.id, signal),
+            repositories: () => this.current.repositories,
+            ...(session ? { notify: notifyRouter } : {}),
             delivery: {
               repositoryOf: id => repositoryOf(store.tickets.get(id)!),
-              originIssue: id => { const found = store.tickets.get(id); return issueOf(found && store.triggers.get(found.origin.triggerId)) },
+              originIssue: id => {
+                const found = store.tickets.get(id)
+                return issueOf(found && store.triggers.get(found.origin.triggerId))
+              },
               push: (id, push) => {
                 const found = store.tickets.get(id)
                 if (!found) throw new Error('Unknown ticket ' + id)
@@ -307,37 +418,81 @@ export class Runtime implements SourceHost {
         env: () => ({}),
         promptVersion: () => this.prompts.version('worker'),
         promptChange: stored => this.prompts.change('worker', stored),
-        launchNote: (_ticket, workspace) => writeAccessNote(workspace.repository, this.store.get(GITHUB_STATE.access(workspace.repository))),
+        launchNote: (_ticket, workspace) =>
+          writeAccessNote(workspace.repository, this.store.get(GITHUB_STATE.access(workspace.repository))),
         history: cwd => this.workspaces.history(cwd),
       }
       this.executor = new WorkerExecutor({
-        store, effects, engine: () => this.executorEngine, runtime: options.runtime, slots: new Slots(config.workers.max), workers: new WorkerStore(store, now), deps,
-        network: () => this.current.network.allow, model: () => this.current.models.worker,
-        limits: { maxTurns: config.workers.maxTurns, maxBudgetUsd: config.workers.maxBudgetUsd }, now, paused: () => this.policy.paused,
-        health: board.claim('executor'), ...(timers ? { timers } : {}),
+        store,
+        effects,
+        engine: () => this.executorEngine,
+        runtime: options.runtime,
+        slots: new Slots(config.workers.max),
+        workers: new WorkerStore(store, now),
+        deps,
+        network: () => this.current.network.allow,
+        model: () => this.current.models.worker,
+        limits: { maxTurns: config.workers.maxTurns, maxBudgetUsd: config.workers.maxBudgetUsd },
+        now,
+        paused: () => this.policy.paused,
+        health: board.claim('executor'),
+        ...(timers ? { timers } : {}),
       })
       this.retention = new Retention({
-        store, effects, workspaces: this.workspaces, workers: new WorkerStore(store, now), days: () => this.current.retention.endedTicketDays, now,
-        cleaned: ticketId => { this.log({ level: 'info', at: this.stamp(), event: 'retention.cleaned', ticketId }) },
+        store,
+        effects,
+        workspaces: this.workspaces,
+        workers: new WorkerStore(store, now),
+        days: () => this.current.retention.endedTicketDays,
+        now,
+        cleaned: ticketId => {
+          this.log({ level: 'info', at: this.stamp(), event: 'retention.cleaned', ticketId })
+        },
       })
-      this.recorder = new HealthRecorder(board, snapshot => { store.set(KV.health.snapshot, snapshot) }, now)
+      this.recorder = new HealthRecorder(
+        board,
+        snapshot => {
+          store.set(KV.health.snapshot, snapshot)
+        },
+        now,
+      )
       effects.handle('notice', async payload => {
         const { target, ticketId, id, text } = payload.value
-        if (target === 'worker' && typeof ticketId === 'string' && typeof id === 'string' && typeof text === 'string') this.executor.notify(ticketId, { id, text })
-        else if (target === 'router' && typeof id === 'string' && typeof text === 'string' && this.router) await this.router.notify(id, text)
+        if (target === 'worker' && typeof ticketId === 'string' && typeof id === 'string' && typeof text === 'string')
+          this.executor.notify(ticketId, { id, text })
+        else if (target === 'router' && typeof id === 'string' && typeof text === 'string' && this.router)
+          await this.router.notify(id, text)
       })
       let assessor: Assessor
       if (session) {
         const master = new MasterAssessor({
-          engine: () => this.engine, effects, settings: () => this.settings, paused: () => this.policy.paused,
-          threadContext: trigger => sources.threadContext(trigger), deliver: (id, text) => this.router!.relay(id, text),
+          engine: () => this.engine,
+          effects,
+          settings: () => this.settings,
+          paused: () => this.policy.paused,
+          threadContext: trigger => sources.threadContext(trigger),
+          deliver: (id, text) => this.router!.relay(id, text),
           candidateCard: candidate => candidateCard({ store, sources, settings: () => this.settings }, candidate),
         })
         this.mainHost = {
-          engine: () => this.engine, store, assessor: master, settings: () => this.settings,
-          read: (resource, offset, limit, signal) => readResource(this.resources, resource, offset, limit, undefined, signal),
-          requestPass: () => { this.passes.request() }, sendReplies: () => this.outbox.sent(),
-          quietly: run => { this.quiet++; try { return run() } finally { this.quiet-- } },
+          engine: () => this.engine,
+          store,
+          assessor: master,
+          settings: () => this.settings,
+          read: (resource, offset, limit, signal) =>
+            readResource(this.resources, resource, offset, limit, undefined, signal),
+          requestPass: () => {
+            this.passes.request()
+          },
+          sendReplies: () => this.outbox.sent(),
+          quietly: run => {
+            this.quiet++
+            try {
+              return run()
+            } finally {
+              this.quiet--
+            }
+          },
         }
         assessor = master
       } else {
@@ -345,14 +500,23 @@ export class Runtime implements SourceHost {
       }
       this.assessor = assessor
       this.engine = new Engine({
-        repo: store, policy: () => this.policy, scope: sources, assessor, executor: this.executor, outbox: this.outbox,
+        repo: store,
+        policy: () => this.policy,
+        scope: sources,
+        assessor,
+        executor: this.executor,
+        outbox: this.outbox,
         now: () => new Date(now()).toISOString(),
         emit: event => {
           this.log(eventRecord(event))
           if (!this.router || this.quiet > 0) return
           const notice = eventNotice(event, id => store.tickets.get(id))
           if (notice) notifyRouter(notice)
-          if (event.type === 'trigger.received' || event.type === 'ticket.resumed' || event.type === 'trigger.followup') {
+          if (
+            event.type === 'trigger.received' ||
+            event.type === 'ticket.resumed' ||
+            event.type === 'trigger.followup'
+          ) {
             const relay = followupNotice(store, sources, event.data.triggerId)
             if (relay) effects.enqueue('relay', relay.id, { text: relay.text })
           }
@@ -371,9 +535,12 @@ export class Runtime implements SourceHost {
       })
       if (session) {
         this.router = new RouterHost({
-          runtime: options.runtime, stateDir: config.stateDir,
+          runtime: options.runtime,
+          stateDir: config.stateDir,
           limits: { maxTurns: config.workers.maxTurns, maxBudgetUsd: config.workers.maxBudgetUsd },
-          model: () => config.models.router, health: board.claim('router'), now,
+          model: () => config.models.router,
+          health: board.claim('router'),
+          now,
           deps: {
             instructions: () => this.prompts.instructions('router'),
             tools: () => mainTools(this.mainHost!),
@@ -382,7 +549,9 @@ export class Runtime implements SourceHost {
             record: {
               get: () => {
                 const sessionId = store.get(KV.runtime.masterId)
-                return sessionId === undefined ? undefined : { sessionId, promptVersion: store.get(KV.runtime.routerPrompt) ?? null }
+                return sessionId === undefined
+                  ? undefined
+                  : { sessionId, promptVersion: store.get(KV.runtime.routerPrompt) ?? null }
               },
               put: record => {
                 if (record.sessionId) store.set(KV.runtime.masterId, record.sessionId)
@@ -394,16 +563,33 @@ export class Runtime implements SourceHost {
         effects.handle('relay', (payload, id) => this.router!.relay(id, payload.text), { ordered: true })
       }
       this.passes = new Passes({
-        engine: this.engine, effects, health: this.health, lifetime: this.lifetime.signal, now, configured: () => true,
-        closing: () => this.closing, ...(timers ? { timers } : {}),
-        afterPass: () => { this.retention.evaluate(); this.recorder.record() },
+        engine: this.engine,
+        effects,
+        health: this.health,
+        lifetime: this.lifetime.signal,
+        now,
+        configured: () => true,
+        closing: () => this.closing,
+        ...(timers ? { timers } : {}),
+        afterPass: () => {
+          this.retention.evaluate()
+          this.recorder.record()
+        },
       })
       this.admission = new AdmissionFilter({
         next: trigger => this.passes.receive(trigger),
         store,
         rule: () => ({ allowed: this.current.policy.allowed, repositories: this.current.repositories }),
         rejected: entry => {
-          this.log({ level: 'info', at: this.stamp(), event: 'admission.rejected', triggerId: entry.triggerId, repository: entry.repository, actor: entry.actor, reason: entry.reason })
+          this.log({
+            level: 'info',
+            at: this.stamp(),
+            event: 'admission.rejected',
+            triggerId: entry.triggerId,
+            repository: entry.repository,
+            actor: entry.actor,
+            reason: entry.reason,
+          })
         },
       })
     } catch (error) {
@@ -413,10 +599,18 @@ export class Runtime implements SourceHost {
   }
 
   context(kind: string): SourceContext {
-    return sourceContext({
-      store: this.store, outbox: this.outbox, engine: this.engine, sources: this.sources, log: this.log, now: this.now,
-      receive: trigger => this.admission.receive(trigger),
-    }, kind)
+    return sourceContext(
+      {
+        store: this.store,
+        outbox: this.outbox,
+        engine: this.engine,
+        sources: this.sources,
+        log: this.log,
+        now: this.now,
+        receive: trigger => this.admission.receive(trigger),
+      },
+      kind,
+    )
   }
 
   async start(): Promise<void> {
@@ -427,8 +621,9 @@ export class Runtime implements SourceHost {
 
   private async startOnce(): Promise<void> {
     try {
-      const stopped = await this.agent.reap?.() ?? []
-      if (stopped.length) this.log({ level: 'warn', at: this.stamp(), event: 'runtime.children_stopped', pids: stopped })
+      const stopped = (await this.agent.reap?.()) ?? []
+      if (stopped.length)
+        this.log({ level: 'warn', at: this.stamp(), event: 'runtime.children_stopped', pids: stopped })
     } catch (error) {
       this.log({ level: 'error', at: this.stamp(), event: 'runtime.children_failed', detail: String(error) })
     }
@@ -436,7 +631,11 @@ export class Runtime implements SourceHost {
     this.passes.start()
     this.effects.start()
     if (this.router) {
-      try { await this.router.ensure() } catch (error) { this.log({ level: 'error', at: this.stamp(), event: 'router.open_failed', detail: String(error) }) }
+      try {
+        await this.router.ensure()
+      } catch (error) {
+        this.log({ level: 'error', at: this.stamp(), event: 'router.open_failed', detail: String(error) })
+      }
     }
     for (const service of this.services) {
       if (this.closing) return
@@ -448,7 +647,11 @@ export class Runtime implements SourceHost {
     this.store.set(KV.runtime.ready, { pid: process.pid, at: this.stamp() })
     this.recorder.record(true)
     this.log({
-      level: 'info', at: this.stamp(), event: 'runtime.started', stateDir: this.config.stateDir, runtime: this.agent.id,
+      level: 'info',
+      at: this.stamp(),
+      event: 'runtime.started',
+      stateDir: this.config.stateDir,
+      runtime: this.agent.id,
       sources: this.sources.kinds().map(kind => kind.kind),
     })
     this.passes.request()
@@ -468,7 +671,10 @@ export class Runtime implements SourceHost {
       const text = routerChange.notice
       const hash = routerChange.current.hash
       this.store.atomic(() => {
-        this.effects.enqueue('notice', 'router-prompts', { value: { target: 'router', id: `notice:prompts:${hash}`, text }, summary: `Router prompt version ${hash.slice(0, 12)}` })
+        this.effects.enqueue('notice', 'router-prompts', {
+          value: { target: 'router', id: `notice:prompts:${hash}`, text },
+          summary: `Router prompt version ${hash.slice(0, 12)}`,
+        })
       })
     }
     const change = this.prompts.refresh('worker')
@@ -476,7 +682,11 @@ export class Runtime implements SourceHost {
     const tickets = this.executor.liveTickets()
     const notice = change.notice
     this.store.atomic(() => {
-      for (const ticketId of tickets) this.effects.enqueue('notice', `worker-prompts:${ticketId}`, { value: { target: 'worker', ticketId, id: `notice:prompts:${change.current.hash}`, text: notice }, summary: `Prompt version ${change.current.hash.slice(0, 12)}` })
+      for (const ticketId of tickets)
+        this.effects.enqueue('notice', `worker-prompts:${ticketId}`, {
+          value: { target: 'worker', ticketId, id: `notice:prompts:${change.current.hash}`, text: notice },
+          summary: `Prompt version ${change.current.hash.slice(0, 12)}`,
+        })
     })
     return tickets.length
   }
@@ -492,9 +702,17 @@ export class Runtime implements SourceHost {
 
   private recordAuth(report?: StartupReport): void {
     const mode = this.current.auth.mode
-    for (const detail of report?.warnings ?? []) this.log({ level: 'warn', at: this.stamp(), event: 'auth.warning', detail })
+    for (const detail of report?.warnings ?? [])
+      this.log({ level: 'warn', at: this.stamp(), event: 'auth.warning', detail })
     if (report?.consent && report.consent.allowedHash !== this.consentHash) {
-      this.log({ level: 'warn', at: this.stamp(), event: 'auth.consent', mode, consentAt: report.consent.at, allowedHash: report.consent.allowedHash })
+      this.log({
+        level: 'warn',
+        at: this.stamp(),
+        event: 'auth.consent',
+        mode,
+        consentAt: report.consent.at,
+        allowedHash: report.consent.allowedHash,
+      })
       this.consentHash = report.consent.allowedHash
     }
     if (!report?.consent) this.consentHash = undefined
@@ -535,10 +753,18 @@ export class Runtime implements SourceHost {
         ...(next.auth.owner === undefined ? {} : { owner: next.auth.owner }),
       },
     }
-    const restartRequired = RESTART_KEYS.filter(key => JSON.stringify(pick(next, key)) !== JSON.stringify(pick(this.current, key)))
+    const restartRequired = RESTART_KEYS.filter(
+      key => JSON.stringify(pick(next, key)) !== JSON.stringify(pick(this.current, key)),
+    )
     let report: StartupReport
     try {
-      report = assertStartupPolicy(effective, { mode: this.current.auth.mode }, this.agentLogin?.(), await this.agent.probe(), this.now)
+      report = assertStartupPolicy(
+        effective,
+        { mode: this.current.auth.mode },
+        this.agentLogin?.(),
+        await this.agent.probe(),
+        this.now,
+      )
     } catch (error) {
       if (error instanceof StartupRefused) return this.fail(error.message)
       throw error
@@ -546,7 +772,10 @@ export class Runtime implements SourceHost {
     const configWarnings: string[] = []
     const beforeRepositories = new Set(this.current.repositories.map(repository => repository.toLowerCase()))
     const afterRepositories = new Set(next.repositories.map(repository => repository.toLowerCase()))
-    if (beforeRepositories.size !== afterRepositories.size || [...afterRepositories].some(repository => !beforeRepositories.has(repository))) {
+    if (
+      beforeRepositories.size !== afterRepositories.size ||
+      [...afterRepositories].some(repository => !beforeRepositories.has(repository))
+    ) {
       configWarnings.push('Repository list changes apply to admission now; polling targets change on restart')
     }
     const before = this.settings
@@ -556,7 +785,12 @@ export class Runtime implements SourceHost {
     this.current = effective
     this.settings = after
     this.policy = settingsPolicy(after, this.sources)
-    if (from !== to) this.engine.policyChanged(from, to, policyEffects(this.store.tickets.open(), before, after, () => this.sources))
+    if (from !== to)
+      this.engine.policyChanged(
+        from,
+        to,
+        policyEffects(this.store.tickets.open(), before, after, () => this.sources),
+      )
     const at = this.stamp()
     this.recordAuth(report)
     if (restartRequired.length) this.log({ level: 'warn', at, event: 'config.restart_required', keys: restartRequired })
@@ -565,12 +799,21 @@ export class Runtime implements SourceHost {
     this.configHealth.set({ state: 'ready', detail: 'Config reloaded', at })
     this.refreshPrompts()
     this.passes.request()
-    return { applied: true, policyChanged: from !== to, restartRequired: [...restartRequired], warnings: [...report.warnings, ...configWarnings] }
+    return {
+      applied: true,
+      policyChanged: from !== to,
+      restartRequired: [...restartRequired],
+      warnings: [...report.warnings, ...configWarnings],
+    }
   }
 
   private async shutdown(): Promise<void> {
     this.closing = true
-    try { this.store.delete(KV.runtime.ready) } catch (error) { this.log({ level: 'error', at: this.stamp(), event: 'store.error', detail: String(error) }) }
+    try {
+      this.store.delete(KV.runtime.ready)
+    } catch (error) {
+      this.log({ level: 'error', at: this.stamp(), event: 'store.error', detail: String(error) })
+    }
     this.log({ level: 'info', at: this.stamp(), event: 'runtime.stopping' })
     const deadline = Date.now() + this.stopTimeoutMs
     let complete = true
@@ -579,21 +822,32 @@ export class Runtime implements SourceHost {
       this.lifetime.abort()
       this.assessor.stop?.()
       complete = await within(this.starting ?? Promise.resolve(), deadline - Date.now())
-      complete = await within(Promise.allSettled([passesStopped, ...this.running.map(service => service.stop())]), deadline - Date.now()) && complete
-      complete = await within(this.effects.drain(), deadline - Date.now()) && complete
-      complete = await within(this.executor.dispose(), deadline - Date.now()) && complete
+      complete =
+        (await within(
+          Promise.allSettled([passesStopped, ...this.running.map(service => service.stop())]),
+          deadline - Date.now(),
+        )) && complete
+      complete = (await within(this.effects.drain(), deadline - Date.now())) && complete
+      complete = (await within(this.executor.dispose(), deadline - Date.now())) && complete
       try {
         const interrupted = interruptRunning({ tickets: this.store.tickets, engine: this.engine })
-        if (interrupted.length) this.log({ level: 'info', at: this.stamp(), event: 'runtime.interrupted', tickets: interrupted })
-      } catch (error) { this.log({ level: 'error', at: this.stamp(), event: 'runtime.interrupt_failed', detail: String(error) }) }
-      complete = await within(this.router?.close() ?? Promise.resolve(), deadline - Date.now()) && complete
+        if (interrupted.length)
+          this.log({ level: 'info', at: this.stamp(), event: 'runtime.interrupted', tickets: interrupted })
+      } catch (error) {
+        this.log({ level: 'error', at: this.stamp(), event: 'runtime.interrupt_failed', detail: String(error) })
+      }
+      complete = (await within(this.router?.close() ?? Promise.resolve(), deadline - Date.now())) && complete
     } finally {
       for (const dispose of [...this.disposers].reverse()) {
-        try { dispose() } catch {}
+        try {
+          dispose()
+        } catch {}
       }
       this.store.close()
       this.log({
-        level: complete ? 'info' : 'warn', at: this.stamp(), event: 'runtime.stopped',
+        level: complete ? 'info' : 'warn',
+        at: this.stamp(),
+        event: 'runtime.stopped',
         ...(complete ? {} : { detail: 'Cleanup did not finish within the stop timeout' }),
       })
     }

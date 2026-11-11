@@ -20,25 +20,58 @@ import { fileGh, NOW, type FileGh } from './fixtures/file-gh.ts'
 const A = 'acme/widgets'
 const ISSUE_PATH = 'issues/1/comments'
 const MARKER = /<!-- superagent-claude:(.+?) -->/
-const poll = (check: () => boolean, timeout: number): Promise<void> => vi.waitFor(() => { if (!check()) throw new Error('not yet') }, { timeout, interval: 100 })
+const poll = (check: () => boolean, timeout: number): Promise<void> =>
+  vi.waitFor(
+    () => {
+      if (!check()) throw new Error('not yet')
+    },
+    { timeout, interval: 100 },
+  )
 const dirs: string[] = []
 const children: ChildProcess[] = []
 
 afterEach(() => {
-  for (const child of children.splice(0)) if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+  for (const child of children.splice(0))
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-interface Daemon { child: ChildProcess; exited: boolean; code: number | null; signal: NodeJS.Signals | null; out: string; err: string }
-interface Setup { dir: string; cfg: string; gh: FileGh }
+interface Daemon {
+  child: ChildProcess
+  exited: boolean
+  code: number | null
+  signal: NodeJS.Signals | null
+  out: string
+  err: string
+}
+interface Setup {
+  dir: string
+  cfg: string
+  gh: FileGh
+}
 
 function setup(): Setup {
   const dir = mkdtempSync(join(tmpdir(), 'crash-restart-'))
   dirs.push(dir)
-  const script: FakeGhScript = { repositories: { [A]: { notifications: [notification(A, 1)], issues: { 1: issue(A, 1, { body: '@agent-bot please fix the typo', created_at: NOW, updated_at: NOW }) } } } }
+  const script: FakeGhScript = {
+    repositories: {
+      [A]: {
+        notifications: [notification(A, 1)],
+        issues: { 1: issue(A, 1, { body: '@agent-bot please fix the typo', created_at: NOW, updated_at: NOW }) },
+      },
+    },
+  }
   const gh = fileGh(dir, script)
   const cfg = join(dir, 'superagent-claude.json')
-  writeFileSync(cfg, JSON.stringify({ repositories: [A], policy: { allowed: ['alice'], acceptMode: 'auto' }, security: { allowUnsandboxed: true }, stateDir: join(dir, 'state') }))
+  writeFileSync(
+    cfg,
+    JSON.stringify({
+      repositories: [A],
+      policy: { allowed: ['alice'], acceptMode: 'auto' },
+      security: { allowUnsandboxed: true },
+      stateDir: join(dir, 'state'),
+    }),
+  )
   return { dir, cfg, gh }
 }
 
@@ -50,9 +83,17 @@ function daemon(t: Setup, extra: Record<string, string> = {}): Daemon {
   })
   children.push(child)
   const d: Daemon = { child, exited: false, code: null, signal: null, out: '', err: '' }
-  child.stdout!.setEncoding('utf8').on('data', (chunk: string) => { d.out += chunk })
-  child.stderr!.setEncoding('utf8').on('data', (chunk: string) => { d.err += chunk })
-  child.once('exit', (code, signal) => { d.exited = true; d.code = code; d.signal = signal })
+  child.stdout!.setEncoding('utf8').on('data', (chunk: string) => {
+    d.out += chunk
+  })
+  child.stderr!.setEncoding('utf8').on('data', (chunk: string) => {
+    d.err += chunk
+  })
+  child.once('exit', (code, signal) => {
+    d.exited = true
+    d.code = code
+    d.signal = signal
+  })
   return d
 }
 
@@ -72,9 +113,12 @@ function read<T = Record<string, any>>(dir: string, sql: string, ...params: stri
   }
 }
 
-const tickets = (dir: string): Ticket[] => read<{ value: string }>(dir, 'SELECT value FROM ticket').map(row => JSON.parse(row.value) as Ticket)
-const receipts = (dir: string): Receipt[] => read<{ value: string }>(dir, 'SELECT value FROM outbox').map(row => JSON.parse(row.value) as Receipt)
-const effectKeys = (dir: string, kind: string): string[] => read<{ key: string }>(dir, 'SELECT key FROM effect WHERE kind = ?', kind).map(row => row.key)
+const tickets = (dir: string): Ticket[] =>
+  read<{ value: string }>(dir, 'SELECT value FROM ticket').map(row => JSON.parse(row.value) as Ticket)
+const receipts = (dir: string): Receipt[] =>
+  read<{ value: string }>(dir, 'SELECT value FROM outbox').map(row => JSON.parse(row.value) as Receipt)
+const effectKeys = (dir: string, kind: string): string[] =>
+  read<{ key: string }>(dir, 'SELECT key FROM effect WHERE kind = ?', kind).map(row => row.key)
 const threadKeys = (dir: string): string[] => read<{ key: string }>(dir, 'SELECT key FROM thread').map(row => row.key)
 const markers = (posted: Posted[]): string[] => posted.map(post => MARKER.exec(post.body)?.[1] ?? '')
 
@@ -82,7 +126,11 @@ function delivered(t: Setup): boolean {
   const posted = t.gh.read().posted
   if (posted.length === 0) return false
   const list = receipts(t.dir)
-  return markers(posted).every(id => list.find(receipt => receipt.id === id)?.status === 'sent') && list.every(receipt => receipt.status !== 'pending') && effectKeys(t.dir, 'reply').length === 0
+  return (
+    markers(posted).every(id => list.find(receipt => receipt.id === id)?.status === 'sent') &&
+    list.every(receipt => receipt.status !== 'pending') &&
+    effectKeys(t.dir, 'reply').length === 0
+  )
 }
 
 function runningTicket(dir: string): { ticket: Ticket; running: string } | undefined {
@@ -119,7 +167,10 @@ describe('daemon forced stops', () => {
     const ticket = list[0]!
     expect(ticket.id).toBe(ticketId)
     expect(ticket.createdAt).toBe(createdAt)
-    expect(ticket.assignments.find(assignment => assignment.id === runningId)).toMatchObject({ state: 'ended', endedReason: 'hostRestarted' })
+    expect(ticket.assignments.find(assignment => assignment.id === runningId)).toMatchObject({
+      state: 'ended',
+      endedReason: 'hostRestarted',
+    })
     const later = ticket.assignments.find(assignment => assignment.id !== runningId)!
     expect(later).toBeDefined()
     const restart = ticket.inputs.find(input => input.id === key('input', ticketId, 'restart', later.id))!
@@ -154,7 +205,10 @@ describe('daemon forced stops', () => {
     expect(effectKeys(t.dir, 'reply')).toEqual([id])
 
     const d2 = daemon(t)
-    await poll(() => d2.exited || (receipts(t.dir).find(receipt => receipt.id === id)?.status === 'sent' && delivered(t)), 60_000)
+    await poll(
+      () => d2.exited || (receipts(t.dir).find(receipt => receipt.id === id)?.status === 'sent' && delivered(t)),
+      60_000,
+    )
     expect(d2.exited, d2.err).toBe(false)
     await stop(d2)
 
@@ -176,7 +230,10 @@ describe('daemon forced stops', () => {
     expect(effectKeys(t.dir, 'reply')).toEqual([id])
 
     const d2 = daemon(t)
-    await poll(() => d2.exited || (receipts(t.dir).find(receipt => receipt.id === id)?.status === 'sent' && delivered(t)), 60_000)
+    await poll(
+      () => d2.exited || (receipts(t.dir).find(receipt => receipt.id === id)?.status === 'sent' && delivered(t)),
+      60_000,
+    )
     expect(d2.exited, d2.err).toBe(false)
     await stop(d2)
 
@@ -197,11 +254,15 @@ describe('daemon forced stops', () => {
     expect(signal).toBe('SIGKILL')
 
     const store = new Store(dbPath)
-    const keys = (store.db.prepare("SELECT key FROM effect WHERE kind = 'reply'").all() as { key: string }[]).map(row => row.key)
+    const keys = (store.db.prepare("SELECT key FROM effect WHERE kind = 'reply'").all() as { key: string }[]).map(
+      row => row.key,
+    )
     expect(keys).toEqual(['committed'])
     const effects = new Effects(store, new HealthBoard())
     const runs: string[] = []
-    effects.handle('reply', async (_payload, runKey) => { runs.push(runKey) })
+    effects.handle('reply', async (_payload, runKey) => {
+      runs.push(runKey)
+    })
     effects.start()
     await effects.idle('reply')
     expect(runs).toEqual(['committed'])
@@ -210,11 +271,18 @@ describe('daemon forced stops', () => {
 
     const reopened = new Store(dbPath)
     const again = new Effects(reopened, new HealthBoard())
-    again.handle('reply', async (_payload, runKey) => { runs.push(runKey) })
+    again.handle('reply', async (_payload, runKey) => {
+      runs.push(runKey)
+    })
     again.start()
     await again.idle('reply')
     expect(runs).toEqual(['committed'])
-    expect(Number((reopened.db.prepare("SELECT COUNT(*) AS n FROM effect WHERE kind = 'reply'").get() as { n: number | bigint }).n)).toBe(0)
+    expect(
+      Number(
+        (reopened.db.prepare("SELECT COUNT(*) AS n FROM effect WHERE kind = 'reply'").get() as { n: number | bigint })
+          .n,
+      ),
+    ).toBe(0)
     await again.drain()
     reopened.close()
   }, 30_000)
@@ -222,10 +290,11 @@ describe('daemon forced stops', () => {
   it('the crash injection lives only in test fixtures and no config key is added', () => {
     const srcRoot = fileURLToPath(new URL('../src', import.meta.url))
     const repoRoot = fileURLToPath(new URL('..', import.meta.url))
-    const walk = (dir: string): string[] => readdirSync(dir).flatMap(name => {
-      const path = join(dir, name)
-      return statSync(path).isDirectory() ? walk(path) : path.endsWith('.ts') ? [path] : []
-    })
+    const walk = (dir: string): string[] =>
+      readdirSync(dir).flatMap(name => {
+        const path = join(dir, name)
+        return statSync(path).isDirectory() ? walk(path) : path.endsWith('.ts') ? [path] : []
+      })
     const files = walk(srcRoot)
     const contents = new Map(files.map(file => [relative(repoRoot, file), readFileSync(file, 'utf8')] as const))
 
@@ -234,10 +303,29 @@ describe('daemon forced stops', () => {
       // child-process cleanup escalation (SIGTERM then SIGKILL), not crash injection
       if (file !== 'src/runtimes/claude/children.ts') expect(text.includes("'SIGKILL'"), file).toBe(false)
     }
-    const names = [...new Set([...contents.values()].flatMap(text => [...text.matchAll(/SUPERAGENT_CLAUDE_[A-Z][A-Z_]*/g)].map(match => match[0])))]
+    const names = [
+      ...new Set(
+        [...contents.values()].flatMap(text =>
+          [...text.matchAll(/SUPERAGENT_CLAUDE_[A-Z][A-Z_]*/g)].map(match => match[0]),
+        ),
+      ),
+    ]
     expect(names.filter(name => /CRASH|KILL|FAULT|INJECT/.test(name))).toEqual([])
-    const holders = [...contents].filter(([, text]) => text.includes('SUPERAGENT_CLAUDE_FAKE_HOLD')).map(([file]) => file)
+    const holders = [...contents]
+      .filter(([, text]) => text.includes('SUPERAGENT_CLAUDE_FAKE_HOLD'))
+      .map(([file]) => file)
     expect(holders).toEqual(['src/cli/main.ts'])
-    expect(Object.keys(ConfigSchema.shape)).toEqual(['repositories', 'policy', 'auth', 'delivery', 'workers', 'network', 'security', 'retention', 'models', 'stateDir'])
+    expect(Object.keys(ConfigSchema.shape)).toEqual([
+      'repositories',
+      'policy',
+      'auth',
+      'delivery',
+      'workers',
+      'network',
+      'security',
+      'retention',
+      'models',
+      'stateDir',
+    ])
   })
 })

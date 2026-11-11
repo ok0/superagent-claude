@@ -4,25 +4,41 @@ import { describe, expect, it, vi } from 'vitest'
 import { executorTools, type ExecutorToolsHost } from '../src/app/tools/executor.ts'
 import type { RuntimeEvent, SessionSpec, ToolSpec } from '../src/executor/contract.ts'
 import { toolHandler } from '../src/runtimes/claude/mcp.ts'
-import { bwrapProbeArgs, CLAUDE_SDK_VERSION, ClaudeRuntime, INJECT_SEPARATOR, sandboxAvailable } from '../src/runtimes/claude/runtime.ts'
+import {
+  bwrapProbeArgs,
+  CLAUDE_SDK_VERSION,
+  ClaudeRuntime,
+  INJECT_SEPARATOR,
+  sandboxAvailable,
+} from '../src/runtimes/claude/runtime.ts'
 import { waitUntil } from './fixtures/async.ts'
 import { result, stubSdk, type StubQuery } from './fixtures/claude-sdk-stub.ts'
 import { contractSpec } from './fixtures/runtime-contract.ts'
 
 const tick = () => new Promise(resolve => setImmediate(resolve))
-const ticks = async (n: number) => { for (let i = 0; i < n; i++) await tick() }
+const ticks = async (n: number) => {
+  for (let i = 0; i < n; i++) await tick()
+}
 
 async function open(sdk: ReturnType<typeof stubSdk>, overrides: Partial<SessionSpec> = {}) {
   const { spec } = contractSpec('followup starts a new turn', overrides)
-  const runtime = new ClaudeRuntime({ mode: 'subscription', configDir: '/tmp/c', env: { PATH: '/bin', CLAUDE_CODE_OAUTH_TOKEN: 't' }, query: sdk.query, sandboxAvailable: () => true })
+  const runtime = new ClaudeRuntime({
+    mode: 'subscription',
+    configDir: '/tmp/c',
+    env: { PATH: '/bin', CLAUDE_CODE_OAUTH_TOKEN: 't' },
+    query: sdk.query,
+    sandboxAvailable: () => true,
+  })
   const session = await runtime.open(spec)
   const events: RuntimeEvent[] = []
-  void (async () => { for await (const event of session.events()) events.push(event) })()
+  void (async () => {
+    for await (const event of session.events()) events.push(event)
+  })()
   return { session, events, stub: sdk.queries[sdk.queries.length - 1] as StubQuery }
 }
 
 const turnEnds = (events: RuntimeEvent[]) => events.filter(event => event.type === 'turnEnded')
-const reads = (events: RuntimeEvent[]) => events.flatMap(event => event.type === 'inputsRead' ? event.ids : [])
+const reads = (events: RuntimeEvent[]) => events.flatMap(event => (event.type === 'inputsRead' ? event.ids : []))
 
 describe('claude runtime', () => {
   it('open emits session first and passes a new session id', async () => {
@@ -45,7 +61,7 @@ describe('claude runtime', () => {
     expect(events[0]).toEqual({ type: 'session', sessionId: 'S1' })
   })
 
-  it('followup is sent only after the running turn\'s result', async () => {
+  it("followup is sent only after the running turn's result", async () => {
     const sdk = stubSdk()
     const { session, events, stub } = await open(sdk)
     session.send({ id: 'A', text: 'A', mode: 'followup' })
@@ -140,9 +156,20 @@ describe('claude runtime', () => {
 
   it('probe reports sandbox and the pinned version', async () => {
     const sdk = stubSdk()
-    const runtime = new ClaudeRuntime({ mode: 'subscription', configDir: '/tmp/c', query: sdk.query, sandboxAvailable: () => true })
+    const runtime = new ClaudeRuntime({
+      mode: 'subscription',
+      configDir: '/tmp/c',
+      query: sdk.query,
+      sandboxAvailable: () => true,
+    })
     expect(await runtime.probe()).toEqual({ sandbox: true, version: CLAUDE_SDK_VERSION })
-    const off = new ClaudeRuntime({ mode: 'subscription', configDir: '/tmp/c', query: sdk.query, sandbox: false, sandboxAvailable: () => true })
+    const off = new ClaudeRuntime({
+      mode: 'subscription',
+      configDir: '/tmp/c',
+      query: sdk.query,
+      sandbox: false,
+      sandboxAvailable: () => true,
+    })
     expect((await off.probe()).sandbox).toBe(false)
     const pinned = JSON.parse(readFileSync('package.json', 'utf8')) as { dependencies: Record<string, string> }
     expect(CLAUDE_SDK_VERSION).toBe(pinned.dependencies['@anthropic-ai/claude-agent-sdk'])
@@ -162,34 +189,65 @@ describe('claude runtime', () => {
 
   it('sandboxAvailable on linux runs the smoke command', () => {
     const calls: [string, string[]][] = []
-    const run = (cmd: string, args: string[]) => { calls.push([cmd, args]); return 0 }
+    const run = (cmd: string, args: string[]) => {
+      calls.push([cmd, args])
+      return 0
+    }
     expect(sandboxAvailable('linux', true, run)).toBe(true)
     expect(calls[1]).toEqual(['bwrap', bwrapProbeArgs(true)])
     const bwrapFails = (cmd: string) => (cmd === 'bwrap' ? 1 : 0)
     expect(sandboxAvailable('linux', true, bwrapFails)).toBe(false)
     const calls2: string[] = []
-    expect(sandboxAvailable('linux', false, cmd => { calls2.push(cmd); return 1 })).toBe(false)
+    expect(
+      sandboxAvailable('linux', false, cmd => {
+        calls2.push(cmd)
+        return 1
+      }),
+    ).toBe(false)
     expect(calls2).toEqual(['sh'])
     expect(sandboxAvailable('win32')).toBe(false)
   })
 
   it('allowUnsandboxed opens without the sandbox only when the probe finds none', async () => {
     const sdk = stubSdk()
-    const none = new ClaudeRuntime({ mode: 'subscription', configDir: '/tmp/c', query: sdk.query, sandboxAvailable: () => false, allowUnsandboxed: true })
+    const none = new ClaudeRuntime({
+      mode: 'subscription',
+      configDir: '/tmp/c',
+      query: sdk.query,
+      sandboxAvailable: () => false,
+      allowUnsandboxed: true,
+    })
     await none.open(contractSpec('followup starts a new turn').spec)
     expect(sdk.queries[0]!.options.sandbox).toBeUndefined()
     expect((await none.probe()).sandbox).toBe(false)
-    const found = new ClaudeRuntime({ mode: 'subscription', configDir: '/tmp/c', query: sdk.query, sandboxAvailable: () => true, allowUnsandboxed: true })
+    const found = new ClaudeRuntime({
+      mode: 'subscription',
+      configDir: '/tmp/c',
+      query: sdk.query,
+      sandboxAvailable: () => true,
+      allowUnsandboxed: true,
+    })
     await found.open(contractSpec('followup starts a new turn').spec)
     expect(sdk.queries[1]!.options.sandbox?.enabled).toBe(true)
-    const strict = new ClaudeRuntime({ mode: 'subscription', configDir: '/tmp/c', query: sdk.query, sandboxAvailable: () => false })
+    const strict = new ClaudeRuntime({
+      mode: 'subscription',
+      configDir: '/tmp/c',
+      query: sdk.query,
+      sandboxAvailable: () => false,
+    })
     await strict.open(contractSpec('followup starts a new turn').spec)
     expect(sdk.queries[2]!.options.sandbox?.enabled).toBe(true)
   })
 
   it('weakerNestedSandbox reaches the SDK sandbox', async () => {
     const sdk = stubSdk()
-    const runtime = new ClaudeRuntime({ mode: 'subscription', configDir: '/tmp/c', query: sdk.query, weakerNestedSandbox: true, sandboxAvailable: () => true })
+    const runtime = new ClaudeRuntime({
+      mode: 'subscription',
+      configDir: '/tmp/c',
+      query: sdk.query,
+      weakerNestedSandbox: true,
+      sandboxAvailable: () => true,
+    })
     await runtime.open(contractSpec('followup starts a new turn').spec)
     expect(sdk.queries[0]!.options.sandbox?.enableWeakerNestedSandbox).toBe(true)
   })
@@ -197,7 +255,13 @@ describe('claude runtime', () => {
   it('the probe is computed once', async () => {
     const sdk = stubSdk()
     const check = vi.fn(() => true)
-    const runtime = new ClaudeRuntime({ mode: 'subscription', configDir: '/tmp/c', query: sdk.query, allowUnsandboxed: true, sandboxAvailable: check })
+    const runtime = new ClaudeRuntime({
+      mode: 'subscription',
+      configDir: '/tmp/c',
+      query: sdk.query,
+      allowUnsandboxed: true,
+      sandboxAvailable: check,
+    })
     await runtime.probe()
     await runtime.probe()
     await runtime.open(contractSpec('followup starts a new turn').spec)
@@ -219,7 +283,7 @@ describe('claude runtime', () => {
       followForContext: vi.fn(() => true),
       markUnrelated: vi.fn(),
     }
-    const host: ExecutorToolsHost = { engine: () => engine as never, ticket: () => ({} as never) }
+    const host: ExecutorToolsHost = { engine: () => engine as never, ticket: () => ({}) as never }
     const report = executorTools(host, { id: 'T1' }).find((item: ToolSpec) => item.name === 'orchestrator_report')!
     const handler = toolHandler(report, new AbortController().signal)
     const bad = await handler({ state: 'progress', summary: 's', human_action: 'Approve? Merge?' })

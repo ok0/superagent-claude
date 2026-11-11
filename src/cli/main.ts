@@ -17,36 +17,41 @@ export const VERSION: string = pkg.version
 export const EXIT_REFUSED = 2
 
 /** The fake worker reports ready on its first turn, so a fake run answers once. */
-const FAKE_SCRIPT: FakeScript = ({ index }) => index === 0 ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'Done: the fake worker finished' } }] } : {}
+const FAKE_SCRIPT: FakeScript = ({ index }) =>
+  index === 0
+    ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'Done: the fake worker finished' } }] }
+    : {}
 /** With SUPERAGENT_CLAUDE_FAKE_HOLD=1 (read only with --fake) the fake worker never ends a turn, so a test can stop the daemon while an Assignment runs. */
 const HOLD_SCRIPT: FakeScript = () => ({ hold: new Promise<never>(() => {}) })
-const fakeScript = (env: CliIo['env']): FakeScript => env.SUPERAGENT_CLAUDE_FAKE_HOLD === '1' ? HOLD_SCRIPT : FAKE_SCRIPT
+const fakeScript = (env: CliIo['env']): FakeScript =>
+  env.SUPERAGENT_CLAUDE_FAKE_HOLD === '1' ? HOLD_SCRIPT : FAKE_SCRIPT
 
-export const HELP: string = [
-  'Usage: superagent-claude [--help | --version]',
-  '       superagent-claude start [--config <path>] [--fake] [--log-format text|json]',
-  '       superagent-claude status [--config <path>]',
-  '       superagent-claude needs [--all] [--config <path>]',
-  '       superagent-claude prompts diff [--config <path>]',
-  '       superagent-claude health --live|--ready [--config <path>]',
-  '',
-  'Commands:',
-  '  start          Run the daemon in the foreground',
-  '  status         Show running work, waiting tickets, recent errors, repository access and consent',
-  '  needs          List the tickets that wait for a person',
-  '  prompts diff   Show built-in prompt changes since the team sections were made',
-  '  health         Exit 0 when the daemon is live (--live) or ready for work (--ready), 1 otherwise',
-  '',
-  'Options:',
-  '  -h, --help     Show this help',
-  '  -v, --version  Show the version',
-  '  --config PATH  Config file (default: ./superagent-claude.json)',
-  '  --fake         Use the scripted fake runtime (no model calls)',
-  '  --log-format F  With start: text (default) or json, one JSON event per line on stdout only (env SUPERAGENT_CLAUDE_LOG_FORMAT)',
-  '  --all          With needs: also list the other open tickets and the tickets ended within retention.endedTicketDays',
-  '',
-  'Exit codes: 0 done, 1 unknown argument or failed health check, 2 refused start, config error or bad health arguments, 3 no readable state database (status, needs)',
-].join('\n') + '\n'
+export const HELP: string =
+  [
+    'Usage: superagent-claude [--help | --version]',
+    '       superagent-claude start [--config <path>] [--fake] [--log-format text|json]',
+    '       superagent-claude status [--config <path>]',
+    '       superagent-claude needs [--all] [--config <path>]',
+    '       superagent-claude prompts diff [--config <path>]',
+    '       superagent-claude health --live|--ready [--config <path>]',
+    '',
+    'Commands:',
+    '  start          Run the daemon in the foreground',
+    '  status         Show running work, waiting tickets, recent errors, repository access and consent',
+    '  needs          List the tickets that wait for a person',
+    '  prompts diff   Show built-in prompt changes since the team sections were made',
+    '  health         Exit 0 when the daemon is live (--live) or ready for work (--ready), 1 otherwise',
+    '',
+    'Options:',
+    '  -h, --help     Show this help',
+    '  -v, --version  Show the version',
+    '  --config PATH  Config file (default: ./superagent-claude.json)',
+    '  --fake         Use the scripted fake runtime (no model calls)',
+    '  --log-format F  With start: text (default) or json, one JSON event per line on stdout only (env SUPERAGENT_CLAUDE_LOG_FORMAT)',
+    '  --all          With needs: also list the other open tickets and the tickets ended within retention.endedTicketDays',
+    '',
+    'Exit codes: 0 done, 1 unknown argument or failed health check, 2 refused start, config error or bad health arguments, 3 no readable state database (status, needs)',
+  ].join('\n') + '\n'
 
 export interface CliIo {
   out(s: string): void
@@ -60,11 +65,7 @@ export interface CliIo {
   }
 }
 
-export function run(
-  argv: readonly string[],
-  out: (s: string) => void,
-  err: (s: string) => void,
-): number {
+export function run(argv: readonly string[], out: (s: string) => void, err: (s: string) => void): number {
   const first = argv[0]
   if (first === undefined || first === '--help' || first === '-h') {
     out(HELP)
@@ -91,20 +92,34 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-interface StartOutput { refuse(message: string, usage?: boolean): number; warn(message: string): void }
+interface StartOutput {
+  refuse(message: string, usage?: boolean): number
+  warn(message: string): void
+}
 
 function startOutput(format: LogFormat, io: CliIo): StartOutput {
   const mask = redactor(io.env, REDACTED)
   if (format === 'json') {
-    const event = (level: 'warn' | 'error', name: string, detail: string): string => mask(JSON.stringify({ level, at: new Date().toISOString(), event: name, detail })) + '\n'
+    const event = (level: 'warn' | 'error', name: string, detail: string): string =>
+      mask(JSON.stringify({ level, at: new Date().toISOString(), event: name, detail })) + '\n'
     return {
-      refuse: message => { io.out(event('error', 'cli.refused', message)); return EXIT_REFUSED },
-      warn: message => { io.out(event('warn', 'startup.warning', message)) },
+      refuse: message => {
+        io.out(event('error', 'cli.refused', message))
+        return EXIT_REFUSED
+      },
+      warn: message => {
+        io.out(event('warn', 'startup.warning', message))
+      },
     }
   }
   return {
-    refuse: (message, usage = false) => { io.err(mask(`superagent-claude: ${message}\n` + (usage ? HELP : ''))); return EXIT_REFUSED },
-    warn: message => { io.err(mask(`superagent-claude: warning: ${message}\n`)) },
+    refuse: (message, usage = false) => {
+      io.err(mask(`superagent-claude: ${message}\n` + (usage ? HELP : '')))
+      return EXIT_REFUSED
+    },
+    warn: message => {
+      io.err(mask(`superagent-claude: warning: ${message}\n`))
+    },
   }
 }
 
@@ -160,7 +175,18 @@ async function start(argv: readonly string[], io: CliIo): Promise<number> {
 
   let runtime: Runtime
   try {
-    runtime = new Runtime({ config, configDir: dirname(path), configPath: path, env: io.env, runtime: agent.runtime, workspaces: agent.workspaces, router: agent.router, log, startup: report, ...sources })
+    runtime = new Runtime({
+      config,
+      configDir: dirname(path),
+      configPath: path,
+      env: io.env,
+      runtime: agent.runtime,
+      workspaces: agent.workspaces,
+      router: agent.router,
+      log,
+      startup: report,
+      ...sources,
+    })
   } catch (error) {
     return say.refuse(messageOf(error))
   }
@@ -168,7 +194,10 @@ async function start(argv: readonly string[], io: CliIo): Promise<number> {
   // Listen before starting, so a signal during startup stops the runtime in order instead of killing the process.
   const signal = { received: false }
   const signalled = new Promise<void>(done => {
-    const onSignal = (): void => { signal.received = true; done() }
+    const onSignal = (): void => {
+      signal.received = true
+      done()
+    }
     io.signals.once('SIGINT', onSignal)
     io.signals.once('SIGTERM', onSignal)
   })
@@ -181,7 +210,9 @@ async function start(argv: readonly string[], io: CliIo): Promise<number> {
     return say.refuse(messageOf(error))
   }
   if (!signal.received) {
-    const onHup = (): void => { void runtime.reload() }
+    const onHup = (): void => {
+      void runtime.reload()
+    }
     io.signals.on?.('SIGHUP', onHup)
     await signalled
     io.signals.off?.('SIGHUP', onHup)

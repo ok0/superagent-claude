@@ -81,12 +81,27 @@ describe('needs', () => {
     const db = databasePath(join(dir, 'state'))
     const store = new Store(db)
     const base = (id: string) => ({
-      id, title: `Ticket ${id}`, decisionId: 'd', mandate: {}, channels: [], inputs: [], undelivered: [],
-      origin: { triggerId: 'tr-none', triggerIds: ['tr-none'] }, createdAt: '2026-03-01T00:00:00.000Z', updatedAt: '2026-03-01T00:00:00.000Z',
+      id,
+      title: `Ticket ${id}`,
+      decisionId: 'd',
+      mandate: {},
+      channels: [],
+      inputs: [],
+      undelivered: [],
+      origin: { triggerId: 'tr-none', triggerIds: ['tr-none'] },
+      createdAt: '2026-03-01T00:00:00.000Z',
+      updatedAt: '2026-03-01T00:00:00.000Z',
     })
     store.tickets.save({
       ...base('r'.repeat(32)),
-      assignments: [{ id: 'as-r', state: 'ended', createdAt: '2026-03-01T00:00:00.000Z', report: { state: 'ready', summary: 'Done it', at: '2026-03-01T00:00:00.000Z' } }],
+      assignments: [
+        {
+          id: 'as-r',
+          state: 'ended',
+          createdAt: '2026-03-01T00:00:00.000Z',
+          report: { state: 'ready', summary: 'Done it', at: '2026-03-01T00:00:00.000Z' },
+        },
+      ],
     } as never)
     store.tickets.save({
       ...base('s'.repeat(32)),

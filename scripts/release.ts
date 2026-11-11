@@ -53,9 +53,9 @@ export function imageTags(version: string): string[] {
 export type WorkflowRun = { status: string; conclusion: string | null; event: string; head_branch: string }
 
 export function ciGate(runs: readonly WorkflowRun[]): 'pass' | 'wait' | 'fail' {
-  const main = runs.filter((r) => r.event === 'push' && r.head_branch === 'main')
-  if (main.some((r) => r.status === 'completed' && r.conclusion === 'success')) return 'pass'
-  if (main.length > 0 && main.every((r) => r.status !== 'completed')) return 'wait'
+  const main = runs.filter(r => r.event === 'push' && r.head_branch === 'main')
+  if (main.some(r => r.status === 'completed' && r.conclusion === 'success')) return 'pass'
+  if (main.length > 0 && main.every(r => r.status !== 'completed')) return 'wait'
   return 'fail'
 }
 
@@ -73,7 +73,7 @@ export const FORBIDDEN_PACK_PREFIXES = [
 ] as const
 
 export function checkPackFiles(paths: readonly string[]): string[] {
-  const normalized = paths.map((p) => p.replace(/^\.\//, ''))
+  const normalized = paths.map(p => p.replace(/^\.\//, ''))
   const set = new Set(normalized)
   const violations: string[] = []
   for (const file of REQUIRED_PACK_FILES) {
@@ -81,9 +81,9 @@ export function checkPackFiles(paths: readonly string[]): string[] {
   }
   for (const path of normalized) {
     const segments = path.split('/')
-    if (FORBIDDEN_PACK_PREFIXES.some((prefix) => path.startsWith(prefix))) {
+    if (FORBIDDEN_PACK_PREFIXES.some(prefix => path.startsWith(prefix))) {
       violations.push(`forbidden path: ${path}`)
-    } else if (segments.some((s) => s === '.env' || s.startsWith('.env'))) {
+    } else if (segments.some(s => s === '.env' || s.startsWith('.env'))) {
       violations.push(`forbidden secret file: ${path}`)
     } else if (segments.includes('fixtures')) {
       violations.push(`forbidden fixture: ${path}`)
@@ -141,7 +141,7 @@ async function runCiGate(sha: string, cwd: string): Promise<number> {
       process.stderr.write(`ci-gate: timed out waiting for CI on ${sha}\n`)
       return 1
     }
-    await new Promise((r) => setTimeout(r, CI_POLL_INTERVAL_MS))
+    await new Promise(r => setTimeout(r, CI_POLL_INTERVAL_MS))
   }
 }
 
@@ -203,7 +203,7 @@ export async function main(argv: readonly string[], cwd: string = process.cwd())
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main(process.argv.slice(2)).then((code) => {
+  main(process.argv.slice(2)).then(code => {
     process.exitCode = code
   })
 }

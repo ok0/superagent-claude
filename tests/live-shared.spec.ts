@@ -21,7 +21,15 @@ afterEach(() => {
 })
 
 const scenarioSource = (id: string, tier: string): string =>
-  "export const scenario = { id: '" + id + "', tier: '" + tier + "', issue: { title: 'T " + id + "', body: 'B " + id + "' }, diff: { requireSourceAndTest: true } }\n"
+  "export const scenario = { id: '" +
+  id +
+  "', tier: '" +
+  tier +
+  "', issue: { title: 'T " +
+  id +
+  "', body: 'B " +
+  id +
+  "' }, diff: { requireSourceAndTest: true } }\n"
 
 const TOUCH = (filename: string): DiffFile => ({ filename, status: 'modified', patch: '@@ -1 +1 @@\n-a\n+b' })
 
@@ -41,7 +49,10 @@ describe('shared live harness', () => {
     expect(testOnly.pass).toBe(false)
     expect(testOnly.reasons).toContain('no source change')
 
-    expect(check([TOUCH('web/README.md')], { requireSourceAndTest: false, allowedRoots: ['web/'] })).toEqual({ pass: true, reasons: [] })
+    expect(check([TOUCH('web/README.md')], { requireSourceAndTest: false, allowedRoots: ['web/'] })).toEqual({
+      pass: true,
+      reasons: [],
+    })
   })
 
   it('scenario validation covers answer, prepare and requireSource', () => {
@@ -55,19 +66,46 @@ describe('shared live harness', () => {
       { ...base, prepare: { path: 'api/test/a.test.ts', fixture: 'a', commitMessage: 'oops', comment: 'c' } },
     ]
     for (const value of broken) expect(scenarioProblems(value).length).toBeGreaterThan(0)
-    const valid = { ...base, prepare: { path: 'api/test/a.test.ts', fixture: 'playground-prepared/x/a.test.ts', commitMessage: 'test: add a test', comment: '@example-agent c' } }
+    const valid = {
+      ...base,
+      prepare: {
+        path: 'api/test/a.test.ts',
+        fixture: 'playground-prepared/x/a.test.ts',
+        commitMessage: 'test: add a test',
+        comment: '@example-agent c',
+      },
+    }
     expect(scenarioProblems(valid)).toEqual([])
   })
 
   it('ambiguity and prepared parts join the verdict only when declared', () => {
-    const base: LiveScenario = { id: 'x', tier: 'core', issue: { title: 'T', body: 'B' }, diff: { requireSourceAndTest: false } }
+    const base: LiveScenario = {
+      id: 'x',
+      tier: 'core',
+      issue: { title: 'T', body: 'B' },
+      diff: { requireSourceAndTest: false },
+    }
     const input = { checks: 'success', hidden: null, diff: { pass: true }, base: null }
     expect(judgeScenario(base, input)).toEqual({ passed: true, failed: [] })
     const ambiguous: LiveScenario = { ...base, ambiguity: 'clarify-or-state' }
-    expect(judgeScenario(ambiguous, { ...input, ambiguity: { passed: false } })).toEqual({ passed: false, failed: ['ambiguity'] })
+    expect(judgeScenario(ambiguous, { ...input, ambiguity: { passed: false } })).toEqual({
+      passed: false,
+      failed: ['ambiguity'],
+    })
     expect(judgeScenario(ambiguous, input)).toEqual({ passed: false, failed: ['ambiguity'] })
-    const prepared: LiveScenario = { ...base, prepare: { path: 'api/test/a.test.ts', fixture: 'playground-prepared/x/a.test.ts', commitMessage: 'test: add a test', comment: '@example-agent c' } }
-    expect(judgeScenario(prepared, { ...input, prepared: { passed: false } })).toEqual({ passed: false, failed: ['prepared'] })
+    const prepared: LiveScenario = {
+      ...base,
+      prepare: {
+        path: 'api/test/a.test.ts',
+        fixture: 'playground-prepared/x/a.test.ts',
+        commitMessage: 'test: add a test',
+        comment: '@example-agent c',
+      },
+    }
+    expect(judgeScenario(prepared, { ...input, prepared: { passed: false } })).toEqual({
+      passed: false,
+      failed: ['prepared'],
+    })
     expect(judgeScenario(prepared, { ...input, prepared: { passed: true } })).toEqual({ passed: true, failed: [] })
   })
 
@@ -82,15 +120,35 @@ describe('shared live harness', () => {
   it('local CI runs install, typecheck and test in order', async () => {
     const root = tmp()
     const write = (typecheck: number, test: number): void => {
-      writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { typecheck: 'node -e "process.exit(' + typecheck + ')"', test: 'node -e "process.exit(' + test + ')"' } }))
+      writeFileSync(
+        join(root, 'package.json'),
+        JSON.stringify({
+          scripts: {
+            typecheck: 'node -e "process.exit(' + typecheck + ')"',
+            test: 'node -e "process.exit(' + test + ')"',
+          },
+        }),
+      )
     }
     write(0, 3)
-    expect(await runLocalCi(root, { install: async () => ({ code: 0, output: '' }) })).toMatchObject({ code: 3, step: 'test' })
+    expect(await runLocalCi(root, { install: async () => ({ code: 0, output: '' }) })).toMatchObject({
+      code: 3,
+      step: 'test',
+    })
     write(2, 0)
-    expect(await runLocalCi(root, { install: async () => ({ code: 0, output: '' }) })).toMatchObject({ code: 2, step: 'typecheck' })
+    expect(await runLocalCi(root, { install: async () => ({ code: 0, output: '' }) })).toMatchObject({
+      code: 2,
+      step: 'typecheck',
+    })
     write(0, 0)
-    expect(await runLocalCi(root, { install: async () => ({ code: 1, output: '' }) })).toMatchObject({ code: 1, step: 'install' })
-    expect(await runLocalCi(root, { install: async () => ({ code: 0, output: '' }) })).toMatchObject({ code: 0, step: 'done' })
+    expect(await runLocalCi(root, { install: async () => ({ code: 1, output: '' }) })).toMatchObject({
+      code: 1,
+      step: 'install',
+    })
+    expect(await runLocalCi(root, { install: async () => ({ code: 0, output: '' }) })).toMatchObject({
+      code: 0,
+      step: 'done',
+    })
   }, 180_000)
 
   it('pull wait scales with flows', () => {

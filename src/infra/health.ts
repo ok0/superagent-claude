@@ -3,10 +3,20 @@
  * Component health registry read by the status CLI.
  * Changes from the reference: the `Health` type moves here from `sources/host.ts` with an optional `code`; the docs are reworded; a snapshot of all entries and a HealthRecorder that writes it at most every HEALTH_SNAPSHOT_MS for the status CLI are added.
  */
-export type Health = { state: 'starting' | 'ready' | 'paused' | 'error'; detail: string; at?: string; code?: string; values?: Record<string, string> }
+export type Health = {
+  state: 'starting' | 'ready' | 'paused' | 'error'
+  detail: string
+  at?: string
+  code?: string
+  values?: Record<string, string>
+}
 
 /** The whole board as the status CLI reads it: when it was taken, by which daemon process, and every entry. */
-export interface HealthSnapshot { at: string; pid: number; entries: Record<string, Health> }
+export interface HealthSnapshot {
+  at: string
+  pid: number
+  entries: Record<string, Health>
+}
 /** Minimum time between two health snapshot writes by a HealthRecorder. */
 export const HEALTH_SNAPSHOT_MS = 5_000
 
@@ -31,7 +41,9 @@ export class HealthBoard {
     let held = true
     return {
       get: () => this.entries[name],
-      set: health => { if (held) this.entries[name] = health },
+      set: health => {
+        if (held) this.entries[name] = health
+      },
       release: () => {
         if (!held) return
         held = false
@@ -40,7 +52,9 @@ export class HealthBoard {
       },
     }
   }
-  get all(): Readonly<Record<string, Health>> { return this.entries }
+  get all(): Readonly<Record<string, Health>> {
+    return this.entries
+  }
   snapshot(at: string): HealthSnapshot {
     return { at, pid: process.pid, entries: JSON.parse(JSON.stringify(this.entries)) as Record<string, Health> }
   }
@@ -53,7 +67,12 @@ export class HealthRecorder {
   private readonly now: () => number
   private readonly intervalMs: number
   private last?: number
-  constructor(board: Pick<HealthBoard, 'snapshot'>, write: (snapshot: HealthSnapshot) => void, now = Date.now, intervalMs = HEALTH_SNAPSHOT_MS) {
+  constructor(
+    board: Pick<HealthBoard, 'snapshot'>,
+    write: (snapshot: HealthSnapshot) => void,
+    now = Date.now,
+    intervalMs = HEALTH_SNAPSHOT_MS,
+  ) {
     this.board = board
     this.write = write
     this.now = now

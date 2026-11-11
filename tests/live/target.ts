@@ -31,7 +31,8 @@ const LOGIN_FORMAT = /^[A-Za-z0-9-]+$/
 
 function login(env: LiveEnv, name: string): string {
   const value = env[name]
-  if (value === undefined || value.trim() === '') throw new LiveTargetError(name + ' is required when SUPERAGENT_CLAUDE_LIVE_REPO is set')
+  if (value === undefined || value.trim() === '')
+    throw new LiveTargetError(name + ' is required when SUPERAGENT_CLAUDE_LIVE_REPO is set')
   if (!LOGIN_FORMAT.test(value)) throw new LiveTargetError(name + ' must be a GitHub login: ' + JSON.stringify(value))
   return value
 }
@@ -39,14 +40,19 @@ function login(env: LiveEnv, name: string): string {
 export function liveTarget(env: LiveEnv = process.env): LiveTarget | null {
   const repo = env.SUPERAGENT_CLAUDE_LIVE_REPO
   if (repo === undefined || repo.trim() === '') return null
-  if (!REPO_FORMAT.test(repo)) throw new LiveTargetError('SUPERAGENT_CLAUDE_LIVE_REPO must be owner/name: ' + JSON.stringify(repo))
+  if (!REPO_FORMAT.test(repo))
+    throw new LiveTargetError('SUPERAGENT_CLAUDE_LIVE_REPO must be owner/name: ' + JSON.stringify(repo))
   const ownerLogin = login(env, 'SUPERAGENT_CLAUDE_LIVE_OWNER_LOGIN')
   const agentLogin = login(env, 'SUPERAGENT_CLAUDE_LIVE_AGENT_LOGIN')
   const reportRaw = env.SUPERAGENT_CLAUDE_LIVE_REPORT_REPO
   const report = reportRaw === undefined || reportRaw.trim() === '' ? undefined : reportRaw
   if (report !== undefined) {
-    if (!REPO_FORMAT.test(report)) throw new LiveTargetError('SUPERAGENT_CLAUDE_LIVE_REPORT_REPO must be owner/name: ' + JSON.stringify(report))
-    if (report.toLowerCase() === repo.toLowerCase()) throw new LiveTargetError('SUPERAGENT_CLAUDE_LIVE_REPORT_REPO must differ from SUPERAGENT_CLAUDE_LIVE_REPO: ' + JSON.stringify(report))
+    if (!REPO_FORMAT.test(report))
+      throw new LiveTargetError('SUPERAGENT_CLAUDE_LIVE_REPORT_REPO must be owner/name: ' + JSON.stringify(report))
+    if (report.toLowerCase() === repo.toLowerCase())
+      throw new LiveTargetError(
+        'SUPERAGENT_CLAUDE_LIVE_REPORT_REPO must differ from SUPERAGENT_CLAUDE_LIVE_REPO: ' + JSON.stringify(report),
+      )
   }
   return {
     repo,

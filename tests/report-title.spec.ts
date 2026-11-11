@@ -31,7 +31,11 @@ describe('report title', () => {
     host = await startRuntime()
     const { ticket } = await host.acceptedTicket(mention('1'))
     const old = ticket.title
-    await host.workerTool(ticket.id, 'orchestrator_report', { state: 'progress', summary: 'Changed plan', title: 'Add WELCOME.md instead of GREETING.md' })
+    await host.workerTool(ticket.id, 'orchestrator_report', {
+      state: 'progress',
+      summary: 'Changed plan',
+      title: 'Add WELCOME.md instead of GREETING.md',
+    })
     await host.idle()
     const renamed = outputs(host)
     expect(renamed.status).toContain('Add WELCOME.md instead of GREETING.md')

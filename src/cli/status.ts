@@ -87,12 +87,25 @@ function readState(
   return 0
 }
 
-export function statusCommand(argv: readonly string[], io: Pick<CliIo, 'out' | 'err' | 'cwd' | 'env'>, now: () => number = Date.now): number {
+export function statusCommand(
+  argv: readonly string[],
+  io: Pick<CliIo, 'out' | 'err' | 'cwd' | 'env'>,
+  now: () => number = Date.now,
+): number {
   return readState(argv, io, STATUS_USAGE, false, (reader, _config, db) =>
-    formatStatus(statusView(reader, { daemon: writerActive(db), now: now() })))
+    formatStatus(statusView(reader, { daemon: writerActive(db), now: now() })),
+  )
 }
 
-export function needsCommand(argv: readonly string[], io: Pick<CliIo, 'out' | 'err' | 'cwd' | 'env'>, now: () => number = Date.now): number {
+export function needsCommand(
+  argv: readonly string[],
+  io: Pick<CliIo, 'out' | 'err' | 'cwd' | 'env'>,
+  now: () => number = Date.now,
+): number {
   return readState(argv, io, NEEDS_USAGE, true, (reader, config, _db, all) =>
-    formatNeeds(needsView(reader, { all, endedWithinMs: config.retention.endedTicketDays * 86_400_000, now: now() }), all))
+    formatNeeds(
+      needsView(reader, { all, endedWithinMs: config.retention.endedTicketDays * 86_400_000, now: now() }),
+      all,
+    ),
+  )
 }

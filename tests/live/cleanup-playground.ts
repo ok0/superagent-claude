@@ -4,7 +4,14 @@ import { pathToFileURL } from 'node:url'
 import { ghJson, type Runner } from './gh.ts'
 import { assertAllowedRepo } from './guard.ts'
 import { requireLiveTarget, liveTarget, TARGET_SKIP_LINE, type LiveTarget } from './target.ts'
-import { AGENT_BRANCH, cleanupTargets, type CleanupTargets, type RemoteBranch, type RemoteIssue, type RemotePull } from './rules.ts'
+import {
+  AGENT_BRANCH,
+  cleanupTargets,
+  type CleanupTargets,
+  type RemoteBranch,
+  type RemoteIssue,
+  type RemotePull,
+} from './rules.ts'
 
 export interface CleanupOptions {
   token: string
@@ -29,11 +36,24 @@ async function listAll<T>(o: CleanupOptions, path: string): Promise<T[]> {
   return ghJson<T[]>(o.token, [path], { paginate: true, run: o.run })
 }
 
-async function readLists(o: CleanupOptions, target: LiveTarget, repo: string, defaultBranch: string): Promise<CleanupTargets> {
+async function readLists(
+  o: CleanupOptions,
+  target: LiveTarget,
+  repo: string,
+  defaultBranch: string,
+): Promise<CleanupTargets> {
   const issues = await listAll<RemoteIssue>(o, 'repos/' + repo + '/issues?state=open&per_page=100')
   const pulls = await listAll<RemotePull>(o, 'repos/' + repo + '/pulls?state=open&per_page=100')
   const branches = await listAll<RemoteBranch>(o, 'repos/' + repo + '/branches?per_page=100')
-  return cleanupTargets({ repo, defaultBranch, issues, pulls, branches, authors: [target.ownerLogin, target.agentLogin], agent: target.agentLogin })
+  return cleanupTargets({
+    repo,
+    defaultBranch,
+    issues,
+    pulls,
+    branches,
+    authors: [target.ownerLogin, target.agentLogin],
+    agent: target.agentLogin,
+  })
 }
 
 function writeRecord(o: CleanupOptions, body: { apply: boolean; repos: RepoRecord[]; errors: string[] }): void {
@@ -53,10 +73,23 @@ export async function runCleanup(o: CleanupOptions): Promise<number> {
     assertAllowedRepo(repo)
     const info = await ghJson<{ default_branch: string }>(o.token, ['repos/' + repo], { run: o.run })
     const defaultBranch = info.default_branch
-    const headBefore = (await ghJson<{ object: { sha: string } }>(o.token, ['repos/' + repo + '/git/ref/heads/' + defaultBranch], { run: o.run })).object.sha
+    const headBefore = (
+      await ghJson<{ object: { sha: string } }>(o.token, ['repos/' + repo + '/git/ref/heads/' + defaultBranch], {
+        run: o.run,
+      })
+    ).object.sha
     const t = await readLists(o, target, repo, defaultBranch)
 
-    o.out(repo + ' issues=' + t.issues.length + ' pulls=' + t.pulls.length + ' branches=' + t.branches.length + (t.reportOnly ? ' report-only' : ''))
+    o.out(
+      repo +
+        ' issues=' +
+        t.issues.length +
+        ' pulls=' +
+        t.pulls.length +
+        ' branches=' +
+        t.branches.length +
+        (t.reportOnly ? ' report-only' : ''),
+    )
     for (const n of t.issues) o.out('  issue #' + n)
     for (const n of t.pulls) o.out('  pull #' + n)
     for (const name of t.branches) o.out('  branch ' + name)
@@ -90,7 +123,11 @@ export async function runCleanup(o: CleanupOptions): Promise<number> {
       }
       for (const n of t.issues) {
         try {
-          await ghJson(o.token, ['repos/' + repo + '/issues/' + n, '-X', 'PATCH', '-f', 'state=closed', '-f', 'state_reason=not_planned'], { run: o.run })
+          await ghJson(
+            o.token,
+            ['repos/' + repo + '/issues/' + n, '-X', 'PATCH', '-f', 'state=closed', '-f', 'state_reason=not_planned'],
+            { run: o.run },
+          )
           record.closed.issues.push(n)
         } catch {
           errors.push(repo + ' issue ' + n + ' failed')
@@ -98,10 +135,24 @@ export async function runCleanup(o: CleanupOptions): Promise<number> {
       }
 
       const after = await readLists(o, target, repo, defaultBranch)
-      const headAfter = (await ghJson<{ object: { sha: string } }>(o.token, ['repos/' + repo + '/git/ref/heads/' + defaultBranch], { run: o.run })).object.sha
+      const headAfter = (
+        await ghJson<{ object: { sha: string } }>(o.token, ['repos/' + repo + '/git/ref/heads/' + defaultBranch], {
+          run: o.run,
+        })
+      ).object.sha
       record.remaining = { issues: after.issues.length, pulls: after.pulls.length, branches: after.branches.length }
       record.headAfter = headAfter
-      o.out(repo + ' remaining issues=' + after.issues.length + ' pulls=' + after.pulls.length + ' branches=' + after.branches.length + ' head-unchanged=' + (headAfter === headBefore))
+      o.out(
+        repo +
+          ' remaining issues=' +
+          after.issues.length +
+          ' pulls=' +
+          after.pulls.length +
+          ' branches=' +
+          after.branches.length +
+          ' head-unchanged=' +
+          (headAfter === headBefore),
+      )
     }
 
     repos.push(record)
@@ -109,8 +160,12 @@ export async function runCleanup(o: CleanupOptions): Promise<number> {
 
   writeRecord(o, { apply: o.apply, repos, errors })
 
-  const clean = repos.every(r =>
-    r.reportOnly || !o.apply || ((r.remaining?.issues ?? 0) + (r.remaining?.pulls ?? 0) + (r.remaining?.branches ?? 0) === 0 && r.headAfter === r.headBefore),
+  const clean = repos.every(
+    r =>
+      r.reportOnly ||
+      !o.apply ||
+      ((r.remaining?.issues ?? 0) + (r.remaining?.pulls ?? 0) + (r.remaining?.branches ?? 0) === 0 &&
+        r.headAfter === r.headBefore),
   )
   return errors.length === 0 && clean ? 0 : 1
 }

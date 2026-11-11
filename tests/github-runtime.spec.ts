@@ -25,21 +25,33 @@ afterEach(async () => {
   directory = undefined
 })
 
-const ready: FakeScript = ({ index }) => index === 0
-  ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'Done: the fake worker finished' } }] }
-  : {}
+const ready: FakeScript = ({ index }) =>
+  index === 0
+    ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'Done: the fake worker finished' } }] }
+    : {}
 
 it('auto: a mentioned issue gets one reply in its own repository, and re-polling or re-sending adds none', async () => {
   directory = mkdtempSync(join(tmpdir(), 'github-runtime-'))
-  const config = ConfigSchema.parse({ repositories: [A, B], policy: { allowed: ['alice'], acceptMode: 'auto' }, stateDir: directory })
+  const config = ConfigSchema.parse({
+    repositories: [A, B],
+    policy: { allowed: ['alice'], acceptMode: 'auto' },
+    stateDir: directory,
+  })
   const gh = fakeGh({
     repositories: {
-      [A]: { notifications: [notification(A, 1)], issues: { 1: issue(A, 1, { body: '@agent-bot please fix the typo' }) } },
+      [A]: {
+        notifications: [notification(A, 1)],
+        issues: { 1: issue(A, 1, { body: '@agent-bot please fix the typo' }) },
+      },
       [B]: { issues: { 1: issue(B, 1) } },
     },
   })
   const clock = new ManualClock(START)
-  const sources = installedSources(config, { SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'test-token' }, { commands: gh.commands, timers: clock, now: clock.now })
+  const sources = installedSources(
+    config,
+    { SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'test-token' },
+    { commands: gh.commands, timers: clock, now: clock.now },
+  )
   expect(sources.kinds.map(k => k.kind)).toEqual(['github'])
   runtime = new Runtime({ config, runtime: new FakeRuntime(ready), ...sources })
   await runtime.start()
@@ -59,7 +71,12 @@ it('auto: a mentioned issue gets one reply in its own repository, and re-polling
 
   const id = /<!-- superagent-claude:(.+) -->/.exec(gh.posted[0]!.body)![1]!
   expect(runtime.store.receipts.get(id)!.status).toBe('sent')
-  runtime.outbox.send({ id, channel: githubChannel(A, 1, `https://github.com/${A}/issues/1`), text: 'again', kind: 'reply' })
+  runtime.outbox.send({
+    id,
+    channel: githubChannel(A, 1, `https://github.com/${A}/issues/1`),
+    text: 'again',
+    kind: 'reply',
+  })
   await runtime.outbox.sent()
   expect(gh.posted).toHaveLength(1)
 })

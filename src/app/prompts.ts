@@ -13,8 +13,12 @@ export type PromptRole = 'router' | 'worker'
 export type PromptLayer = 'host' | 'builtin' | 'rule' | 'team'
 
 export const TEAM_SECTIONS = ['communication', 'scope', 'delivery'] as const
-export type TeamSection = typeof TEAM_SECTIONS[number]
-export const TEAM_HEADINGS: Record<TeamSection, string> = { communication: 'Communication', scope: 'Ticket scope', delivery: 'Delivery requirements' }
+export type TeamSection = (typeof TEAM_SECTIONS)[number]
+export const TEAM_HEADINGS: Record<TeamSection, string> = {
+  communication: 'Communication',
+  scope: 'Ticket scope',
+  delivery: 'Delivery requirements',
+}
 
 export const BUILTIN_PARTS: Record<PromptRole, readonly { key: string; file: string; heading?: string }[]> = {
   router: [
@@ -39,8 +43,20 @@ export const BUILTIN_PARTS: Record<PromptRole, readonly { key: string; file: str
 }
 
 export const PROMPT_FILES: readonly string[] = [
-  'shared', 'router', 'subscriptions', 'replies', 'dispatch', 'admission', 'handoff', 'handoff-router',
-  'worker', 'work', 'handoff-worker', 'team/communication', 'team/scope', 'team/delivery',
+  'shared',
+  'router',
+  'subscriptions',
+  'replies',
+  'dispatch',
+  'admission',
+  'handoff',
+  'handoff-router',
+  'worker',
+  'work',
+  'handoff-worker',
+  'team/communication',
+  'team/scope',
+  'team/delivery',
 ]
 
 const COMMON_HOST_RULES = [
@@ -61,7 +77,10 @@ export function writeAccessNote(repository: string, access: { push?: boolean } |
   return `${WRITE_ACCESS_NOTE_LEAD} ${repository} (checked at startup), so no branch or pull request can be delivered for this ticket. If the request needs a change to the repository, do not acknowledge it and do not start the work: call mcp__superagent__orchestrator_report with state: blocked and one human_action asking a person to give the agent account write access to ${repository}. If it only asks a question or an explanation, answer it normally. If a person says access was granted, continue the work.`
 }
 export const DATA_CLOSE = '</external-data>'
-export interface ExternalText { source: string; text: string }
+export interface ExternalText {
+  source: string
+  text: string
+}
 
 export function wrapExternal(item: ExternalText): string {
   const source = item.source.replace(/[^A-Za-z0-9_-]/g, '-') || 'text'
@@ -69,8 +88,15 @@ export function wrapExternal(item: ExternalText): string {
   return `<external-data source="${source}">\n${text}\n${DATA_CLOSE}`
 }
 
-export interface PromptPart { key: string; layer: PromptLayer; text: string }
-export interface Builtins { files: Readonly<Record<string, string>>; skill: string }
+export interface PromptPart {
+  key: string
+  layer: PromptLayer
+  text: string
+}
+export interface Builtins {
+  files: Readonly<Record<string, string>>
+  skill: string
+}
 export type TeamTexts = Partial<Record<TeamSection, string>>
 
 export interface PromptRecord {
@@ -91,7 +117,11 @@ export interface Assembled {
   skillHash: string
 }
 
-export interface PromptRow { hash: string; parts: PromptRecord; at: string }
+export interface PromptRow {
+  hash: string
+  parts: PromptRecord
+  at: string
+}
 
 export const partHash = (text: string): string => key('prompt-part', text)
 
@@ -112,8 +142,9 @@ function stripHeader(text: string): string {
 
 function readPackaged(path: string): string {
   let raw: string
-  try { raw = readFileSync(path, 'utf8') }
-  catch (error) {
+  try {
+    raw = readFileSync(path, 'utf8')
+  } catch (error) {
     if (isMissing(error)) throw new Error('Missing packaged file: ' + path, { cause: error })
     throw error
   }
@@ -129,8 +160,9 @@ export function loadBuiltins(root: string = packageRoot()): Builtins {
 }
 
 function readOptional(path: string): string | undefined {
-  try { return readFileSync(path, 'utf8') }
-  catch (error) {
+  try {
+    return readFileSync(path, 'utf8')
+  } catch (error) {
     if (isMissing(error)) return undefined
     throw error
   }
@@ -154,18 +186,38 @@ export function ruleLines(rules: readonly Rule[]): string[] {
   return rules.filter(rule => rule.enabled).map(rule => `- ${line(rule.name)} (${rule.id}): ${line(rule.instruction)}`)
 }
 
-export function assemble(role: PromptRole, builtins: Builtins, team: TeamTexts, rules: readonly string[], external: readonly ExternalText[] = []): Assembled {
+export function assemble(
+  role: PromptRole,
+  builtins: Builtins,
+  team: TeamTexts,
+  rules: readonly string[],
+  external: readonly ExternalText[] = [],
+): Assembled {
   const files = builtins.files
   const parts: PromptPart[] = [{ key: 'host/' + role, layer: 'host', text: HOST_RULES[role] }]
   for (const part of BUILTIN_PARTS[role]) {
     const body = files[part.file]!
     parts.push({ key: part.key, layer: 'builtin', text: part.heading ? `## ${part.heading}\n${body}` : body })
   }
-  if (rules.length) parts.push({ key: 'rule/policy', layer: 'rule', text: '## Rules\nThe enabled admission rules, by name and id:\n' + rules.join('\n') })
+  if (rules.length)
+    parts.push({
+      key: 'rule/policy',
+      layer: 'rule',
+      text: '## Rules\nThe enabled admission rules, by name and id:\n' + rules.join('\n'),
+    })
   for (const section of TEAM_SECTIONS) {
-    parts.push({ key: 'team/' + section, layer: 'team', text: `## ${TEAM_HEADINGS[section]}\n${team[section] ?? files['team/' + section]!}` })
+    parts.push({
+      key: 'team/' + section,
+      layer: 'team',
+      text: `## ${TEAM_HEADINGS[section]}\n${team[section] ?? files['team/' + section]!}`,
+    })
   }
-  const defaults = Object.fromEntries(TEAM_SECTIONS.map(section => [section, { hash: partHash(files['team/' + section]!), text: files['team/' + section]! }])) as Record<TeamSection, { hash: string; text: string }>
+  const defaults = Object.fromEntries(
+    TEAM_SECTIONS.map(section => [
+      section,
+      { hash: partHash(files['team/' + section]!), text: files['team/' + section]! },
+    ]),
+  ) as Record<TeamSection, { hash: string; text: string }>
   const presentTeam: TeamTexts = {}
   for (const section of TEAM_SECTIONS) if (team[section] !== undefined) presentTeam[section] = team[section]
   const skillHash = partHash(builtins.skill)
@@ -176,9 +228,14 @@ export function assemble(role: PromptRole, builtins: Builtins, team: TeamTexts, 
 
 export function promptRows(db: Pick<DatabaseSync, 'prepare'>): PromptRow[] {
   try {
-    return db.prepare('SELECT hash, parts_json, at FROM prompt_version ORDER BY at, rowid').all().map(row => ({
-      hash: String(row.hash), parts: JSON.parse(String(row.parts_json)) as PromptRecord, at: String(row.at),
-    }))
+    return db
+      .prepare('SELECT hash, parts_json, at FROM prompt_version ORDER BY at, rowid')
+      .all()
+      .map(row => ({
+        hash: String(row.hash),
+        parts: JSON.parse(String(row.parts_json)) as PromptRecord,
+        at: String(row.at),
+      }))
   } catch (error) {
     if (error instanceof Error && error.message.includes('no such table')) return []
     throw error
@@ -203,7 +260,10 @@ export class PromptVersions {
       const existing = this.get(a.hash)
       if (existing) return existing
       const rows = this.list()
-      const parts = (layers: readonly PromptLayer[]) => a.parts.filter(part => layers.includes(part.layer)).map(part => ({ key: part.key, layer: part.layer, hash: partHash(part.text) }))
+      const parts = (layers: readonly PromptLayer[]) =>
+        a.parts
+          .filter(part => layers.includes(part.layer))
+          .map(part => ({ key: part.key, layer: part.layer, hash: partHash(part.text) }))
       const overrides: PromptRecord['overrides'] = {}
       for (const section of TEAM_SECTIONS) {
         const text = a.team[section]
@@ -222,13 +282,20 @@ export class PromptVersions {
         defaults: a.defaults,
       }
       const at = new Date(this.now()).toISOString()
-      this.store.db.prepare('INSERT OR IGNORE INTO prompt_version (hash, parts_json, at) VALUES (?, ?, ?)').run(a.hash, JSON.stringify(record), at)
+      this.store.db
+        .prepare('INSERT OR IGNORE INTO prompt_version (hash, parts_json, at) VALUES (?, ?, ?)')
+        .run(a.hash, JSON.stringify(record), at)
       return { hash: a.hash, parts: record, at }
     })
   }
 }
 
-export interface SectionDiff { section: TeamSection; base: string; current: string; lines: string[] }
+export interface SectionDiff {
+  section: TeamSection
+  base: string
+  current: string
+  lines: string[]
+}
 
 export function diffLines(before: string, after: string): string[] {
   const a = before.split('\n')
@@ -245,8 +312,10 @@ export function diffLines(before: string, after: string): string[] {
   let i = 0
   let j = 0
   while (i < n && j < m) {
-    if (a[i] === b[j]) { i++; j++ }
-    else if (table[i + 1]![j]! >= table[i]![j + 1]!) out.push('- ' + a[i++])
+    if (a[i] === b[j]) {
+      i++
+      j++
+    } else if (table[i + 1]![j]! >= table[i]![j + 1]!) out.push('- ' + a[i++])
     else out.push('+ ' + b[j++])
   }
   while (i < n) out.push('- ' + a[i++])
@@ -274,15 +343,26 @@ export function promptDiff(builtins: Builtins, team: TeamTexts, rows: readonly P
 
 export function formatDiff(diffs: readonly SectionDiff[]): string {
   if (!diffs.length) return 'No built-in prompt changes affect the team sections.\n'
-  return diffs.map(d => `${TEAM_HEADINGS[d.section]} (prompts/team/${d.section}.md): the built-in default changed since this team section was made (base ${d.base.slice(0, 12)}, now ${d.current.slice(0, 12)})\n` + d.lines.join('\n') + '\n').join('\n')
+  return diffs
+    .map(
+      d =>
+        `${TEAM_HEADINGS[d.section]} (prompts/team/${d.section}.md): the built-in default changed since this team section was made (base ${d.base.slice(0, 12)}, now ${d.current.slice(0, 12)})\n` +
+        d.lines.join('\n') +
+        '\n',
+    )
+    .join('\n')
 }
 
-export const NOTICE_HEADER = 'Host notice: the team prompt sections below changed. From now on each replaces the section of the same name in your instructions.\n\n'
+export const NOTICE_HEADER =
+  'Host notice: the team prompt sections below changed. From now on each replaces the section of the same name in your instructions.\n\n'
 
 export function noticeText(previous: Assembled, next: Assembled): string | undefined {
   const before = new Map(previous.parts.map(part => [part.key, part.text]))
-  const texts = next.parts.filter(part => (part.layer === 'rule' || part.layer === 'team') && before.get(part.key) !== part.text).map(part => part.text)
-  if (previous.parts.some(part => part.key === 'rule/policy') && !next.parts.some(part => part.key === 'rule/policy')) texts.push('## Rules\nNo admission rule is enabled now.')
+  const texts = next.parts
+    .filter(part => (part.layer === 'rule' || part.layer === 'team') && before.get(part.key) !== part.text)
+    .map(part => part.text)
+  if (previous.parts.some(part => part.key === 'rule/policy') && !next.parts.some(part => part.key === 'rule/policy'))
+    texts.push('## Rules\nNo admission rule is enabled now.')
   if (!texts.length) return undefined
   return NOTICE_HEADER + texts.join('\n\n')
 }
@@ -290,16 +370,27 @@ export function noticeText(previous: Assembled, next: Assembled): string | undef
 /** Classifies the change from a stored prompt version to the current assembly: fixed when the role or a host, built-in or skill part changed (a new session is needed), team when only rule or team sections changed (a notice is enough), same otherwise (ADR-18). */
 export function promptChange(stored: PromptRecord | undefined, current: Assembled): PromptChange {
   if (!stored || stored.role !== current.role) return { kind: 'fixed' }
-  const now = [...current.parts.filter(p => p.layer === 'host' || p.layer === 'builtin').map(p => [p.key, partHash(p.text)]), ['skill/github', current.skillHash]]
+  const now = [
+    ...current.parts.filter(p => p.layer === 'host' || p.layer === 'builtin').map(p => [p.key, partHash(p.text)]),
+    ['skill/github', current.skillHash],
+  ]
   if (JSON.stringify(now) !== JSON.stringify(stored.fixed.map(p => [p.key, p.hash]))) return { kind: 'fixed' }
   const old = new Map(stored.team.map(p => [p.key, p.hash]))
-  const texts = current.parts.filter(p => (p.layer === 'rule' || p.layer === 'team') && old.get(p.key) !== partHash(p.text)).map(p => p.text)
-  if (old.has('rule/policy') && !current.parts.some(p => p.key === 'rule/policy')) texts.push('## Rules\nNo admission rule is enabled now.')
+  const texts = current.parts
+    .filter(p => (p.layer === 'rule' || p.layer === 'team') && old.get(p.key) !== partHash(p.text))
+    .map(p => p.text)
+  if (old.has('rule/policy') && !current.parts.some(p => p.key === 'rule/policy'))
+    texts.push('## Rules\nNo admission rule is enabled now.')
   if (!texts.length) return { kind: 'same' }
   return { kind: 'team', notice: NOTICE_HEADER + texts.join('\n\n') }
 }
 
-export interface PromptsOptions { versions: PromptVersions; teamDir?: string; rules?: () => readonly string[]; assetRoot?: string }
+export interface PromptsOptions {
+  versions: PromptVersions
+  teamDir?: string
+  rules?: () => readonly string[]
+  assetRoot?: string
+}
 
 export class Prompts {
   private readonly builtins: Builtins

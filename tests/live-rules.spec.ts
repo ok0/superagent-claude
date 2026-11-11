@@ -11,7 +11,17 @@ import { loadSeed } from './live/seed-playground.ts'
 import { assertAllowedRepo, assertApiTarget, isAllowedRepo } from './live/guard.ts'
 import { requireLiveTarget } from './live/target.ts'
 import { EXAMPLE_TARGET_ENV, stubLiveTarget } from './fixtures/live-target.ts'
-import { downloadTree, ghJson, ghLocalJson, ghLocalRaw, ghStatus, localIdentity, tokenScopes, type RunResult, type Runner } from './live/gh.ts'
+import {
+  downloadTree,
+  ghJson,
+  ghLocalJson,
+  ghLocalRaw,
+  ghStatus,
+  localIdentity,
+  tokenScopes,
+  type RunResult,
+  type Runner,
+} from './live/gh.ts'
 import {
   AGENT_BRANCH,
   WORKFLOW_PATH,
@@ -109,7 +119,9 @@ describe('guard', () => {
   it('assertApiTarget accepts allowed targets', () => {
     expect(() => assertApiTarget(['repos/example/playground/issues', '-X', 'POST'])).not.toThrow()
     expect(() => assertApiTarget(['user', '-i'])).not.toThrow()
-    expect(() => assertApiTarget(['graphql', '-f', 'query=query { repository(owner: "example", name: "playground") { id } }'])).not.toThrow()
+    expect(() =>
+      assertApiTarget(['graphql', '-f', 'query=query { repository(owner: "example", name: "playground") { id } }']),
+    ).not.toThrow()
   })
 
   it('assertApiTarget rejects everything else', () => {
@@ -197,7 +209,8 @@ describe('gh helpers', () => {
       const run = vi.fn<Runner>(async () => ok())
       await ghLocalRaw(['user', '-i'], { run })
       const env = run.mock.calls[0]?.[1] ?? {}
-      for (const key of Object.keys(env)) expect(['PATH', 'HOME', 'GH_PROMPT_DISABLED', 'GH_CONFIG_DIR', 'XDG_CONFIG_HOME']).toContain(key)
+      for (const key of Object.keys(env))
+        expect(['PATH', 'HOME', 'GH_PROMPT_DISABLED', 'GH_CONFIG_DIR', 'XDG_CONFIG_HOME']).toContain(key)
       expect(env.GH_PROMPT_DISABLED).toBe('1')
     } finally {
       vi.unstubAllEnvs()
@@ -205,7 +218,9 @@ describe('gh helpers', () => {
   })
 
   it('localIdentity reads login and scopes', async () => {
-    const run = vi.fn<Runner>(async () => ok('HTTP/2.0 200 OK\r\nx-oauth-scopes: repo, workflow\r\n\r\n{"login":"example-owner"}'))
+    const run = vi.fn<Runner>(async () =>
+      ok('HTTP/2.0 200 OK\r\nx-oauth-scopes: repo, workflow\r\n\r\n{"login":"example-owner"}'),
+    )
     expect(await localIdentity({ run })).toEqual({ login: 'example-owner', scopes: ['repo', 'workflow'] })
     const broken = vi.fn<Runner>(async () => fail('HTTP 401'))
     expect(await localIdentity({ run: broken })).toEqual({ login: null, scopes: [] })
@@ -220,10 +235,20 @@ describe('gh helpers', () => {
 })
 
 describe('preflight', () => {
-  const ready = () => ({ target: requireLiveTarget(), repoStatus: 200, archived: false, tokenLogin: 'example-owner', localLogin: 'example-owner', localScopes: ['repo', 'workflow'], actionsEnabled: true })
+  const ready = () => ({
+    target: requireLiveTarget(),
+    repoStatus: 200,
+    archived: false,
+    tokenLogin: 'example-owner',
+    localLogin: 'example-owner',
+    localScopes: ['repo', 'workflow'],
+    actionsEnabled: true,
+  })
 
   it('is ready when every check holds', () => {
-    expect(preflight({ ...ready(), localLogin: 'EXAMPLE-OWNER', localScopes: ['repo', 'Workflow'] })).toEqual({ status: 'ready' })
+    expect(preflight({ ...ready(), localLogin: 'EXAMPLE-OWNER', localScopes: ['repo', 'Workflow'] })).toEqual({
+      status: 'ready',
+    })
   })
 
   it('blocks on repository access', () => {
@@ -231,8 +256,14 @@ describe('preflight', () => {
   })
 
   it('blocks on another local gh account', () => {
-    expect(preflight({ ...ready(), localLogin: 'someone' })).toMatchObject({ status: 'BLOCKED', missing: ['local-gh-account'] })
-    expect(preflight({ ...ready(), localLogin: null })).toMatchObject({ status: 'BLOCKED', missing: ['local-gh-account'] })
+    expect(preflight({ ...ready(), localLogin: 'someone' })).toMatchObject({
+      status: 'BLOCKED',
+      missing: ['local-gh-account'],
+    })
+    expect(preflight({ ...ready(), localLogin: null })).toMatchObject({
+      status: 'BLOCKED',
+      missing: ['local-gh-account'],
+    })
   })
 
   it('blocks without the workflow scope', () => {
@@ -243,11 +274,20 @@ describe('preflight', () => {
   })
 
   it('blocks with Actions disabled', () => {
-    expect(preflight({ ...ready(), actionsEnabled: false })).toMatchObject({ status: 'BLOCKED', missing: ['actions-disabled'] })
+    expect(preflight({ ...ready(), actionsEnabled: false })).toMatchObject({
+      status: 'BLOCKED',
+      missing: ['actions-disabled'],
+    })
   })
 
   it('lists all four', () => {
-    const result = preflight({ ...ready(), repoStatus: 404, localLogin: null, localScopes: ['repo'], actionsEnabled: false })
+    const result = preflight({
+      ...ready(),
+      repoStatus: 404,
+      localLogin: null,
+      localScopes: ['repo'],
+      actionsEnabled: false,
+    })
     expect(result.status).toBe('BLOCKED')
     if (result.status !== 'BLOCKED') return
     expect(result.missing).toHaveLength(4)
@@ -264,9 +304,15 @@ describe('preflight', () => {
   })
 
   it('blocks a token of another account', () => {
-    expect(preflight({ ...ready(), tokenLogin: 'someone' })).toMatchObject({ status: 'BLOCKED', missing: ['token-login'] })
+    expect(preflight({ ...ready(), tokenLogin: 'someone' })).toMatchObject({
+      status: 'BLOCKED',
+      missing: ['token-login'],
+    })
     expect(preflight({ ...ready(), tokenLogin: null })).toMatchObject({ status: 'BLOCKED', missing: ['token-login'] })
-    expect(preflight({ ...ready(), agentTokenLogin: 'someone' })).toMatchObject({ status: 'BLOCKED', missing: ['agent-token-login'] })
+    expect(preflight({ ...ready(), agentTokenLogin: 'someone' })).toMatchObject({
+      status: 'BLOCKED',
+      missing: ['agent-token-login'],
+    })
     expect(preflight({ ...ready(), agentTokenLogin: 'EXAMPLE-AGENT' })).toEqual({ status: 'ready' })
   })
 
@@ -281,11 +327,13 @@ describe('preflight', () => {
 
 describe('content rules', () => {
   it('flags milestone ids and the word', () => {
-    for (const text of ['fixed in M29', 'M3', 'next Milestone', 'MILESTONE']) expect(contentProblems('x', text).length).toBeGreaterThan(0)
+    for (const text of ['fixed in M29', 'M3', 'next Milestone', 'MILESTONE'])
+      expect(contentProblems('x', text).length).toBeGreaterThan(0)
   })
 
   it('allows ordinary text', () => {
-    for (const text of ['run-1a2b3c4d', 'mM1', 'HTML5', 'M.2', 'Fix truncate for exact lengths']) expect(contentProblems('x', text)).toEqual([])
+    for (const text of ['run-1a2b3c4d', 'mM1', 'HTML5', 'M.2', 'Fix truncate for exact lengths'])
+      expect(contentProblems('x', text)).toEqual([])
   })
 
   it('commitProblems', () => {
@@ -335,11 +383,36 @@ describe('seed', () => {
       { path: WORKFLOW_PATH, content: 'W' },
     ]
     expect(seedPlan(expected, new Map())).toEqual({ kind: 'create', paths: ['a.js', 'b.js', WORKFLOW_PATH] })
-    expect(seedPlan(expected, new Map([['a.js', 'A'], ['b.js', 'B'], [WORKFLOW_PATH, 'W'], ['README.md', 'x']]))).toEqual({ kind: 'unchanged' })
-    const differs = seedPlan(expected, new Map([['a.js', 'changed'], ['b.js', 'B'], [WORKFLOW_PATH, 'W']]))
+    expect(
+      seedPlan(
+        expected,
+        new Map([
+          ['a.js', 'A'],
+          ['b.js', 'B'],
+          [WORKFLOW_PATH, 'W'],
+          ['README.md', 'x'],
+        ]),
+      ),
+    ).toEqual({ kind: 'unchanged' })
+    const differs = seedPlan(
+      expected,
+      new Map([
+        ['a.js', 'changed'],
+        ['b.js', 'B'],
+        [WORKFLOW_PATH, 'W'],
+      ]),
+    )
     expect(differs.kind).toBe('diff')
     if (differs.kind === 'diff') expect(differs.problems).toContain('a.js: content differs')
-    expect(seedPlan(expected, new Map([['a.js', 'A'], ['b.js', 'B']]))).toEqual({ kind: 'create', paths: [WORKFLOW_PATH] })
+    expect(
+      seedPlan(
+        expected,
+        new Map([
+          ['a.js', 'A'],
+          ['b.js', 'B'],
+        ]),
+      ),
+    ).toEqual({ kind: 'create', paths: [WORKFLOW_PATH] })
     expect(seedPlan(expected, new Map([['a.js', 'A']])).kind).toBe('diff')
   })
 
@@ -355,17 +428,26 @@ describe('seed', () => {
       merged_by: { login: 'example-owner' },
       ...over,
     })
-    const byShas = (...pulls: HarnessPull[]): Map<string, HarnessPull[]> => new Map(pulls.map(p => [p.merge_commit_sha ?? '', [p]]))
+    const byShas = (...pulls: HarnessPull[]): Map<string, HarnessPull[]> =>
+      new Map(pulls.map(p => [p.merge_commit_sha ?? '', [p]]))
 
     expect(harnessMergesOnly([merge('m2'), merge('m1'), seed], byShas(pull('m2'), pull('m1')), LOGINS)).toBe(true)
     const resetSeed: HistoryCommit = { sha: 's0', commit: { message: SEED_MESSAGES.reset } }
     expect(harnessMergesOnly([merge('m1'), resetSeed], byShas(pull('m1')), LOGINS)).toBe(true)
 
     expect(harnessMergesOnly([{ sha: 'h', commit: { message: 'docs: x' } }, seed], new Map(), LOGINS)).toBe(false)
-    expect(harnessMergesOnly([merge('m1'), seed], byShas(pull('m1', { merged_by: { login: 'someone' } })), LOGINS)).toBe(false)
-    expect(harnessMergesOnly([merge('m1'), seed], byShas(pull('m1', { user: { login: 'someone' } })), LOGINS)).toBe(false)
-    expect(harnessMergesOnly([merge('m1'), seed], byShas(pull('m1', { head: { ref: 'feature/x' } })), LOGINS)).toBe(false)
-    expect(harnessMergesOnly([merge('m1'), seed], byShas(pull('m1', { merge_commit_sha: 'other' })), LOGINS)).toBe(false)
+    expect(
+      harnessMergesOnly([merge('m1'), seed], byShas(pull('m1', { merged_by: { login: 'someone' } })), LOGINS),
+    ).toBe(false)
+    expect(harnessMergesOnly([merge('m1'), seed], byShas(pull('m1', { user: { login: 'someone' } })), LOGINS)).toBe(
+      false,
+    )
+    expect(harnessMergesOnly([merge('m1'), seed], byShas(pull('m1', { head: { ref: 'feature/x' } })), LOGINS)).toBe(
+      false,
+    )
+    expect(harnessMergesOnly([merge('m1'), seed], byShas(pull('m1', { merge_commit_sha: 'other' })), LOGINS)).toBe(
+      false,
+    )
     expect(harnessMergesOnly([merge('m1'), seed], byShas(pull('m1', { merged_at: null })), LOGINS)).toBe(false)
     const fifty = Array.from({ length: 50 }, (_, i) => merge('m' + i))
     expect(harnessMergesOnly([...fifty, seed], byShas(...fifty.map(c => pull(c.sha))), LOGINS)).toBe(false)
@@ -375,7 +457,21 @@ describe('seed', () => {
   it('harnessMergesOnly needs the configured logins', () => {
     const seed: HistoryCommit = { sha: 's0', commit: { message: SEED_MESSAGES.workflowUpdate } }
     const commits = [{ sha: 'm1', commit: { message: 'fix: x (#7)' } }, seed]
-    const pulls = new Map([['m1', [{ number: 7, merged_at: 't', merge_commit_sha: 'm1', head: { ref: 'agent/x' }, user: { login: 'example-agent' }, merged_by: { login: 'example-owner' } }]]])
+    const pulls = new Map([
+      [
+        'm1',
+        [
+          {
+            number: 7,
+            merged_at: 't',
+            merge_commit_sha: 'm1',
+            head: { ref: 'agent/x' },
+            user: { login: 'example-agent' },
+            merged_by: { login: 'example-owner' },
+          },
+        ],
+      ],
+    ])
     expect(harnessMergesOnly(commits, pulls, LOGINS)).toBe(true)
     expect(harnessMergesOnly(commits, pulls, { agentLogin: 'other-agent', ownerLogin: 'example-owner' })).toBe(false)
     expect(harnessMergesOnly(commits, pulls, { agentLogin: 'example-agent', ownerLogin: 'other' })).toBe(false)
@@ -388,17 +484,77 @@ describe('seed', () => {
       { path: WORKFLOW_PATH, content: 'W' },
     ]
     const opt = { harnessMergesOnly: true }
-    expect(seedPlan(expected, new Map([['a.js', 'changed'], [WORKFLOW_PATH, 'W'], ['README.md', 'x']]), opt)).toEqual({ kind: 'reset', changed: ['a.js', 'b.js'], removed: ['README.md'] })
-    expect(seedPlan(expected, new Map([['a.js', 'A'], ['b.js', 'B'], [WORKFLOW_PATH, 'W'], ['.github/workflows/other.yml', 'o']]), opt)).toEqual({ kind: 'unchanged' })
-    expect(seedPlan(expected, new Map([['a.js', 'A'], ['b.js', 'B'], [WORKFLOW_PATH, 'W']]), opt)).toEqual({ kind: 'unchanged' })
+    expect(
+      seedPlan(
+        expected,
+        new Map([
+          ['a.js', 'changed'],
+          [WORKFLOW_PATH, 'W'],
+          ['README.md', 'x'],
+        ]),
+        opt,
+      ),
+    ).toEqual({ kind: 'reset', changed: ['a.js', 'b.js'], removed: ['README.md'] })
+    expect(
+      seedPlan(
+        expected,
+        new Map([
+          ['a.js', 'A'],
+          ['b.js', 'B'],
+          [WORKFLOW_PATH, 'W'],
+          ['.github/workflows/other.yml', 'o'],
+        ]),
+        opt,
+      ),
+    ).toEqual({ kind: 'unchanged' })
+    expect(
+      seedPlan(
+        expected,
+        new Map([
+          ['a.js', 'A'],
+          ['b.js', 'B'],
+          [WORKFLOW_PATH, 'W'],
+        ]),
+        opt,
+      ),
+    ).toEqual({ kind: 'unchanged' })
     expect(seedPlan(expected, new Map(), opt)).toEqual({ kind: 'create', paths: ['a.js', 'b.js', WORKFLOW_PATH] })
     for (const o of [{}, { harnessMergesOnly: false }]) {
       expect(seedPlan(expected, new Map(), o)).toEqual({ kind: 'create', paths: ['a.js', 'b.js', WORKFLOW_PATH] })
-      expect(seedPlan(expected, new Map([['a.js', 'A'], ['b.js', 'B'], [WORKFLOW_PATH, 'W'], ['README.md', 'x']]), o)).toEqual({ kind: 'unchanged' })
-      expect(seedPlan(expected, new Map([['a.js', 'A'], ['b.js', 'B']]), o)).toEqual({ kind: 'create', paths: [WORKFLOW_PATH] })
+      expect(
+        seedPlan(
+          expected,
+          new Map([
+            ['a.js', 'A'],
+            ['b.js', 'B'],
+            [WORKFLOW_PATH, 'W'],
+            ['README.md', 'x'],
+          ]),
+          o,
+        ),
+      ).toEqual({ kind: 'unchanged' })
+      expect(
+        seedPlan(
+          expected,
+          new Map([
+            ['a.js', 'A'],
+            ['b.js', 'B'],
+          ]),
+          o,
+        ),
+      ).toEqual({ kind: 'create', paths: [WORKFLOW_PATH] })
       expect(seedPlan(expected, new Map([['a.js', 'A']]), o).kind).toBe('diff')
     }
-    expect(seedPlan(expected, new Map([['a.js', 'changed'], ['b.js', 'B'], [WORKFLOW_PATH, 'W']])).kind).toBe('diff')
+    expect(
+      seedPlan(
+        expected,
+        new Map([
+          ['a.js', 'changed'],
+          ['b.js', 'B'],
+          [WORKFLOW_PATH, 'W'],
+        ]),
+      ).kind,
+    ).toBe('diff')
   })
 
   it('seedWorkflowProblems', () => {
@@ -413,19 +569,37 @@ describe('seed', () => {
     ]
     mutations.push(
       fixture.replace('      - run: npm ci\n', ''),
-      fixture.replace('      - run: npm run typecheck\n      - run: npm test', '      - run: npm test\n      - run: npm run typecheck'),
+      fixture.replace(
+        '      - run: npm run typecheck\n      - run: npm test',
+        '      - run: npm test\n      - run: npm run typecheck',
+      ),
       fixture.replace('node-version: 24', 'node-version: 22'),
     )
     for (const mutated of mutations) expect(seedWorkflowProblems(mutated).length).toBeGreaterThan(0)
     const secretProblems = (text: string) => seedWorkflowProblems(text).filter(p => p.includes('secrets'))
-    expect(secretProblems(fixture.replace('      - run: npm test', '      - run: npm test\n      - run: bash scripts/check-image-secrets.sh x'))).toEqual([])
-    expect(secretProblems(fixture.replace('      - run: npm test', '      - run: npm test\n      - run: echo ${{ secrets.X }}'))).toHaveLength(1)
+    expect(
+      secretProblems(
+        fixture.replace(
+          '      - run: npm test',
+          '      - run: npm test\n      - run: bash scripts/check-image-secrets.sh x',
+        ),
+      ),
+    ).toEqual([])
+    expect(
+      secretProblems(
+        fixture.replace('      - run: npm test', '      - run: npm test\n      - run: echo ${{ secrets.X }}'),
+      ),
+    ).toHaveLength(1)
   })
 })
 
 describe('fixtures', () => {
-  const seedFiles = (): string[] => readdirSync(SEED, { recursive: true }).map(String).filter(entry => statSync(join(SEED, entry)).isFile())
-  const apiFiles = (dir: string, ext: string): string[] => seedFiles().filter(entry => entry.startsWith('api/' + dir + '/') && entry.endsWith(ext))
+  const seedFiles = (): string[] =>
+    readdirSync(SEED, { recursive: true })
+      .map(String)
+      .filter(entry => statSync(join(SEED, entry)).isFile())
+  const apiFiles = (dir: string, ext: string): string[] =>
+    seedFiles().filter(entry => entry.startsWith('api/' + dir + '/') && entry.endsWith(ext))
 
   it('seed files are clean', () => {
     for (const file of [...seedFiles().map(entry => join(SEED, entry)), WORKFLOW_FIXTURE]) {
@@ -441,7 +615,8 @@ describe('fixtures', () => {
     expect((root.engines as Record<string, string>).node).toBe('^24.15.0')
     expect(rootScripts.typecheck).toBe('npm run typecheck --workspaces --if-present')
     expect(rootScripts.test).toBe('npm test --workspaces --if-present')
-    for (const key of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) expect(root[key]).toBeUndefined()
+    for (const key of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'])
+      expect(root[key]).toBeUndefined()
 
     const api = readJson(join(SEED, 'api', 'package.json'))
     for (const key of ['dependencies', 'peerDependencies', 'optionalDependencies']) expect(api[key]).toBeUndefined()
@@ -449,7 +624,13 @@ describe('fixtures', () => {
     expect((api.scripts as Record<string, string>).typecheck).toBe('tsc --noEmit')
     expect((api.scripts as Record<string, string>).test).toBe('node --test')
 
-    const lockNames = [...new Set(seedFiles().map(entry => basename(entry)).filter(name => LOCK_NAMES.includes(name)))]
+    const lockNames = [
+      ...new Set(
+        seedFiles()
+          .map(entry => basename(entry))
+          .filter(name => LOCK_NAMES.includes(name)),
+      ),
+    ]
     expect(lockNames).toEqual(['package-lock.json'])
     const lock = readJson(join(SEED, 'package-lock.json'))
     expect(lock.lockfileVersion).toBe(3)
@@ -482,19 +663,29 @@ describe('fixtures', () => {
     const apiDev = (readJson(join(SEED, 'api', 'package.json')).devDependencies ?? {}) as Record<string, string>
     const rootTypescript = readJson(join(ROOT, 'node_modules', 'typescript', 'package.json')).version
     const rootTypes = readJson(join(ROOT, 'node_modules', '@types', 'node', 'package.json')).version
-    if (rootTypescript !== apiDev.typescript || rootTypes !== apiDev['@types/node']) throw new Error('root and seed pins differ')
-    const result = spawnSync(process.execPath, [join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(SEED, 'api', 'tsconfig.json'), '--noEmit'], { encoding: 'utf8' })
+    if (rootTypescript !== apiDev.typescript || rootTypes !== apiDev['@types/node'])
+      throw new Error('root and seed pins differ')
+    const result = spawnSync(
+      process.execPath,
+      [join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(SEED, 'api', 'tsconfig.json'), '--noEmit'],
+      { encoding: 'utf8' },
+    )
     expect(result.status, result.stdout + result.stderr).toBe(0)
   })
 
   it('exactly one deprecated API in the seed source', () => {
-    const parsed = ts.getParsedCommandLineOfConfigFile(join(SEED, 'api', 'tsconfig.json'), {}, { ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => {} })
+    const parsed = ts.getParsedCommandLineOfConfigFile(
+      join(SEED, 'api', 'tsconfig.json'),
+      {},
+      { ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => {} },
+    )
     if (!parsed) throw new Error('seed tsconfig not readable')
     const sources = parsed.fileNames.filter(file => /[\\/]api[\\/]src[\\/].+\.ts$/.test(file))
     const host: ts.LanguageServiceHost = {
       getScriptFileNames: () => parsed.fileNames,
       getScriptVersion: () => '1',
-      getScriptSnapshot: file => (ts.sys.fileExists(file) ? ts.ScriptSnapshot.fromString(ts.sys.readFile(file) ?? '') : undefined),
+      getScriptSnapshot: file =>
+        ts.sys.fileExists(file) ? ts.ScriptSnapshot.fromString(ts.sys.readFile(file) ?? '') : undefined,
       getCurrentDirectory: () => join(SEED, 'api'),
       getCompilationSettings: () => parsed.options,
       getDefaultLibFileName: options => ts.getDefaultLibFilePath(options),
@@ -513,8 +704,15 @@ describe('fixtures', () => {
     )
     expect(deprecated.length).toBeGreaterThanOrEqual(1)
     expect(new Set(deprecated.map(entry => entry.file)).size).toBe(1)
-    expect(deprecated.every(entry => entry.file.endsWith(join('api', 'src', 'log', 'line-buffer.ts')) && entry.text.includes('SlowBuffer'))).toBe(true)
-    const occurrences = sources.reduce((count, file) => count + [...readFileSync(file, 'utf8').matchAll(/new SlowBuffer\(/g)].length, 0)
+    expect(
+      deprecated.every(
+        entry => entry.file.endsWith(join('api', 'src', 'log', 'line-buffer.ts')) && entry.text.includes('SlowBuffer'),
+      ),
+    ).toBe(true)
+    const occurrences = sources.reduce(
+      (count, file) => count + [...readFileSync(file, 'utf8').matchAll(/new SlowBuffer\(/g)].length,
+      0,
+    )
     expect(occurrences).toBe(1)
   })
 
@@ -563,7 +761,12 @@ describe('fixtures', () => {
     const dir = scratch()
     try {
       const path = join(dir, 'superagent-claude.json')
-      writeFileSync(path, JSON.stringify(liveConfig({ repo: 'example/playground', owner: 'example-owner', stateDir: join(dir, 'state') })))
+      writeFileSync(
+        path,
+        JSON.stringify(
+          liveConfig({ repo: 'example/playground', owner: 'example-owner', stateDir: join(dir, 'state') }),
+        ),
+      )
       const config = loadConfig(path, {})
       expect(config.network.allow).toContain('registry.npmjs.org')
       expect(config.workers.maxTurns).toBeGreaterThan(60)
@@ -579,7 +782,9 @@ describe('seed rules', () => {
 
   it('README rules reject a sample without each clause', () => {
     expect(readmeProblems(README)).toEqual([])
-    expect(readmeProblems(README.replace('test playground for superagent-claude', 'sample repository')).length).toBeGreaterThan(0)
+    expect(
+      readmeProblems(README.replace('test playground for superagent-claude', 'sample repository')).length,
+    ).toBeGreaterThan(0)
     expect(readmeProblems(README.replace('It is not a real project:', 'Note:')).length).toBeGreaterThan(0)
     expect(readmeProblems(README.replace('opened and closed by automated tests', 'welcome')).length).toBeGreaterThan(0)
   })
@@ -600,7 +805,12 @@ describe('seed rules', () => {
 describe('ci verdict', () => {
   it('reports the check state', () => {
     expect(ciVerdict([])).toBe('none')
-    expect(ciVerdict([{ status: 'completed', conclusion: 'success' }, { status: 'completed', conclusion: 'success' }])).toBe('success')
+    expect(
+      ciVerdict([
+        { status: 'completed', conclusion: 'success' },
+        { status: 'completed', conclusion: 'success' },
+      ]),
+    ).toBe('success')
     expect(ciVerdict([{ status: 'in_progress', conclusion: null }])).toBe('pending')
     expect(ciVerdict([{ status: 'completed', conclusion: 'failure' }])).toBe('failure')
   })
@@ -628,22 +838,67 @@ describe('cleanup selection', () => {
   ]
 
   it('selects playground leftovers', () => {
-    const targets = cleanupTargets({ repo: 'example/playground', defaultBranch: 'main', issues, pulls, branches, authors: ['example-owner', 'example-agent'], agent: 'example-agent' })
-    expect(targets).toEqual({ repo: 'example/playground', reportOnly: false, issues: [1], pulls: [5, 7], branches: ['agent/abc', 'agent/old'] })
+    const targets = cleanupTargets({
+      repo: 'example/playground',
+      defaultBranch: 'main',
+      issues,
+      pulls,
+      branches,
+      authors: ['example-owner', 'example-agent'],
+      agent: 'example-agent',
+    })
+    expect(targets).toEqual({
+      repo: 'example/playground',
+      reportOnly: false,
+      issues: [1],
+      pulls: [5, 7],
+      branches: ['agent/abc', 'agent/old'],
+    })
   })
 
   it('reports only for the main repository', () => {
-    const targets = cleanupTargets({ repo: 'example/main', defaultBranch: 'main', issues, pulls, branches, authors: ['example-owner', 'example-agent'], agent: 'example-agent' })
-    expect(targets).toEqual({ repo: 'example/main', reportOnly: true, issues: [], pulls: [5, 6], branches: ['agent/abc', 'agent/keep', 'agent/old'] })
+    const targets = cleanupTargets({
+      repo: 'example/main',
+      defaultBranch: 'main',
+      issues,
+      pulls,
+      branches,
+      authors: ['example-owner', 'example-agent'],
+      agent: 'example-agent',
+    })
+    expect(targets).toEqual({
+      repo: 'example/main',
+      reportOnly: true,
+      issues: [],
+      pulls: [5, 6],
+      branches: ['agent/abc', 'agent/keep', 'agent/old'],
+    })
   })
 
   it('rejects other repositories', () => {
-    expect(() => cleanupTargets({ repo: 'evil/x', defaultBranch: 'main', issues, pulls, branches, authors: ['example-owner'], agent: 'example-agent' })).toThrow()
+    expect(() =>
+      cleanupTargets({
+        repo: 'evil/x',
+        defaultBranch: 'main',
+        issues,
+        pulls,
+        branches,
+        authors: ['example-owner'],
+        agent: 'example-agent',
+      }),
+    ).toThrow()
   })
 
   it('report-only follows the setting', () => {
     stubLiveTarget({ ...EXAMPLE_TARGET_ENV })
-    const base = { defaultBranch: 'main', issues, pulls, branches, authors: ['example-owner', 'example-agent'], agent: 'example-agent' }
+    const base = {
+      defaultBranch: 'main',
+      issues,
+      pulls,
+      branches,
+      authors: ['example-owner', 'example-agent'],
+      agent: 'example-agent',
+    }
     expect(cleanupTargets({ ...base, repo: 'example/main' }).reportOnly).toBe(true)
     expect(cleanupTargets({ ...base, repo: 'example/playground' }).reportOnly).toBe(false)
     expect(() => cleanupTargets({ ...base, repo: 'someone/playground' })).toThrow()

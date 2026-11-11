@@ -30,7 +30,11 @@ export interface FakeGhScript {
   repositories: Record<string, FakeRepository>
 }
 
-export interface Posted { repository: string; path: string; body: string }
+export interface Posted {
+  repository: string
+  path: string
+  body: string
+}
 
 export interface FakeGh {
   commands: Commands
@@ -61,9 +65,13 @@ const fieldsOf = (args: readonly string[]): Record<string, string> => {
   return fields
 }
 
-const failure = (status: number): Error => Object.assign(new Error('failed'), { stderr: `gh: Request failed (HTTP ${status})`, code: 1 })
+const failure = (status: number): Error =>
+  Object.assign(new Error('failed'), { stderr: `gh: Request failed (HTTP ${status})`, code: 1 })
 
-export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string, string | undefined>; apiEnv?: Record<string, string>; posted?: Posted[] } = {}): FakeGh {
+export function fakeGh(
+  script: FakeGhScript,
+  options: { baseEnv?: Record<string, string | undefined>; apiEnv?: Record<string, string>; posted?: Posted[] } = {},
+): FakeGh {
   const calls: string[] = []
   const posted: Posted[] = options.posted ?? []
   const execs: FakeGh['execs'] = []
@@ -72,7 +80,8 @@ export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string,
   const holds: Hold[] = []
   const login = script.login ?? AGENT
 
-  const findRepository = (name: string): string | undefined => Object.keys(script.repositories).find(item => item.toLowerCase() === name.toLowerCase())
+  const findRepository = (name: string): string | undefined =>
+    Object.keys(script.repositories).find(item => item.toLowerCase() === name.toLowerCase())
 
   const graphql = (fields: Record<string, string>): unknown => {
     const query = fields.query ?? ''
@@ -92,7 +101,11 @@ export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string,
     }
     if (query.includes('resolveReviewThread')) {
       const rootId = Number(/^RT_(\d+)$/.exec(fields.id ?? '')?.[1])
-      const owner = Object.keys(script.repositories).find(key => Object.values(script.repositories[key]!.reviewComments ?? {}).flat().some(item => (item as { id?: unknown }).id === rootId))
+      const owner = Object.keys(script.repositories).find(key =>
+        Object.values(script.repositories[key]!.reviewComments ?? {})
+          .flat()
+          .some(item => (item as { id?: unknown }).id === rootId),
+      )
       if (owner) (script.repositories[owner]!.resolved ??= new Set<number>()).add(rootId)
       return { data: { resolveReviewThread: { thread: { isResolved: true } } } }
     }
@@ -100,7 +113,9 @@ export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string,
       if (!name || !node) throw failure(404)
       const number = Number(node[2])
       const pr = script.repositories[name]!.pulls?.[number] ?? throwNotFound()
-      Object.assign(pr as Record<string, unknown>, { auto_merge: { merge_method: (fields.method ?? '').toLowerCase() } })
+      Object.assign(pr as Record<string, unknown>, {
+        auto_merge: { merge_method: (fields.method ?? '').toLowerCase() },
+      })
       return { data: { enablePullRequestAutoMerge: { pullRequest: { number } } } }
     }
     throw failure(400)
@@ -128,7 +143,16 @@ export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string,
       const fields = fieldsOf(args)
       const numbers = [...Object.keys(repo.pulls ?? {}), ...Object.keys(repo.issues ?? {})].map(Number)
       const number = 1 + Math.max(0, ...numbers)
-      const created = pull(name, number, { title: fields.title, body: fields.body, user: { login, type: 'User' }, node_id: `PR_${name}_${number}`, draft: fields.draft === 'true', head: { sha: 'head-' + number, ref: fields.head, repo: { full_name: name } }, base: { ref: fields.base }, state: 'open' })
+      const created = pull(name, number, {
+        title: fields.title,
+        body: fields.body,
+        user: { login, type: 'User' },
+        node_id: `PR_${name}_${number}`,
+        draft: fields.draft === 'true',
+        head: { sha: 'head-' + number, ref: fields.head, repo: { full_name: name } },
+        base: { ref: fields.base },
+        state: 'open',
+      })
       repo.pulls ??= {}
       repo.issues ??= {}
       repo.pulls[number] = created
@@ -152,7 +176,13 @@ export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string,
       posted.push({ repository: name, path: rest, body: fields.body ?? '' })
       const id = 1000 + posted.length
       repo.reviewComments ??= {}
-      ;(repo.reviewComments[number] ??= []).push({ id, body: fields.body ?? '', in_reply_to_id: root, user: { login, type: 'User' }, pull_request_url: `https://api.github.com/repos/${name}/pulls/${number}` })
+      ;(repo.reviewComments[number] ??= []).push({
+        id,
+        body: fields.body ?? '',
+        in_reply_to_id: root,
+        user: { login, type: 'User' },
+        pull_request_url: `https://api.github.com/repos/${name}/pulls/${number}`,
+      })
       return { id }
     }
     if (/^pulls\/\d+\/merge$/.test(rest) && args.includes('PUT')) return { merged: true }
@@ -180,7 +210,12 @@ export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string,
         repo.comments ??= {}
         const now = new Date().toISOString()
         ;(repo.comments[number] ??= []).push({
-          id, body, user: { login, type: 'User' }, html_url: `https://github.com/${name}/issues/${number}#issuecomment-${id}`, created_at: now, updated_at: now,
+          id,
+          body,
+          user: { login, type: 'User' },
+          html_url: `https://github.com/${name}/issues/${number}#issuecomment-${id}`,
+          created_at: now,
+          updated_at: now,
         })
       }
       return { id }
@@ -198,7 +233,9 @@ export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string,
     const reviewComment = /^pulls\/comments\/(\d+)$/.exec(rest)
     if (reviewComment) {
       const id = Number(reviewComment[1])
-      const found = Object.values(repo.reviewComments ?? {}).flat().find(item => (item as { id?: unknown }).id === id)
+      const found = Object.values(repo.reviewComments ?? {})
+        .flat()
+        .find(item => (item as { id?: unknown }).id === id)
       return found ?? throwNotFound()
     }
     const checks = /^commits\/([^/]+)\/check-runs$/.exec(rest)
@@ -209,11 +246,17 @@ export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string,
     throwNotFound()
   }
 
-  const throwNotFound = (): never => { throw failure(404) }
+  const throwNotFound = (): never => {
+    throw failure(404)
+  }
 
   const output = (value: unknown, args: readonly string[]): string => {
     if (args.includes('--paginate')) return JSON.stringify([value])
-    if (args.includes('--include')) return 'HTTP/2.0 200 OK\r\nX-Poll-Interval: 60\r\nX-RateLimit-Remaining: 4999\r\nX-RateLimit-Reset: 1790000000\r\n\r\n' + JSON.stringify(value)
+    if (args.includes('--include'))
+      return (
+        'HTTP/2.0 200 OK\r\nX-Poll-Interval: 60\r\nX-RateLimit-Remaining: 4999\r\nX-RateLimit-Reset: 1790000000\r\n\r\n' +
+        JSON.stringify(value)
+      )
     return JSON.stringify(value)
   }
 
@@ -226,7 +269,11 @@ export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string,
     calls.push(path)
     const method = args.indexOf('--method')
     const fields = fieldsOf(args)
-    requests.push({ method: method >= 0 ? args[method + 1] ?? '' : path === 'graphql' ? 'POST' : 'GET', path, fields })
+    requests.push({
+      method: method >= 0 ? (args[method + 1] ?? '') : path === 'graphql' ? 'POST' : 'GET',
+      path,
+      fields,
+    })
     if (path === 'graphql') {
       const { query = '', ...variables } = fields
       graphqlCalls.push({ query, variables })
@@ -257,7 +304,9 @@ export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string,
     graphql: graphqlCalls,
     hold: prefix => {
       let open: () => void = () => {}
-      const gate = new Promise<void>(resolve => { open = resolve })
+      const gate = new Promise<void>(resolve => {
+        open = resolve
+      })
       const held: Hold = { prefix, reached: false, gate, open }
       holds.push(held)
       return { reached: () => held.reached, release: () => held.open() }
@@ -265,7 +314,11 @@ export function fakeGh(script: FakeGhScript, options: { baseEnv?: Record<string,
   }
 }
 
-export const issue = (repository: string, number: number, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+export const issue = (
+  repository: string,
+  number: number,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> => ({
   id: number,
   number,
   title: `Issue ${number}`,
@@ -278,7 +331,11 @@ export const issue = (repository: string, number: number, overrides: Record<stri
   ...overrides,
 })
 
-export const pull = (repository: string, number: number, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+export const pull = (
+  repository: string,
+  number: number,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> => ({
   ...issue(repository, number),
   html_url: `https://github.com/${repository}/pull/${number}`,
   pull_request: { url: `https://api.github.com/repos/${repository}/pulls/${number}` },
@@ -287,7 +344,12 @@ export const pull = (repository: string, number: number, overrides: Record<strin
   ...overrides,
 })
 
-export const comment = (repository: string, number: number, id: number, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+export const comment = (
+  repository: string,
+  number: number,
+  id: number,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> => ({
   id,
   body: 'comment',
   user: { login: 'carol', type: 'User' },
@@ -341,7 +403,10 @@ export function recordingHost(kind: SourceKind<any>): Recording {
     atomic: work => work(),
     state: {
       get: name => state.get(name) as never,
-      set: (name, value) => { if (value === undefined) state.delete(name); else state.set(name, value) },
+      set: (name, value) => {
+        if (value === undefined) state.delete(name)
+        else state.set(name, value)
+      },
       keys: family => [...state.keys()].filter(name => name.startsWith(family.prefix)) as never,
     },
     threads: {
@@ -362,7 +427,9 @@ export function recordingHost(kind: SourceKind<any>): Recording {
       get: id => tickets.get(id),
       open: () => [...tickets.values()].filter(ticket => !ticket.ended),
       bindThread: () => {},
-      threadClosed: (thread, outcome) => { closed.push({ thread, outcome }) },
+      threadClosed: (thread, outcome) => {
+        closed.push({ thread, outcome })
+      },
     },
     triggers: {
       get: id => received.find(item => item.trigger.id === id)?.trigger,
@@ -370,7 +437,9 @@ export function recordingHost(kind: SourceKind<any>): Recording {
     },
     notify: () => {},
     report,
-    log: (level, event, fields) => { logs.push({ level, event, fields }) },
+    log: (level, event, fields) => {
+      logs.push({ level, event, fields })
+    },
   }
   return {
     host: { sources: registry, context: () => context },

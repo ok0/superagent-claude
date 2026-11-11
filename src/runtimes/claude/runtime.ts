@@ -4,11 +4,24 @@
  * flag is unused). Message uuids are adapter UUIDs mapped to input ids. The permission mode is fixed by options.ts.
  * A result suppressed by interrupt does not end the newer turn: busy and held followups wait for that turn's own result.
  */
-import { query as sdkQuery, type Options, type SDKMessage, type SDKUserMessage, type SDKControlInterruptResponse } from '@anthropic-ai/claude-agent-sdk'
+import {
+  query as sdkQuery,
+  type Options,
+  type SDKMessage,
+  type SDKUserMessage,
+  type SDKControlInterruptResponse,
+} from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import type { AgentRuntime, AgentSession, RuntimeEvent, RuntimeInput, RuntimeProbe, SessionSpec } from '../../executor/contract.ts'
+import type {
+  AgentRuntime,
+  AgentSession,
+  RuntimeEvent,
+  RuntimeInput,
+  RuntimeProbe,
+  SessionSpec,
+} from '../../executor/contract.ts'
 import { sdkOptions, type AuthMode, type OptionsContext } from './options.ts'
 import { EventMapper, subagentMessage } from './events.ts'
 import { mcpServer } from './mcp.ts'
@@ -24,7 +37,12 @@ export interface QueryHandle extends AsyncIterable<SDKMessage> {
 
 export type QueryFn = (params: { prompt: AsyncIterable<SDKUserMessage>; options: Options }) => QueryHandle
 
-export interface ToolDenial { key: string; tool: string; reason: string; agentId?: string }
+export interface ToolDenial {
+  key: string
+  tool: string
+  reason: string
+  agentId?: string
+}
 
 export interface ClaudeRuntimeOptions {
   mode: AuthMode
@@ -45,17 +63,32 @@ export interface ClaudeRuntimeOptions {
 }
 
 export function bwrapProbeArgs(weakerNested: boolean): string[] {
-  return ['--ro-bind', '/', '/', '--dev', '/dev', ...(weakerNested ? ['--tmpfs', '/proc'] : ['--proc', '/proc']), '--unshare-all', '--die-with-parent', 'true']
+  return [
+    '--ro-bind',
+    '/',
+    '/',
+    '--dev',
+    '/dev',
+    ...(weakerNested ? ['--tmpfs', '/proc'] : ['--proc', '/proc']),
+    '--unshare-all',
+    '--die-with-parent',
+    'true',
+  ]
 }
 
 /** Linux: bwrap and socat on PATH and one bwrap smoke run with the same /proc choice the SDK makes (fresh /proc, or a tmpfs /proc with weakerNested, the mask the SDK also adds). */
 export function sandboxAvailable(
   platform: NodeJS.Platform = process.platform,
   weakerNested = false,
-  run: (cmd: string, args: string[]) => number | null = (cmd, args) => spawnSync(cmd, args, { stdio: 'ignore', timeout: 10_000 }).status,
+  run: (cmd: string, args: string[]) => number | null = (cmd, args) =>
+    spawnSync(cmd, args, { stdio: 'ignore', timeout: 10_000 }).status,
 ): boolean {
   if (platform === 'darwin') return existsSync('/usr/bin/sandbox-exec')
-  if (platform === 'linux') return run('sh', ['-c', 'command -v bwrap && command -v socat']) === 0 && run('bwrap', bwrapProbeArgs(weakerNested)) === 0
+  if (platform === 'linux')
+    return (
+      run('sh', ['-c', 'command -v bwrap && command -v socat']) === 0 &&
+      run('bwrap', bwrapProbeArgs(weakerNested)) === 0
+    )
   return false
 }
 
@@ -79,7 +112,9 @@ class MessageStream implements AsyncIterable<SDKUserMessage> {
     for (;;) {
       while (this.items.length > 0) yield this.items.shift()!
       if (this.done) return
-      await new Promise<void>(resolve => { this.wake = () => resolve() })
+      await new Promise<void>(resolve => {
+        this.wake = () => resolve()
+      })
       this.wake = undefined
     }
   }
@@ -130,7 +165,10 @@ export class ClaudeSession implements AgentSession {
       abortController: this.abort,
       stderr: config.stderr,
       trustRepoConfig: config.trustRepoConfig,
-      onDeny: config.onDeny ? (tool, reason, agentId?: string) => config.onDeny!({ key: spec.key, tool, reason, ...(agentId !== undefined ? { agentId } : {}) }) : undefined,
+      onDeny: config.onDeny
+        ? (tool, reason, agentId?: string) =>
+            config.onDeny!({ key: spec.key, tool, reason, ...(agentId !== undefined ? { agentId } : {}) })
+        : undefined,
       spawn: config.spawn,
     })
     this.q = queryFn({ prompt: this.stream, options })
@@ -146,7 +184,9 @@ export class ClaudeSession implements AgentSession {
     for (;;) {
       while (this.queue.length > 0) yield this.queue.shift()!
       if (this.ended) return
-      await new Promise<void>(resolve => { this.wakeEvents = () => resolve() })
+      await new Promise<void>(resolve => {
+        this.wakeEvents = () => resolve()
+      })
       this.wakeEvents = undefined
     }
   }
@@ -179,7 +219,12 @@ export class ClaudeSession implements AgentSession {
     } catch {}
     this.abort.abort()
     let timer: NodeJS.Timeout | undefined
-    await Promise.race([this.pumping, new Promise<void>(resolve => { timer = setTimeout(resolve, 10_000) })])
+    await Promise.race([
+      this.pumping,
+      new Promise<void>(resolve => {
+        timer = setTimeout(resolve, 10_000)
+      }),
+    ])
     clearTimeout(timer)
     this.finish()
   }
@@ -222,7 +267,8 @@ export class ClaudeSession implements AgentSession {
         }
       }
     } catch (error) {
-      if (!this.closing) this.emit({ type: 'error', message: error instanceof Error ? error.message : String(error), retryable: false })
+      if (!this.closing)
+        this.emit({ type: 'error', message: error instanceof Error ? error.message : String(error), retryable: false })
     } finally {
       this.finish()
     }
@@ -260,21 +306,28 @@ export class ClaudeRuntime implements AgentRuntime {
   }
 
   private sandboxUsable(): boolean {
-    return this.usable ??= (this.options.sandboxAvailable ?? (() => sandboxAvailable(process.platform, this.options.weakerNestedSandbox ?? false)))()
+    return (this.usable ??= (
+      this.options.sandboxAvailable ??
+      (() => sandboxAvailable(process.platform, this.options.weakerNestedSandbox ?? false))
+    )())
   }
 
   async open(spec: SessionSpec): Promise<ClaudeSession> {
-    return new ClaudeSession(spec, {
-      mode: this.options.mode,
-      configDir: this.options.configDir,
-      env: this.options.env ?? process.env,
-      sandbox: (this.options.sandbox ?? true) && (!this.options.allowUnsandboxed || this.sandboxUsable()),
-      weakerNestedSandbox: this.options.weakerNestedSandbox ?? false,
-      stderr: this.options.stderr,
-      trustRepoConfig: this.options.trustRepoConfig ?? false,
-      onDeny: this.options.onDeny,
-      spawn: this.registry ? trackedSpawn(this.registry, this.options.stderr) : undefined,
-    }, this.options.query ?? sdkQuery)
+    return new ClaudeSession(
+      spec,
+      {
+        mode: this.options.mode,
+        configDir: this.options.configDir,
+        env: this.options.env ?? process.env,
+        sandbox: (this.options.sandbox ?? true) && (!this.options.allowUnsandboxed || this.sandboxUsable()),
+        weakerNestedSandbox: this.options.weakerNestedSandbox ?? false,
+        stderr: this.options.stderr,
+        trustRepoConfig: this.options.trustRepoConfig ?? false,
+        onDeny: this.options.onDeny,
+        spawn: this.registry ? trackedSpawn(this.registry, this.options.stderr) : undefined,
+      },
+      this.options.query ?? sdkQuery,
+    )
   }
 
   async reap(): Promise<number[]> {

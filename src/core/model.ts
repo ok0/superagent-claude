@@ -3,11 +3,21 @@
 import type { Reason } from './reasons.ts'
 
 /** Actor identity in the source's own vocabulary; Policy decides which actors may originate work on that Source. */
-export interface ActorRef { source: string; id: string }
+export interface ActorRef {
+  source: string
+  id: string
+}
 /** Thread identity; the rule that derives `id` from a native event belongs to the source. */
-export interface ThreadRef { source: string; id: string }
+export interface ThreadRef {
+  source: string
+  id: string
+}
 /** Write-only address on a thread; the address format belongs to the source. */
-export interface ChannelRef { source: string; thread: string; address: Record<string, string> }
+export interface ChannelRef {
+  source: string
+  thread: string
+  address: Record<string, string>
+}
 
 /** Stable key of a thread across the whole domain. */
 export const threadKey = (ref: ThreadRef): string => `${ref.source}:${ref.id}`
@@ -80,19 +90,31 @@ export function followupOwners(trigger: Pick<Trigger, 'id' | 'human' | 'threads'
   // The disposition alone rules most messages out, so a Thread or a ticket is read only for one that may have an owner.
   const returned = new Set(disposition.handbacks?.map(item => item.ticketId))
   const reached = disposition.fanout.filter(id => !returned.has(id) && !disposition.context?.includes(id))
-  if (!reached.length || records.threads.get(threadKey(trigger.threads[0]!))?.evaluating?.triggerIds.includes(trigger.id)) return []
+  if (
+    !reached.length ||
+    records.threads.get(threadKey(trigger.threads[0]!))?.evaluating?.triggerIds.includes(trigger.id)
+  )
+    return []
   return reached.filter(id => {
     const ticket = records.tickets.get(id)
-    return !!ticket && (liveTicket(ticket) || (ticket.ended?.by !== 'human'
-      && ticket.inputs.some(input => input.kind === 'trigger' && input.triggerId === trigger.id && ticket.undelivered.includes(input.id))))
+    return (
+      !!ticket &&
+      (liveTicket(ticket) ||
+        (ticket.ended?.by !== 'human' &&
+          ticket.inputs.some(
+            input =>
+              input.kind === 'trigger' && input.triggerId === trigger.id && ticket.undelivered.includes(input.id),
+          )))
+    )
   })
 }
 /**
  * Whether a Decision settled what a person's message asks for: a stop on it, taken or refused, decides only that ticket's
  * work, routing it to a ticket leaves it to that ticket's worker, and an unavailable one decided nothing.
  */
-export const settled = (decision: Pick<Decision, 'kind' | 'reason'>): boolean => !['stop', 'unavailable'].includes(decision.kind)
-  && !decision.reason.some(reason => ['stopNotExplicit', 'stopUnknown', 'routed'].includes(reason.code))
+export const settled = (decision: Pick<Decision, 'kind' | 'reason'>): boolean =>
+  !['stop', 'unavailable'].includes(decision.kind) &&
+  !decision.reason.some(reason => ['stopNotExplicit', 'stopUnknown', 'routed'].includes(reason.code))
 
 export type Strength = 'explicit' | 'inferred'
 /** The cells of a receiving scope's row in the admission table, by whether the sender is listed and addresses the agent. */
@@ -103,7 +125,11 @@ export type AdmissionCell = 'listedUnaddressed' | 'unlistedAddressed' | 'unliste
  */
 export type AcceptMode = 'off' | 'observe' | 'auto'
 /** Where a Mandate's Trigger was received: its Source, its receiving scope as the Source recorded it, and its admission row. */
-interface Received { source?: string; scope?: Record<string, unknown>; row?: string }
+interface Received {
+  source?: string
+  scope?: Record<string, unknown>
+  row?: string
+}
 /**
  * How the gate admitted the Trigger a Mandate came from, which `revalidate` re-checks (see `docs/002`):
  * - `addressed`: a sender on the Source's list addressed the agent;
@@ -115,13 +141,13 @@ interface Received { source?: string; scope?: Record<string, unknown>; row?: str
  * `sender` names the allowed sender at acceptance time, and `rules` the rules an assessment matched.
  */
 export type MandateBasis = Received & { sender?: string; rules?: string[] } & (
-  | { via: 'addressed'; addressed: 'mention' | 'direct' }
-  | { via: 'followup'; authority?: string }
-  | { via: 'admission'; cell: AdmissionCell; addressed?: 'mention' | 'direct'; observation?: { mode: AcceptMode } }
-  | { via: 'listed'; addressed?: 'mention' | 'direct'; observation?: { mode?: AcceptMode }; authority?: string }
-  /** A message of a bot on its Source's bot list: an inferred candidate at most, never an explicit request or a stop. */
-  | { via: 'bot'; addressed?: 'mention' | 'direct'; observation: { mode: AcceptMode } }
-)
+    | { via: 'addressed'; addressed: 'mention' | 'direct' }
+    | { via: 'followup'; authority?: string }
+    | { via: 'admission'; cell: AdmissionCell; addressed?: 'mention' | 'direct'; observation?: { mode: AcceptMode } }
+    | { via: 'listed'; addressed?: 'mention' | 'direct'; observation?: { mode?: AcceptMode }; authority?: string }
+    /** A message of a bot on its Source's bot list: an inferred candidate at most, never an explicit request or a stop. */
+    | { via: 'bot'; addressed?: 'mention' | 'direct'; observation: { mode: AcceptMode } }
+  )
 
 /** Immutable authorization produced by an accept decision; execution is bounded by it and it never changes. */
 export interface Mandate {
@@ -184,7 +210,11 @@ export interface Thread {
 /** Text in both interface languages, or the same text in both. */
 export type Text = string | { zh: string; en: string }
 /** One fact a Source states about its thread, such as an issue number or a CI result; `problem` marks one that needs a person. */
-export interface ThreadFact { label?: Text; value: Text; problem?: true }
+export interface ThreadFact {
+  label?: Text
+  value: Text
+  problem?: true
+}
 /** A thread's facts by id, ordered for display; each writer owns its fact ids. */
 export type ThreadFacts = Record<string, ThreadFact>
 
@@ -237,20 +267,27 @@ export interface Assignment {
 
 export type TicketInput =
   /** A Trigger on one of its Threads, or attached to it; `human` when a person wrote it. */
-  | { id: string; kind: 'trigger'; triggerId: string; at: string; note?: string; human?: true
-    /** A message no person wrote that reached the ticket while it rested on a ready report: it waits and goes to the worker as an inject with the next delivery (ADR-24). */
-    quiet?: true
-    /** It reached the ticket only on a Thread its Executor follows for context. */
-    context?: true
-    /**
-     * When the worker's Session took the message that carried it into a step, from which its model reads it; `null` while
-     * it waits in the Session. One delivered before reads were recorded has none, and counts as read from `deliveredAt`.
-     */
-    readAt?: string | null
-    /** The Assignment it was last delivered to. */
-    deliveredTo?: string
-    /** When an earlier version handed it to the worker. */
-    deliveredAt?: string }
+  | {
+      id: string
+      kind: 'trigger'
+      triggerId: string
+      at: string
+      note?: string
+      human?: true
+      /** A message no person wrote that reached the ticket while it rested on a ready report: it waits and goes to the worker as an inject with the next delivery (ADR-24). */
+      quiet?: true
+      /** It reached the ticket only on a Thread its Executor follows for context. */
+      context?: true
+      /**
+       * When the worker's Session took the message that carried it into a step, from which its model reads it; `null` while
+       * it waits in the Session. One delivered before reads were recorded has none, and counts as read from `deliveredAt`.
+       */
+      readAt?: string | null
+      /** The Assignment it was last delivered to. */
+      deliveredTo?: string
+      /** When an earlier version handed it to the worker. */
+      deliveredAt?: string
+    }
   /** The Policy changed in a way that bears on the ticket, as `effect` says; Inputs written before effects have none. */
   | { id: string; kind: 'policy-changed'; from: string; to: string; at: string; effect?: PolicyEffect }
   /** A Decision reopened the ticket; written before ended tickets resumed on their own. */
@@ -277,7 +314,11 @@ export type TicketEndBy = 'executor' | 'human'
 /** How a ticket ended: with its result, with its pull request merged or closed unmerged, with nothing to do, or stopped by a person. */
 export type TicketOutcome = 'completed' | 'merged' | 'closed' | 'dropped' | 'stopped'
 /** A question for a person; `triggerId` is the human message that raised it, whose conversation it goes back to. */
-export interface Attention { id: string; question: string; triggerId?: string }
+export interface Attention {
+  id: string
+  question: string
+  triggerId?: string
+}
 /** Ticket aggregate: an authorized work item with its assignments, channels, thread bindings, and inputs. */
 export interface Ticket {
   id: string
@@ -325,35 +366,53 @@ export interface Follow {
   url?: string
   closed?: { at: string; outcome: 'merged' | 'closed' }
 }
-export interface Execution { name: string; directory: string; assignment: string }
+export interface Execution {
+  name: string
+  directory: string
+  assignment: string
+}
 
 /** Whether a ticket is open: it has not ended. */
 export const liveTicket = (ticket: Pick<Ticket, 'ended'>): boolean => !ticket.ended
 /** How a ticket ended. */
 export const ticketOutcome = (ticket: Pick<Ticket, 'ended'>): TicketOutcome | undefined => ticket.ended?.outcome
-export const runningAssignment = (ticket: Ticket): Assignment | undefined => ticket.assignments.find(assignment => assignment.state === 'running')
+export const runningAssignment = (ticket: Ticket): Assignment | undefined =>
+  ticket.assignments.find(assignment => assignment.state === 'running')
 /**
  * Whether a Trigger reached a ticket: it started the ticket, came to it as an Input, or is on a Thread the ticket subscribes
  * to; with `context` false, not a Thread the ticket follows only for context, where its worker may read but not write.
  */
-export function reached(ticket: Ticket, trigger: Trigger, thread: (key: string) => Thread | undefined, context = true): boolean {
+export function reached(
+  ticket: Ticket,
+  trigger: Trigger,
+  thread: (key: string) => Thread | undefined,
+  context = true,
+): boolean {
   if (ticket.origin.triggerId === trigger.id) return true
   const input = ticket.inputs.some(item => item.kind === 'trigger' && item.triggerId === trigger.id)
-  return trigger.threads.some(ref => {
-    const current = thread(threadKey(ref))
-    return current?.subscriptions.includes(ticket.id) === true && (context || !current.context?.includes(ticket.id))
-  }) || (input && (context || !trigger.threads.every(ref => thread(threadKey(ref))?.context?.includes(ticket.id))))
+  return (
+    trigger.threads.some(ref => {
+      const current = thread(threadKey(ref))
+      return current?.subscriptions.includes(ticket.id) === true && (context || !current.context?.includes(ticket.id))
+    }) ||
+    (input && (context || !trigger.threads.every(ref => thread(threadKey(ref))?.context?.includes(ticket.id))))
+  )
 }
 export const latestAssignment = (ticket: Ticket): Assignment | undefined => ticket.assignments.at(-1)
 /** The latest report any of a ticket's Assignments made, which is what the ticket last said. */
-export const latestReport = (ticket: Pick<Ticket, 'assignments'>): Assignment['report'] => ticket.assignments.findLast(assignment => assignment.report)?.report
+export const latestReport = (ticket: Pick<Ticket, 'assignments'>): Assignment['report'] =>
+  ticket.assignments.findLast(assignment => assignment.report)?.report
 /**
  * Until when a ticket's worker had a turn to read what reached it: its latest report, but a progress report when `progress`
  * is false, or the end of its latest turn, whichever is later.
  */
 export function readUntil(ticket: Pick<Ticket, 'assignments'>, progress = true): string {
-  const report = ticket.assignments.findLast(assignment => assignment.report && (progress || assignment.report.state !== 'progress'))?.report
-  return [report?.at ?? '', ...ticket.assignments.map(assignment => assignment.idleAt ?? '')].reduce((a, b) => a > b ? a : b)
+  const report = ticket.assignments.findLast(
+    assignment => assignment.report && (progress || assignment.report.state !== 'progress'),
+  )?.report
+  return [report?.at ?? '', ...ticket.assignments.map(assignment => assignment.idleAt ?? '')].reduce((a, b) =>
+    a > b ? a : b,
+  )
 }
 /**
  * Whether a ticket waits for a person: its latest Assignment reported blocked or failed, and no person's message reached it
@@ -368,6 +427,10 @@ export function waitsForPerson(ticket: Ticket): boolean {
 export function caughtUp(ticket: Ticket, assignment: Assignment): boolean {
   const at = assignment.idleAt
   if (!at || (assignment.deliveredAt ?? '') > at) return false
-  return !ticket.inputs.some(input => input.kind === 'trigger' && (
-    (input.readAt === null && (input.deliveredTo ?? assignment.id) === assignment.id) || (typeof input.readAt === 'string' && input.readAt > at)))
+  return !ticket.inputs.some(
+    input =>
+      input.kind === 'trigger' &&
+      ((input.readAt === null && (input.deliveredTo ?? assignment.id) === assignment.id) ||
+        (typeof input.readAt === 'string' && input.readAt > at)),
+  )
 }

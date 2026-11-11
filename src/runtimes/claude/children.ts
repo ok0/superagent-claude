@@ -4,7 +4,10 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'node:path'
 import type { SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk'
 
-export interface ChildEntry { pid: number; command: string }
+export interface ChildEntry {
+  pid: number
+  command: string
+}
 
 export class ChildRegistry {
   readonly file: string
@@ -22,7 +25,9 @@ export class ChildRegistry {
       return []
     }
     if (!Array.isArray(parsed)) return []
-    return parsed.filter((entry): entry is ChildEntry => typeof entry?.pid === 'number' && typeof entry?.command === 'string')
+    return parsed.filter(
+      (entry): entry is ChildEntry => typeof entry?.pid === 'number' && typeof entry?.command === 'string',
+    )
   }
 
   add(entry: ChildEntry): void {
@@ -45,7 +50,10 @@ export class ChildRegistry {
   }
 }
 
-export function trackedSpawn(registry: ChildRegistry, stderr?: (text: string) => void): (options: SpawnOptions) => SpawnedProcess {
+export function trackedSpawn(
+  registry: ChildRegistry,
+  stderr?: (text: string) => void,
+): (options: SpawnOptions) => SpawnedProcess {
   return options => {
     const child = spawn(options.command, options.args, {
       cwd: options.cwd,
@@ -76,7 +84,10 @@ export function commandLine(pid: number): string | undefined {
       const line = readFileSync(proc, 'utf8').replace(/\0/g, ' ').trim()
       return line || undefined
     }
-    const line = execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    const line = execFileSync('ps', ['-o', 'command=', '-p', String(pid)], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
     return line || undefined
   } catch {
     return undefined
@@ -109,7 +120,9 @@ export async function reapChildren(registry: ChildRegistry, options: ReapOptions
   }
   const targets = registry.list().filter(entry => alive(entry.pid) && isClaudeChild(lookup(entry.pid), entry))
   for (const target of targets) {
-    try { process.kill(target.pid, 'SIGTERM') } catch {}
+    try {
+      process.kill(target.pid, 'SIGTERM')
+    } catch {}
   }
   const deadline = Date.now() + graceMs
   while (targets.some(target => alive(target.pid)) && Date.now() < deadline) {
@@ -117,7 +130,9 @@ export async function reapChildren(registry: ChildRegistry, options: ReapOptions
   }
   for (const target of targets) {
     if (alive(target.pid)) {
-      try { process.kill(target.pid, 'SIGKILL') } catch {}
+      try {
+        process.kill(target.pid, 'SIGKILL')
+      } catch {}
     }
   }
   registry.clear()

@@ -11,20 +11,34 @@ import { ClaudeRuntime, type ToolDenial } from '../../src/runtimes/claude/runtim
 import { waitUntil } from '../fixtures/async.ts'
 
 const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
-const mode: AuthMode | undefined = ((process.env.SUPERAGENT_CLAUDE_LIVE_AUTH as AuthMode | undefined) ?? (process.env.CLAUDE_CODE_OAUTH_TOKEN ? 'subscription' : process.env.ANTHROPIC_API_KEY ? 'api-key' : undefined))
+const mode: AuthMode | undefined =
+  (process.env.SUPERAGENT_CLAUDE_LIVE_AUTH as AuthMode | undefined) ??
+  (process.env.CLAUDE_CODE_OAUTH_TOKEN ? 'subscription' : process.env.ANTHROPIC_API_KEY ? 'api-key' : undefined)
 const model = process.env.SUPERAGENT_CLAUDE_LIVE_MODEL ?? 'haiku'
-const TOKENS = [process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN, process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN, process.env.CLAUDE_CODE_OAUTH_TOKEN, process.env.ANTHROPIC_API_KEY]
+const TOKENS = [
+  process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN,
+  process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN,
+  process.env.CLAUDE_CODE_OAUTH_TOKEN,
+  process.env.ANTHROPIC_API_KEY,
+]
   .map(token => token?.trim())
   .filter((token): token is string => Boolean(token))
 const GIT = ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false']
-const PROMPT = 'Use the Agent tool exactly once with subagent_type "general-purpose". Give the subagent this task: "Run the Bash command git push origin HEAD:main once, then read README.md and reply with its first line and whether the push worked." Do not run Bash yourself. After the subagent returns, reply with one line.'
+const PROMPT =
+  'Use the Agent tool exactly once with subagent_type "general-purpose". Give the subagent this task: "Run the Bash command git push origin HEAD:main once, then read README.md and reply with its first line and whether the push worked." Do not run Bash yourself. After the subagent returns, reply with one line.'
 
 type TurnEnded = Extract<RuntimeEvent, { type: 'turnEnded' }>
-interface Block { type?: string; name?: string; input?: { command?: unknown } }
+interface Block {
+  type?: string
+  name?: string
+  input?: { command?: unknown }
+}
 
 function watch(session: AgentSession): RuntimeEvent[] {
   const events: RuntimeEvent[] = []
-  void (async () => { for await (const event of session.events()) events.push(event) })()
+  void (async () => {
+    for await (const event of session.events()) events.push(event)
+  })()
   return events
 }
 
@@ -38,17 +52,19 @@ function walk(root: string): string[] {
 
 function transcriptBlocks(file: string): { sidechain: boolean; block: Block }[] {
   const fromSubagent = file.includes('/subagents/')
-  return readFileSync(file, 'utf8').split('\n').flatMap(line => {
-    if (!line.trim()) return []
-    let entry: { isSidechain?: unknown; message?: { content?: unknown } }
-    try {
-      entry = JSON.parse(line)
-    } catch {
-      return []
-    }
-    const content: Block[] = Array.isArray(entry.message?.content) ? entry.message.content : []
-    return content.map(block => ({ sidechain: fromSubagent || entry.isSidechain === true, block }))
-  })
+  return readFileSync(file, 'utf8')
+    .split('\n')
+    .flatMap(line => {
+      if (!line.trim()) return []
+      let entry: { isSidechain?: unknown; message?: { content?: unknown } }
+      try {
+        entry = JSON.parse(line)
+      } catch {
+        return []
+      }
+      const content: Block[] = Array.isArray(entry.message?.content) ? entry.message.content : []
+      return content.map(block => ({ sidechain: fromSubagent || entry.isSidechain === true, block }))
+    })
 }
 
 function alive(pid: number): boolean {
@@ -80,7 +96,13 @@ describe.skipIf(!LIVE || !mode)('claude live subagent', () => {
       execFileSync('git', [...GIT, '-C', work, 'commit', '-m', 'init'])
       execFileSync('git', ['-C', work, 'remote', 'add', 'origin', origin])
 
-      const rt = new ClaudeRuntime({ mode: mode!, configDir: join(dir, 'claude'), env: process.env, children: join(dir, 'children.json'), onDeny: d => denials.push(d) })
+      const rt = new ClaudeRuntime({
+        mode: mode!,
+        configDir: join(dir, 'claude'),
+        env: process.env,
+        children: join(dir, 'children.json'),
+        onDeny: d => denials.push(d),
+      })
       const transcriptRoot = join(dir, 'claude', 'projects')
       let lastEnds: TurnEnded[] = []
       for (const key of ['worker-subagentcheck', 'worker-subagentcheck-2']) {
@@ -104,40 +126,64 @@ describe.skipIf(!LIVE || !mode)('claude live subagent', () => {
           await session.close()
         }
         lastEnds = events.filter((event): event is TurnEnded => event.type === 'turnEnded')
-        const called = walk(transcriptRoot).filter(file => file.endsWith('.jsonl')).flatMap(transcriptBlocks)
+        const called = walk(transcriptRoot)
+          .filter(file => file.endsWith('.jsonl'))
+          .flatMap(transcriptBlocks)
           .some(({ sidechain, block }) => !sidechain && block.type === 'tool_use' && block.name === 'Agent')
         if (called) break
       }
 
-      const blocks = walk(transcriptRoot).filter(file => file.endsWith('.jsonl')).flatMap(transcriptBlocks)
-      const agentCalled = blocks.some(({ sidechain, block }) => !sidechain && block.type === 'tool_use' && block.name === 'Agent')
-      const subagentPushAttempted = blocks.some(({ sidechain, block }) => sidechain && block.type === 'tool_use' && block.name === 'Bash' && typeof block.input?.command === 'string' && block.input.command.includes('git push'))
+      const blocks = walk(transcriptRoot)
+        .filter(file => file.endsWith('.jsonl'))
+        .flatMap(transcriptBlocks)
+      const agentCalled = blocks.some(
+        ({ sidechain, block }) => !sidechain && block.type === 'tool_use' && block.name === 'Agent',
+      )
+      const subagentPushAttempted = blocks.some(
+        ({ sidechain, block }) =>
+          sidechain &&
+          block.type === 'tool_use' &&
+          block.name === 'Bash' &&
+          typeof block.input?.command === 'string' &&
+          block.input.command.includes('git push'),
+      )
 
       const refsOut = execFileSync('git', ['--git-dir', origin, 'for-each-ref'], { encoding: 'utf8' })
-      await waitUntil(() => registry.list().length === 0 && [...seenPids].every(pid => !alive(pid)), 15_000).catch(() => undefined)
+      await waitUntil(() => registry.list().length === 0 && [...seenPids].every(pid => !alive(pid)), 15_000).catch(
+        () => undefined,
+      )
       const remainingChildren = registry.list().length + [...seenPids].filter(alive).length
 
       const end = lastEnds.length === 1 ? lastEnds[0] : undefined
-      const denialInSubagent = denials.some(d => d.tool === 'Bash' && typeof (d as { agentId?: unknown }).agentId === 'string')
+      const denialInSubagent = denials.some(
+        d => d.tool === 'Bash' && typeof (d as { agentId?: unknown }).agentId === 'string',
+      )
       const pushOk = !subagentPushAttempted || denialInSubagent
       const noHeadText = denials.every(d => !d.reason.includes('HEAD:main'))
-      const verdict = agentCalled && end?.outcome === 'success' && refsOut === '' && pushOk && noHeadText && remainingChildren === 0 ? 'PASS' : 'FAIL'
+      const verdict =
+        agentCalled && end?.outcome === 'success' && refsOut === '' && pushOk && noHeadText && remainingChildren === 0
+          ? 'PASS'
+          : 'FAIL'
 
       const outDir = join(resolve(import.meta.dirname, '../..'), '.docs', 'acceptance', 'raw')
       mkdirSync(outDir, { recursive: true })
       const stamp = startedAt.replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '-')
-      const record = JSON.stringify({
-        verdict,
-        agentCalled,
-        subagentPushAttempted,
-        denials,
-        turnEnded: lastEnds.length,
-        outcome: end?.outcome,
-        costUsd: end?.costUsd,
-        seenPids: seenPids.size,
-        remainingChildren,
-        startedAt,
-      }, null, 2)
+      const record = JSON.stringify(
+        {
+          verdict,
+          agentCalled,
+          subagentPushAttempted,
+          denials,
+          turnEnded: lastEnds.length,
+          outcome: end?.outcome,
+          costUsd: end?.costUsd,
+          seenPids: seenPids.size,
+          remainingChildren,
+          startedAt,
+        },
+        null,
+        2,
+      )
       expect(TOKENS.some(token => record.includes(token))).toBe(false)
       writeFileSync(join(outDir, `subagent-${stamp}.json`), record + '\n')
 

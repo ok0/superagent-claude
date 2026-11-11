@@ -15,7 +15,9 @@ export const OK0_LITERAL_ALLOWED: readonly { file: string; reason: string }[] = 
 function ok0Hits(entries: readonly (readonly [string, string])[], allowed: readonly { file: string }[]): string[] {
   const allowedFiles = new Set(allowed.map(entry => entry.file))
   return entries.flatMap(([name, text]) =>
-    allowedFiles.has(name) ? [] : text.split('\n').flatMap((line, index) => (/\bok0\b/.test(line) ? [name + ':' + (index + 1)] : [])),
+    allowedFiles.has(name)
+      ? []
+      : text.split('\n').flatMap((line, index) => (/\bok0\b/.test(line) ? [name + ':' + (index + 1)] : [])),
   )
 }
 
@@ -31,13 +33,31 @@ function scannedFiles(): [string, string][] {
   const paths = [
     ...listFiles(join(TESTS_DIR, 'live')),
     ...listFiles(join(TESTS_DIR, 'fixtures')),
-    ...readdirSync(TESTS_DIR).filter(name => /^live-.*\.spec\.ts$/.test(name)).map(name => join(TESTS_DIR, name)),
+    ...readdirSync(TESTS_DIR)
+      .filter(name => /^live-.*\.spec\.ts$/.test(name))
+      .map(name => join(TESTS_DIR, name)),
   ]
   return paths.map(path => [relative(TESTS_DIR, path).split(sep).join('/'), readFileSync(path, 'utf8')])
 }
 
-const GITHUB_SPECS = ['code-change.spec.ts', 'conversation-quality.spec.ts', 'conversation.spec.ts', 'crash-restart.spec.ts', 'issue-reply.spec.ts', 'pr-delivery.spec.ts', 'private-workspace.spec.ts']
-const CLAUDE_ONLY_SPECS = ['claude-auth.spec.ts', 'claude-contract.spec.ts', 'claude-resume.spec.ts', 'guard-denial.spec.ts', 'repo-config.spec.ts', 'sandbox-linux.spec.ts', 'subagent.spec.ts']
+const GITHUB_SPECS = [
+  'code-change.spec.ts',
+  'conversation-quality.spec.ts',
+  'conversation.spec.ts',
+  'crash-restart.spec.ts',
+  'issue-reply.spec.ts',
+  'pr-delivery.spec.ts',
+  'private-workspace.spec.ts',
+]
+const CLAUDE_ONLY_SPECS = [
+  'claude-auth.spec.ts',
+  'claude-contract.spec.ts',
+  'claude-resume.spec.ts',
+  'guard-denial.spec.ts',
+  'repo-config.spec.ts',
+  'sandbox-linux.spec.ts',
+  'subagent.spec.ts',
+]
 
 describe('live target', () => {
   it('no target without the repository setting', () => {
@@ -70,7 +90,9 @@ describe('live target', () => {
     for (const report of ['example/playground', 'Example/PLAYGROUND', 'nope']) {
       expect(() => liveTarget({ ...E, SUPERAGENT_CLAUDE_LIVE_REPORT_REPO: report })).toThrow(LiveTargetError)
     }
-    expect(() => liveEnabled({ ...E, SUPERAGENT_CLAUDE_LIVE: '1', SUPERAGENT_CLAUDE_LIVE_REPO: 'bad' })).toThrow(LiveTargetError)
+    expect(() => liveEnabled({ ...E, SUPERAGENT_CLAUDE_LIVE: '1', SUPERAGENT_CLAUDE_LIVE_REPO: 'bad' })).toThrow(
+      LiveTargetError,
+    )
   })
 
   it('does not read tokens', () => {
@@ -79,13 +101,19 @@ describe('live target', () => {
   })
 
   it('renders placeholders', () => {
-    expect(renderLiveText('@{{agent}} hi {{owner}} in {{repo}}', EXAMPLE_TARGET)).toBe('@example-agent hi example-owner in example/playground')
+    expect(renderLiveText('@{{agent}} hi {{owner}} in {{repo}}', EXAMPLE_TARGET)).toBe(
+      '@example-agent hi example-owner in example/playground',
+    )
     expect(() => renderLiveText('{{other}}', EXAMPLE_TARGET)).toThrow(/unknown placeholder/)
     expect(renderLiveText('plain text', EXAMPLE_TARGET)).toBe('plain text')
   })
 
   it('guard refuses everything without a target', () => {
-    const calls: string[][] = [['repos/x/y/issues'], ['graphql', '-f', 'query=query { repository(owner: "x", name: "y") { id } }'], ['user']]
+    const calls: string[][] = [
+      ['repos/x/y/issues'],
+      ['graphql', '-f', 'query=query { repository(owner: "x", name: "y") { id } }'],
+      ['user'],
+    ]
     for (const args of calls) {
       expect(() => assertApiTarget(args, {})).toThrow(/live target not configured/)
     }
@@ -150,7 +178,9 @@ describe('live target', () => {
 
   it('GitHub live specs gate on the target', () => {
     const LIVE_DIR = join(TESTS_DIR, 'live')
-    const specs = readdirSync(LIVE_DIR).filter(name => name.endsWith('.spec.ts')).sort()
+    const specs = readdirSync(LIVE_DIR)
+      .filter(name => name.endsWith('.spec.ts'))
+      .sort()
     expect(specs).toEqual([...GITHUB_SPECS, ...CLAUDE_ONLY_SPECS].sort())
     const read = (name: string): string => readFileSync(join(LIVE_DIR, name), 'utf8')
     for (const name of GITHUB_SPECS) {

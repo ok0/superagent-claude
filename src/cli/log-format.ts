@@ -3,7 +3,10 @@
 export type LogFormat = 'text' | 'json'
 export const LOG_FORMAT_ENV = 'SUPERAGENT_CLAUDE_LOG_FORMAT'
 
-export function logFormat(argv: readonly string[], env: Readonly<Record<string, string | undefined>>): LogFormat | undefined {
+export function logFormat(
+  argv: readonly string[],
+  env: Readonly<Record<string, string | undefined>>,
+): LogFormat | undefined {
   let value: string | undefined = env[LOG_FORMAT_ENV] || undefined
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!

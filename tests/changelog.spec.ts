@@ -4,7 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { CATEGORIES, collectCommits, extractNotes, insertSection, previousTag, renderSection } from '../scripts/changelog.ts'
+import {
+  CATEGORIES,
+  collectCommits,
+  extractNotes,
+  insertSection,
+  previousTag,
+  renderSection,
+} from '../scripts/changelog.ts'
 import { checkText } from '../scripts/check-branding.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -20,10 +27,11 @@ export function changelogProblems(content: string): string[] {
   const problems: string[] = []
   const lines = content.split('\n')
   if (lines[0] !== '# Changelog') problems.push('first line is not # Changelog')
-  for (const l of lines.filter((x) => x.startsWith('## ['))) {
-    if (!/^## \[\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?\] - \d{4}-\d{2}-\d{2}$/.test(l)) problems.push(`bad release heading: ${l}`)
+  for (const l of lines.filter(x => x.startsWith('## ['))) {
+    if (!/^## \[\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?\] - \d{4}-\d{2}-\d{2}$/.test(l))
+      problems.push(`bad release heading: ${l}`)
   }
-  for (const l of lines.filter((x) => x.startsWith('### '))) {
+  for (const l of lines.filter(x => x.startsWith('### '))) {
     if (!(ALLOWED_HEADINGS as readonly string[]).includes(l.slice(4))) problems.push(`heading not allowed: ${l}`)
   }
   return problems
@@ -45,7 +53,17 @@ function repo(): string {
 function git(cwd: string, args: string[]): void {
   execFileSync(
     'git',
-    ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...args],
+    [
+      '-c',
+      'user.name=t',
+      '-c',
+      'user.email=t@example.com',
+      '-c',
+      'commit.gpgsign=false',
+      '-c',
+      'core.hooksPath=/dev/null',
+      ...args,
+    ],
     { cwd, stdio: 'pipe' },
   )
 }
@@ -117,12 +135,14 @@ describe('forbidden content', () => {
     ['feat: wire M12 support', 'pppppppp'],
     ['feat: finish the Milestone work', 'pppppppp'],
     ['feat: add x\n\nCo-Authored-By: Claude <noreply@anthropic.com>', 'pppppppp'],
-  ])('blocks %j', (message) => {
+  ])('blocks %j', message => {
     expect(() => renderSection('0.2.0', '2026-01-02', [{ sha: 'p'.repeat(40), message }])).toThrow('ppppppp')
   })
 
   it('does not block an excluded type', () => {
-    expect(() => renderSection('0.2.0', '2026-01-02', [{ sha: 'd'.repeat(40), message: 'docs: M12 notes' }])).not.toThrow()
+    expect(() =>
+      renderSection('0.2.0', '2026-01-02', [{ sha: 'd'.repeat(40), message: 'docs: M12 notes' }]),
+    ).not.toThrow()
   })
 
   it('keeps normal output free of milestone and attribution text', () => {
@@ -135,22 +155,23 @@ describe('forbidden content', () => {
     expect(out).not.toMatch(/co-authored-by/i)
   })
 
-  it.each(['feat: wire M12 support', 'feat: finish the Milestone work', 'feat: add x\n\nCo-Authored-By: Claude <noreply@anthropic.com>'])(
-    'CLI prepare blocks %j and leaves files unchanged',
-    (message) => {
-      const dir = repo()
-      writeFileSync(join(dir, 'x.txt'), 'x\n')
-      git(dir, ['add', 'x.txt'])
-      commit(dir, message)
-      const changelogBefore = readFileSync(join(dir, 'CHANGELOG.md'))
-      const packageBefore = readFileSync(join(dir, 'package.json'))
-      const result = cli(['prepare', '0.2.0', '--date', '2026-01-02'], dir)
-      expect(result.status).toBe(1)
-      expect(result.stderr).toContain('changelog blocked')
-      expect(readFileSync(join(dir, 'CHANGELOG.md'))).toEqual(changelogBefore)
-      expect(readFileSync(join(dir, 'package.json'))).toEqual(packageBefore)
-    },
-  )
+  it.each([
+    'feat: wire M12 support',
+    'feat: finish the Milestone work',
+    'feat: add x\n\nCo-Authored-By: Claude <noreply@anthropic.com>',
+  ])('CLI prepare blocks %j and leaves files unchanged', message => {
+    const dir = repo()
+    writeFileSync(join(dir, 'x.txt'), 'x\n')
+    git(dir, ['add', 'x.txt'])
+    commit(dir, message)
+    const changelogBefore = readFileSync(join(dir, 'CHANGELOG.md'))
+    const packageBefore = readFileSync(join(dir, 'package.json'))
+    const result = cli(['prepare', '0.2.0', '--date', '2026-01-02'], dir)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('changelog blocked')
+    expect(readFileSync(join(dir, 'CHANGELOG.md'))).toEqual(changelogBefore)
+    expect(readFileSync(join(dir, 'package.json'))).toEqual(packageBefore)
+  })
 })
 
 describe('previous tag selection', () => {
@@ -241,7 +262,7 @@ describe('prepare and notes', () => {
     const description = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8').split('\n')[2]
     expect(lines[0]).toBe('# Changelog')
     expect(lines[2]).toBe(description)
-    expect(lines.find((l) => l.startsWith('## ['))).toBe('## [0.2.0] - 2026-01-02')
+    expect(lines.find(l => l.startsWith('## ['))).toBe('## [0.2.0] - 2026-01-02')
     expect(changelog.endsWith('\n')).toBe(true)
     expect(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).version).toBe('0.2.0')
     expect(gitText(dir, ['tag', '-l']).trim()).toBe('')
@@ -271,7 +292,8 @@ describe('prepare and notes', () => {
   })
 
   it('extractNotes returns the body of one section', () => {
-    const text = '# Changelog\n\ndesc\n\n## [0.2.0] - 2026-01-02\n\n### Fixes\n\n- a (aaaaaaa)\n\n## [0.1.0] - 2026-01-01\n\n### Fixes\n\n- b (bbbbbbb)\n'
+    const text =
+      '# Changelog\n\ndesc\n\n## [0.2.0] - 2026-01-02\n\n### Fixes\n\n- a (aaaaaaa)\n\n## [0.1.0] - 2026-01-01\n\n### Fixes\n\n- b (bbbbbbb)\n'
     expect(extractNotes(text, '0.2.0')).toBe('### Fixes\n\n- a (aaaaaaa)')
   })
 })
@@ -300,7 +322,7 @@ describe('root CHANGELOG.md', () => {
     expect(changelogProblems(text)).toEqual([])
   })
 
-  it.each(['### Chores', '### Documentation', '### Misc'])('rejects the heading %s', (heading) => {
+  it.each(['### Chores', '### Documentation', '### Misc'])('rejects the heading %s', heading => {
     expect(changelogProblems(content + '\n' + heading + '\n').length).toBeGreaterThan(0)
   })
 

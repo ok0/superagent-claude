@@ -31,8 +31,14 @@ describe('claude event mapping', () => {
 
   it('a cumulative total that drops counts in full', () => {
     const steps: Step[] = [
-      { kind: 'message', message: { type: 'result', subtype: 'success', total_cost_usd: 0.002, num_turns: 1 } as never },
-      { kind: 'message', message: { type: 'result', subtype: 'success', total_cost_usd: 0.0005, num_turns: 1 } as never },
+      {
+        kind: 'message',
+        message: { type: 'result', subtype: 'success', total_cost_usd: 0.002, num_turns: 1 } as never,
+      },
+      {
+        kind: 'message',
+        message: { type: 'result', subtype: 'success', total_cost_usd: 0.0005, num_turns: 1 } as never,
+      },
     ]
     const costs = turnEnds(replay(steps)).map(e => (e as { costUsd: number }).costUsd)
     expect(costs).toEqual([0.002, 0.0005])
@@ -63,9 +69,12 @@ describe('claude event mapping', () => {
     expect(events[lastEnd - 1]).toEqual({ type: 'inputsRead', ids: ['C'] })
   })
 
-  it.each(['background-late', 'background-early'])('background stays above zero until the follow-up result (%s)', name => {
-    expect(turnEnds(replay(rec(name))).map(e => (e as { background: number }).background)).toEqual([1, 0])
-  })
+  it.each(['background-late', 'background-early'])(
+    'background stays above zero until the follow-up result (%s)',
+    name => {
+      expect(turnEnds(replay(rec(name))).map(e => (e as { background: number }).background)).toEqual([1, 0])
+    },
+  )
 
   it('foreground tasks do not count as background', () => {
     expect(turnEnds(replay(rec('foreground-task'))).map(e => (e as { background: number }).background)).toEqual([0])
@@ -84,8 +93,24 @@ describe('claude event mapping', () => {
   it('an interrupted turn ends with a discarded turnEnded that carries its usage, and the next turn counts from it', () => {
     const ends = turnEnds(replay(rec('interrupted')))
     expect(ends).toHaveLength(2)
-    expect(ends[0]).toEqual(expect.objectContaining({ type: 'turnEnded', outcome: 'success', turns: 3, background: 0, discarded: true, costUsd: expect.closeTo(0.00100205, 8) }))
-    expect(ends[1]).toEqual(expect.objectContaining({ type: 'turnEnded', outcome: 'success', turns: 1, costUsd: expect.closeTo(0.0015 - 0.00100205, 8) }))
+    expect(ends[0]).toEqual(
+      expect.objectContaining({
+        type: 'turnEnded',
+        outcome: 'success',
+        turns: 3,
+        background: 0,
+        discarded: true,
+        costUsd: expect.closeTo(0.00100205, 8),
+      }),
+    )
+    expect(ends[1]).toEqual(
+      expect.objectContaining({
+        type: 'turnEnded',
+        outcome: 'success',
+        turns: 1,
+        costUsd: expect.closeTo(0.0015 - 0.00100205, 8),
+      }),
+    )
     expect((ends[1] as { discarded?: true }).discarded).toBeUndefined()
   })
 
@@ -101,11 +126,25 @@ describe('claude event mapping', () => {
 it('subagent messages do not end the turn or set the API error', () => {
   const mapper = new EventMapper('S')
   const events = [
-    ...mapper.message({ type: 'assistant', parent_tool_use_id: 'toolu_1', agent_id: 'a1', error: 'rate_limit', message: { id: 'm1', content: [] } } as never),
-    ...mapper.message({ type: 'result', subtype: 'success', agent_id: 'a1', total_cost_usd: 0.01, num_turns: 1 } as never),
+    ...mapper.message({
+      type: 'assistant',
+      parent_tool_use_id: 'toolu_1',
+      agent_id: 'a1',
+      error: 'rate_limit',
+      message: { id: 'm1', content: [] },
+    } as never),
+    ...mapper.message({
+      type: 'result',
+      subtype: 'success',
+      agent_id: 'a1',
+      total_cost_usd: 0.01,
+      num_turns: 1,
+    } as never),
     ...mapper.message({ type: 'result', subtype: 'success', total_cost_usd: 0.02, num_turns: 1 } as never),
   ]
-  expect(events.filter(e => e.type === 'turnEnded')).toEqual([expect.objectContaining({ type: 'turnEnded', outcome: 'success', costUsd: expect.closeTo(0.02, 8) })])
+  expect(events.filter(e => e.type === 'turnEnded')).toEqual([
+    expect.objectContaining({ type: 'turnEnded', outcome: 'success', costUsd: expect.closeTo(0.02, 8) }),
+  ])
   expect(events.some(e => e.type === 'error')).toBe(false)
   expect(subagentMessage({ type: 'assistant', parent_tool_use_id: null })).toBe(false)
 })
@@ -114,9 +153,20 @@ it('a result suppressed by interrupt still reports its usage as discarded', () =
   const mapper = new EventMapper('S')
   mapper.message({ type: 'result', subtype: 'success', total_cost_usd: 0.2, num_turns: 1 } as never)
   mapper.skipNextResult()
-  expect(mapper.message({ type: 'result', subtype: 'error_during_execution', total_cost_usd: 0.7, num_turns: 3 } as never)).toEqual([
-    expect.objectContaining({ type: 'turnEnded', outcome: 'success', turns: 3, background: 0, discarded: true, costUsd: expect.closeTo(0.5, 8) }),
+  expect(
+    mapper.message({ type: 'result', subtype: 'error_during_execution', total_cost_usd: 0.7, num_turns: 3 } as never),
+  ).toEqual([
+    expect.objectContaining({
+      type: 'turnEnded',
+      outcome: 'success',
+      turns: 3,
+      background: 0,
+      discarded: true,
+      costUsd: expect.closeTo(0.5, 8),
+    }),
   ])
   const next = mapper.message({ type: 'result', subtype: 'success', total_cost_usd: 0.9, num_turns: 1 } as never)
-  expect(next).toEqual([expect.objectContaining({ type: 'turnEnded', outcome: 'success', turns: 1, costUsd: expect.closeTo(0.2, 8) })])
+  expect(next).toEqual([
+    expect.objectContaining({ type: 'turnEnded', outcome: 'success', turns: 1, costUsd: expect.closeTo(0.2, 8) }),
+  ])
 })

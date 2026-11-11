@@ -24,7 +24,10 @@ function tempDir(): string {
 function setup(): { dir: string; configPath: string; stateDir: string; teamDir: string } {
   const dir = tempDir()
   const configPath = join(dir, 'superagent-claude.json')
-  writeFileSync(configPath, JSON.stringify({ repositories: ['owner/repo'], policy: { allowed: ['alice'] }, stateDir: './state' }))
+  writeFileSync(
+    configPath,
+    JSON.stringify({ repositories: ['owner/repo'], policy: { allowed: ['alice'] }, stateDir: './state' }),
+  )
   const teamDir = join(dir, 'prompts', 'team')
   mkdirSync(teamDir, { recursive: true })
   writeFileSync(join(teamDir, 'communication.md'), 'Our communication')
@@ -35,8 +38,12 @@ function io(cwd: string) {
   const out: string[] = []
   const err: string[] = []
   const handle: CliIo = {
-    out: s => { out.push(s) },
-    err: s => { err.push(s) },
+    out: s => {
+      out.push(s)
+    },
+    err: s => {
+      err.push(s)
+    },
     cwd,
     env: { HOME: '/home/test' },
     signals: { once: () => {} },
@@ -91,7 +98,8 @@ describe('prompts diff', () => {
     try {
       const db = databasePath(stateDir)
       const digest = (): string => createHash('sha256').update(readFileSync(db)).digest('hex')
-      const rowCount = (): number => (store.db.prepare('SELECT COUNT(*) AS n FROM prompt_version').get() as { n: number }).n
+      const rowCount = (): number =>
+        (store.db.prepare('SELECT COUNT(*) AS n FROM prompt_version').get() as { n: number }).n
       const before = digest()
       const rows = rowCount()
       const { handle } = io(dir)

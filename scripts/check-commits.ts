@@ -19,11 +19,25 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isAiAttributionLine } from '../src/infra/text.ts'
 
-export const COMMIT_TYPES = ['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'build', 'ci', 'chore', 'revert'] as const
+export const COMMIT_TYPES = [
+  'feat',
+  'fix',
+  'docs',
+  'style',
+  'refactor',
+  'perf',
+  'test',
+  'build',
+  'ci',
+  'chore',
+  'revert',
+] as const
 
-export const HEADER_PATTERN = /^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^()\r\n]+\))?!?: \S.*$/
+export const HEADER_PATTERN =
+  /^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^()\r\n]+\))?!?: \S.*$/
 
-export const AUTO_HEADER_PATTERN = /^(Merge (branch|pull request|remote-tracking branch|tag|commit) |Merge [0-9a-f]{40} into [0-9a-f]{40}$|Revert ")/
+export const AUTO_HEADER_PATTERN =
+  /^(Merge (branch|pull request|remote-tracking branch|tag|commit) |Merge [0-9a-f]{40} into [0-9a-f]{40}$|Revert ")/
 
 export const ATTRIBUTION_PATTERNS: readonly RegExp[] = [
   /^co-authored-by:.*\b(claude|anthropic)\b/im,
@@ -46,12 +60,12 @@ type Target = { label: string; message: string }
 export function stripComments(raw: string): string {
   return raw
     .split(/\r?\n/)
-    .filter((line) => !line.startsWith('#'))
+    .filter(line => !line.startsWith('#'))
     .join('\n')
 }
 
 function headerOf(message: string): string | undefined {
-  const line = message.split(/\r?\n/).find((l) => l.trim() !== '')
+  const line = message.split(/\r?\n/).find(l => l.trim() !== '')
   return line?.trimEnd()
 }
 
@@ -61,14 +75,15 @@ export function checkMessage(message: string): string[] {
   const reasons: string[] = []
   if (!AUTO_HEADER_PATTERN.test(header) && !HEADER_PATTERN.test(header)) {
     reasons.push(
-      'header is not Conventional Commits: expected "type(scope)?!?: subject" with type one of ' + COMMIT_TYPES.join(', '),
+      'header is not Conventional Commits: expected "type(scope)?!?: subject" with type one of ' +
+        COMMIT_TYPES.join(', '),
     )
   }
   const lines = message.split(/\r?\n/)
   const shared = lines.find(isAiAttributionLine)
   if (shared !== undefined) reasons.push('contains Claude authorship/session attribution: "' + shared.trim() + '"')
   for (const pattern of ATTRIBUTION_PATTERNS) {
-    const line = lines.find((l) => pattern.test(l))
+    const line = lines.find(l => pattern.test(l))
     if (line !== undefined) {
       reasons.push('contains Claude authorship/session attribution: "' + line.trim() + '"')
     }
@@ -125,8 +140,7 @@ export function main(argv: readonly string[], cwd: string = process.cwd()): numb
   }
   if (inline) return report(targets)
 
-  const git = (args: string[]): string =>
-    execFileSync('git', args, { cwd, stdio: 'pipe', encoding: 'utf8' })
+  const git = (args: string[]): string => execFileSync('git', args, { cwd, stdio: 'pipe', encoding: 'utf8' })
   try {
     git(['rev-parse', '--is-inside-work-tree'])
   } catch {
@@ -150,8 +164,8 @@ export function main(argv: readonly string[], cwd: string = process.cwd()): numb
   }
   const entries = output
     .split('\x1e')
-    .map((entry) => entry.trim())
-    .filter((entry) => entry !== '')
+    .map(entry => entry.trim())
+    .filter(entry => entry !== '')
   for (const entry of entries) {
     const sep = entry.indexOf('\x1f')
     const sha = entry.slice(0, sep)

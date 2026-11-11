@@ -1,6 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
-import { Engine, UserError, latestReport, ticketOutcome, ticketStage, type EngineForExecutor, type EngineForMainSession, type EngineForPeople,
-  type EngineForSettings, type EngineForSources, type ReportState, type TicketStage } from '../src/core/index.ts'
+import {
+  Engine,
+  UserError,
+  latestReport,
+  ticketOutcome,
+  ticketStage,
+  type EngineForExecutor,
+  type EngineForMainSession,
+  type EngineForPeople,
+  type EngineForSettings,
+  type EngineForSources,
+  type ReportState,
+  type TicketStage,
+} from '../src/core/index.ts'
 import { accepted, harness, trigger } from './fixtures/engine.ts'
 
 describe('core index', () => {
@@ -20,10 +32,31 @@ describe('core index', () => {
     expect(typeof executor.report).toBe('function')
     const check: { [K in 'sources' | 'main' | 'people' | 'settings' | 'executor']: true } = {
       sources: true satisfies Exact<keyof EngineForSources, 'receive' | 'bindThread' | 'threadClosed'>,
-      main: true satisfies Exact<keyof EngineForMainSession, 'candidate' | 'candidateDelivered' | 'decide' | 'attach' | 'reply' | 'requestStatus' | 'note'>,
-      people: true satisfies Exact<keyof EngineForPeople, 'stopTicket' | 'retryTicket' | 'reevaluate' | 'unsubscribe' | 'dismiss'>,
+      main: true satisfies Exact<
+        keyof EngineForMainSession,
+        'candidate' | 'candidateDelivered' | 'decide' | 'attach' | 'reply' | 'requestStatus' | 'note'
+      >,
+      people: true satisfies Exact<
+        keyof EngineForPeople,
+        'stopTicket' | 'retryTicket' | 'reevaluate' | 'unsubscribe' | 'dismiss'
+      >,
       settings: true satisfies Exact<keyof EngineForSettings, 'policyChanged'>,
-      executor: true satisfies Exact<keyof EngineForExecutor, 'assignmentStarted' | 'inputsDelivered' | 'inputsRead' | 'turnEnded' | 'deliveryFailed' | 'assignmentInterrupted' | 'report' | 'limitReached' | 'markUnrelated' | 'handback' | 'followForContext' | 'reply' | 'bindThread'>,
+      executor: true satisfies Exact<
+        keyof EngineForExecutor,
+        | 'assignmentStarted'
+        | 'inputsDelivered'
+        | 'inputsRead'
+        | 'turnEnded'
+        | 'deliveryFailed'
+        | 'assignmentInterrupted'
+        | 'report'
+        | 'limitReached'
+        | 'markUnrelated'
+        | 'handback'
+        | 'followForContext'
+        | 'reply'
+        | 'bindThread'
+      >,
     }
     expect(Object.values(check).every(Boolean)).toBe(true)
   })
@@ -35,7 +68,13 @@ describe('idempotent accept', () => {
     expect(h.engine.receive(trigger('1'))).toBe('stored')
     expect(h.engine.receive(trigger('1'))).toBe('duplicate')
     h.pump()
-    const first = h.decide(h.requests.at(-1)!, { kind: 'accept', title: 'Fix', scope: 'small', reason: 'requested', acknowledgement: 'ok' })
+    const first = h.decide(h.requests.at(-1)!, {
+      kind: 'accept',
+      title: 'Fix',
+      scope: 'small',
+      reason: 'requested',
+      acknowledgement: 'ok',
+    })
     h.settle()
     const second = h.engine.decide('1', { kind: 'accept', title: 'Again', scope: 'small', reason: 'again' })
     expect(second).toEqual(first)

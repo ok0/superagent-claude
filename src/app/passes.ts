@@ -9,9 +9,17 @@ import type { Effects } from './effects.ts'
 
 export const PASS_INTERVAL_MS = 2000
 
-export interface Timers { setInterval(run: () => void, ms: number): unknown; clearInterval(handle: unknown): void }
+export interface Timers {
+  setInterval(run: () => void, ms: number): unknown
+  clearInterval(handle: unknown): void
+}
 
-const systemTimers: Timers = { setInterval: (run, ms) => setInterval(run, ms), clearInterval: handle => { clearInterval(handle as ReturnType<typeof setInterval>) } }
+const systemTimers: Timers = {
+  setInterval: (run, ms) => setInterval(run, ms),
+  clearInterval: handle => {
+    clearInterval(handle as ReturnType<typeof setInterval>)
+  },
+}
 
 export interface PassesHost {
   readonly engine: Pick<Engine, 'receive' | 'evaluateDue'>
@@ -44,7 +52,12 @@ export class Passes {
     this.timers = host.timers ?? systemTimers
     this.clock = host.now ?? (() => Date.now())
   }
-  start(): void { if (!this.stopped) this.timer = this.timers.setInterval(() => { this.request() }, PASS_INTERVAL_MS) }
+  start(): void {
+    if (!this.stopped)
+      this.timer = this.timers.setInterval(() => {
+        this.request()
+      }, PASS_INTERVAL_MS)
+  }
   stop(): Promise<unknown> {
     this.stopped = true
     if (this.timer !== undefined) this.timers.clearInterval(this.timer)
@@ -58,10 +71,19 @@ export class Passes {
   }
   request(): void {
     const { health } = this.host
-    this.pump().then(() => {
-      if (health.get()?.state !== 'error' || this.host.lifetime.aborted) return
-      health.set({ state: 'ready', detail: 'Orchestrator is ready', at: new Date(this.clock()).toISOString() })
-    }, (error: unknown) => { health.set({ state: 'error', detail: `A pass failed: ${String(error)}`, at: new Date(this.clock()).toISOString() }) })
+    this.pump().then(
+      () => {
+        if (health.get()?.state !== 'error' || this.host.lifetime.aborted) return
+        health.set({ state: 'ready', detail: 'Orchestrator is ready', at: new Date(this.clock()).toISOString() })
+      },
+      (error: unknown) => {
+        health.set({
+          state: 'error',
+          detail: `A pass failed: ${String(error)}`,
+          at: new Date(this.clock()).toISOString(),
+        })
+      },
+    )
   }
   /** Wait until no pass or effect that can start now is running. */
   async idle(): Promise<void> {
@@ -75,9 +97,15 @@ export class Passes {
   async pump(): Promise<void> {
     // Do not assess, dispatch, or send while waiting for setup; queued work waits for the restart that completes setup.
     if (!this.host.configured() || this.host.closing()) return
-    if (!this.pumping) return this.pumping = this.pumpOnce().finally(() => { this.pumping = undefined })
-    const next = () => { this.pumpAgain = undefined; return this.pump() }
-    return this.pumpAgain ??= this.pumping.then(next, next)
+    if (!this.pumping)
+      return (this.pumping = this.pumpOnce().finally(() => {
+        this.pumping = undefined
+      }))
+    const next = () => {
+      this.pumpAgain = undefined
+      return this.pump()
+    }
+    return (this.pumpAgain ??= this.pumping.then(next, next))
   }
   private async pumpOnce(): Promise<void> {
     this.host.effects.kick()

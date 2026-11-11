@@ -12,15 +12,19 @@ import { accepted, guest, trigger } from './fixtures/engine.ts'
 import { workerHarness } from './fixtures/executor.ts'
 
 type Harness = ReturnType<typeof workerHarness>
-const READY: FakeScript = ({ index }) => index === 0 ? { tools: [{ name: 'report', args: { state: 'ready', summary: 'done' } }] } : {}
+const READY: FakeScript = ({ index }) =>
+  index === 0 ? { tools: [{ name: 'report', args: { state: 'ready', summary: 'done' } }] } : {}
 async function endedTicket(w: Harness): Promise<string> {
   const id = accepted(w, '1').ticketId!
   await waitUntil(() => !!w.ticket(id).ended && !!w.runtime.sessions.at(-1)?.closed)
   return id
 }
-const wake = (w: Harness, n: string): void => { w.engine.receive(trigger(n, { actor: guest })); w.pump() }
+const wake = (w: Harness, n: string): void => {
+  w.engine.receive(trigger(n, { actor: guest }))
+  w.pump()
+}
 
-it('resumes an ended ticket on a person\'s message with its stored session and worktree, also after the executor is recreated', async () => {
+it("resumes an ended ticket on a person's message with its stored session and worktree, also after the executor is recreated", async () => {
   const directory = mkdtempSync(join(tmpdir(), 'worker-resume-'))
   try {
     const w1 = workerHarness({ directory, script: READY })
@@ -42,14 +46,28 @@ it('resumes an ended ticket on a person\'s message with its stored session and w
       await waitUntil(() => w2.runtime.opened.length === 1)
       expect(w2.runtime.opened[0]!.resume).toBe(stored.sessionId)
       expect(w2.runtime.opened[0]!.cwd).toBe(stored.cwd)
-    } finally { await w2.close() }
-  } finally { rmSync(directory, { recursive: true, force: true }) }
+    } finally {
+      await w2.close()
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 })
 
 it('team-only change: resumes and merges the latest team notice into the first input', async () => {
   let version = 'v1'
-  const promptChange = vi.fn((stored: string): PromptChange => stored === version ? { kind: 'same' } : { kind: 'team', notice: 'NOTICE team' })
-  const w = workerHarness({ script: READY, deps: { promptVersion: () => version, instructions: async () => `instructions-${version}`, promptChange, history: async () => 'abc1234 first commit' } })
+  const promptChange = vi.fn((stored: string): PromptChange =>
+    stored === version ? { kind: 'same' } : { kind: 'team', notice: 'NOTICE team' },
+  )
+  const w = workerHarness({
+    script: READY,
+    deps: {
+      promptVersion: () => version,
+      instructions: async () => `instructions-${version}`,
+      promptChange,
+      history: async () => 'abc1234 first commit',
+    },
+  })
   try {
     const id = await endedTicket(w)
     const stored = w.workers.get(id)!
@@ -63,13 +81,25 @@ it('team-only change: resumes and merges the latest team notice into the first i
     expect(w.runtime.sessions[1]!.sent[0]).toEqual({ id: 'notice:prompts:v2', mode: 'inject', text: 'NOTICE team' })
     expect(w.runtime.sessions[1]!.turns[0]!.inputs.slice(0, 2)).toEqual(['notice:prompts:v2', `assignment:${a2}`])
     expect(w.workers.get(id)!.promptVersion).toBe('v2')
-  } finally { await w.close() }
+  } finally {
+    await w.close()
+  }
 })
 
 it('host or built-in change: opens a new session with the latest instructions and a context note first', async () => {
   let version = 'v1'
-  const promptChange = vi.fn((stored: string): PromptChange => stored === version ? { kind: 'same' } : { kind: 'fixed' })
-  const w = workerHarness({ script: READY, deps: { promptVersion: () => version, instructions: async () => `instructions-${version}`, promptChange, history: async () => 'abc1234 first commit' } })
+  const promptChange = vi.fn((stored: string): PromptChange =>
+    stored === version ? { kind: 'same' } : { kind: 'fixed' },
+  )
+  const w = workerHarness({
+    script: READY,
+    deps: {
+      promptVersion: () => version,
+      instructions: async () => `instructions-${version}`,
+      promptChange,
+      history: async () => 'abc1234 first commit',
+    },
+  })
   try {
     const id = await endedTicket(w)
     const stored = w.workers.get(id)!
@@ -90,13 +120,18 @@ it('host or built-in change: opens a new session with the latest instructions an
     expect(w.workers.get(id)!.sessionId).toBe(s2.sessionId)
     expect(w.workers.get(id)!.sessionId).not.toBe(stored.sessionId)
     expect(w.workers.get(id)!.promptVersion).toBe('v2')
-  } finally { await w.close() }
+  } finally {
+    await w.close()
+  }
 })
 
 it('unchanged prompt: resumes without a notice', async () => {
   let version = 'v1'
   const promptChange = vi.fn((): PromptChange => ({ kind: 'same' }))
-  const w = workerHarness({ script: READY, deps: { promptVersion: () => version, instructions: async () => `instructions-${version}`, promptChange } })
+  const w = workerHarness({
+    script: READY,
+    deps: { promptVersion: () => version, instructions: async () => `instructions-${version}`, promptChange },
+  })
   try {
     const id = await endedTicket(w)
     const stored = w.workers.get(id)!
@@ -108,13 +143,24 @@ it('unchanged prompt: resumes without a notice', async () => {
     expect(sent.some(input => input.id.startsWith('notice:') || input.id.startsWith('context:'))).toBe(false)
     expect(sent[0]!.id).toBe(`assignment:${a2}`)
     expect(w.workers.get(id)!.promptVersion).toBe('v1')
-  } finally { await w.close() }
+  } finally {
+    await w.close()
+  }
 })
 
 it('applies the prompt branch when an idle live ticket wakes for new input', async () => {
   let version = 'v1'
-  const promptChange = vi.fn((stored: string): PromptChange => stored === version ? { kind: 'same' } : { kind: 'team', notice: 'NOTICE team' })
-  const w = workerHarness({ deps: { promptVersion: () => version, instructions: async () => `instructions-${version}`, promptChange, history: async () => 'abc1234 first commit' } })
+  const promptChange = vi.fn((stored: string): PromptChange =>
+    stored === version ? { kind: 'same' } : { kind: 'team', notice: 'NOTICE team' },
+  )
+  const w = workerHarness({
+    deps: {
+      promptVersion: () => version,
+      instructions: async () => `instructions-${version}`,
+      promptChange,
+      history: async () => 'abc1234 first commit',
+    },
+  })
   try {
     const id = accepted(w, '1').ticketId!
     await waitUntil(() => w.runtime.sessions.length === 1 && w.runtime.sessions[0]!.closed)
@@ -126,5 +172,7 @@ it('applies the prompt branch when an idle live ticket wakes for new input', asy
     expect(w.runtime.opened[1]!.resume).toBe(stored.sessionId)
     expect(w.runtime.sessions[1]!.sent[0]).toMatchObject({ id: 'notice:prompts:v2', mode: 'inject' })
     await waitUntil(() => w.workers.get(id)?.promptVersion === 'v2')
-  } finally { await w.close() }
+  } finally {
+    await w.close()
+  }
 })

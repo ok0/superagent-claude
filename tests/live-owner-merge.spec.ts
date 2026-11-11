@@ -3,9 +3,22 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RunResult, Runner } from './live/gh.ts'
 import { assertApiTarget } from './live/guard.ts'
-import { flowCandidates, mergeOwnerPulls, pickMerges, squashTitle, type MergeCandidate, type MergeVerdict } from './live/owner-merge.ts'
+import {
+  flowCandidates,
+  mergeOwnerPulls,
+  pickMerges,
+  squashTitle,
+  type MergeCandidate,
+  type MergeVerdict,
+} from './live/owner-merge.ts'
 import { commitProblems, harnessMergesOnly, seedCommitIndex, SEED_MESSAGES } from './live/rules.ts'
-import { loadAllScenarios, scenarioProblems, type LiveScenario, type ScenarioFlow, type ScenarioKind } from './live/scenarios.ts'
+import {
+  loadAllScenarios,
+  scenarioProblems,
+  type LiveScenario,
+  type ScenarioFlow,
+  type ScenarioKind,
+} from './live/scenarios.ts'
 import { clearLiveTarget, EXAMPLE_TARGET, stubLiveTarget } from './fixtures/live-target.ts'
 
 beforeEach(() => stubLiveTarget())
@@ -14,7 +27,12 @@ afterEach(() => vi.unstubAllEnvs())
 const P = EXAMPLE_TARGET.repo
 const EP = 'repos/' + P + '/pulls/7'
 
-interface Call { endpoint: string; method: string; input?: string; env: Readonly<Record<string, string>> }
+interface Call {
+  endpoint: string
+  method: string
+  input?: string
+  env: Readonly<Record<string, string>>
+}
 
 function result(body: unknown): RunResult {
   return { code: 0, stdout: Buffer.from(JSON.stringify(body)), stderr: '' }
@@ -46,14 +64,26 @@ function byId(scenarios: LiveScenario[], id: string): LiveScenario {
   return found
 }
 
-function candidate(base: LiveScenario, id: string, kind: ScenarioKind | undefined, pull: number, head: string, passed: boolean): MergeCandidate {
+function candidate(
+  base: LiveScenario,
+  id: string,
+  kind: ScenarioKind | undefined,
+  pull: number,
+  head: string,
+  passed: boolean,
+): MergeCandidate {
   return { scenario: { ...base, id, kind }, pull, head, passed }
 }
 
 describe('owner merge', () => {
   it('core scenarios carry their kind', async () => {
     const scenarios = await loadAllScenarios()
-    const kinds: Record<string, ScenarioKind> = { 'bug-paging': 'bug', 'feature-partial-update': 'feature', 'ui-overdue-rows': 'ui', 'ui-polish-list': 'ui' }
+    const kinds: Record<string, ScenarioKind> = {
+      'bug-paging': 'bug',
+      'feature-partial-update': 'feature',
+      'ui-overdue-rows': 'ui',
+      'ui-polish-list': 'ui',
+    }
     for (const s of scenarios) {
       expect(s.kind, s.id).toBe(kinds[s.id])
     }
@@ -64,7 +94,11 @@ describe('owner merge', () => {
 
   it('flowCandidates combines the review follow-up', async () => {
     const bug = byId(await loaded(), 'bug-paging')
-    const review: LiveScenario = { ...bug, id: 'bug-paging-review', review: { body: 'please also cover the last page' } }
+    const review: LiveScenario = {
+      ...bug,
+      id: 'bug-paging-review',
+      review: { body: 'please also cover the last page' },
+    }
     const flows: ScenarioFlow[] = [{ initial: bug, followUps: [review] }]
     const passing: MergeVerdict[] = [
       { id: 'bug-paging', pr: 1, head: 'h1', verdict: { passed: true } },
@@ -96,8 +130,15 @@ describe('owner merge', () => {
     const scenarios = await loadAllScenarios()
     const bug = byId(scenarios, 'bug-paging')
     const second: LiveScenario = { ...bug, id: 'bug-second', issue: { ...bug.issue, title: 'Second paging report' } }
-    const review: LiveScenario = { ...bug, id: 'bug-paging-review', review: { body: 'please also cover the last page' } }
-    const flows: ScenarioFlow[] = [{ initial: bug, followUps: [review] }, { initial: second, followUps: [] }]
+    const review: LiveScenario = {
+      ...bug,
+      id: 'bug-paging-review',
+      review: { body: 'please also cover the last page' },
+    }
+    const flows: ScenarioFlow[] = [
+      { initial: bug, followUps: [review] },
+      { initial: second, followUps: [] },
+    ]
     const verdicts: MergeVerdict[] = [
       { id: 'bug-paging', pr: 1, head: 'h1', verdict: { passed: true } },
       { id: 'bug-paging-review', pr: 1, head: 'h2', verdict: { passed: false } },
@@ -108,7 +149,10 @@ describe('owner merge', () => {
 
   it('mergeOwnerPulls squash-merges with the judged head and deletes the agent branch', async () => {
     const { run, calls } = fakeRun({
-      ['GET ' + EP]: result({ title: 'Paging through tasks drops the last one', head: { ref: 'agent/fix-paging', sha: 'abc' } }),
+      ['GET ' + EP]: result({
+        title: 'Paging through tasks drops the last one',
+        head: { ref: 'agent/fix-paging', sha: 'abc' },
+      }),
       ['PUT ' + EP + '/merge']: result({ sha: 'merged-1', merged: true }),
       ['DELETE repos/' + P + '/git/refs/heads/agent/fix-paging']: { code: 0, stdout: Buffer.alloc(0), stderr: '' },
     })
@@ -118,7 +162,12 @@ describe('owner merge', () => {
       'PUT repos/' + P + '/pulls/7/merge',
       'DELETE repos/' + P + '/git/refs/heads/agent/fix-paging',
     ])
-    expect(JSON.parse(calls[1]!.input!)).toEqual({ merge_method: 'squash', sha: 'abc', commit_title: 'fix: paging through tasks drops the last one (#7)', commit_message: '' })
+    expect(JSON.parse(calls[1]!.input!)).toEqual({
+      merge_method: 'squash',
+      sha: 'abc',
+      commit_title: 'fix: paging through tasks drops the last one (#7)',
+      commit_message: '',
+    })
     expect(commitProblems(JSON.parse(calls[1]!.input!).commit_title)).toEqual([])
     for (const call of calls) expect(call.env.GH_TOKEN).toBe('owner-token')
     expect(records).toEqual([{ kind: 'bug', pull: 7, sha: 'merged-1', merged: true }])
@@ -131,7 +180,13 @@ describe('owner merge', () => {
       ['GET repos/' + P + '/pulls/8']: result({ title: 'fix: two', head: { ref: 'agent/two', sha: 'def' } }),
       ['PUT repos/' + P + '/pulls/8/merge']: failure('gh: head changed (HTTP 409)'),
     })
-    const records = await mergeOwnerPulls([{ kind: 'bug', pull: 7, head: 'abc' }, { kind: 'feature', pull: 8, head: 'def' }], { token: 'owner-token', run })
+    const records = await mergeOwnerPulls(
+      [
+        { kind: 'bug', pull: 7, head: 'abc' },
+        { kind: 'feature', pull: 8, head: 'def' },
+      ],
+      { token: 'owner-token', run },
+    )
     expect(records.map(r => r.merged)).toEqual([false, false])
     expect(records[0]!.reason).toContain('405')
     expect(records[1]!.reason).toContain('409')
@@ -146,7 +201,13 @@ describe('owner merge', () => {
       ['PUT repos/' + P + '/pulls/8/merge']: result({ sha: 'merged-2', merged: true }),
       ['DELETE repos/' + P + '/git/refs/heads/agent/two']: { code: 0, stdout: Buffer.alloc(0), stderr: '' },
     })
-    const records = await mergeOwnerPulls([{ kind: 'bug', pull: 7, head: 'abc' }, { kind: 'feature', pull: 8, head: 'def' }], { token: 'owner-token', run })
+    const records = await mergeOwnerPulls(
+      [
+        { kind: 'bug', pull: 7, head: 'abc' },
+        { kind: 'feature', pull: 8, head: 'def' },
+      ],
+      { token: 'owner-token', run },
+    )
     expect(records.map(r => r.merged)).toEqual([false, true])
   })
 
@@ -164,8 +225,18 @@ describe('owner merge', () => {
     const rows: [ScenarioKind, string, number, string][] = [
       ['bug', 'Paging through tasks drops the last one', 21, 'fix: paging through tasks drops the last one (#21)'],
       ['feature', 'Add partial updates for tasks', 23, 'feat: add partial updates for tasks (#23)'],
-      ['ui', 'Overdue tasks are hard to spot in the task list', 22, 'feat: overdue tasks are hard to spot in the task list (#22)'],
-      ['ui', 'task 목록 화면을 좀 더 보기 좋게 해 주세요', 24, 'feat: task 목록 화면을 좀 더 보기 좋게 해 주세요 (#24)'],
+      [
+        'ui',
+        'Overdue tasks are hard to spot in the task list',
+        22,
+        'feat: overdue tasks are hard to spot in the task list (#22)',
+      ],
+      [
+        'ui',
+        'task 목록 화면을 좀 더 보기 좋게 해 주세요',
+        24,
+        'feat: task 목록 화면을 좀 더 보기 좋게 해 주세요 (#24)',
+      ],
       ['bug', 'fix(api): Correct the cursor.', 5, 'fix: correct the cursor (#5)'],
       ['feature', 'Support PATCH /tasks/:id (#9)', 9, 'feat: support PATCH /tasks/:id (#9)'],
       ['bug', '  ', 3, 'fix: apply the pull request change (#3)'],
@@ -186,8 +257,27 @@ describe('owner merge', () => {
       { sha: 'm1', commit: { message: squashTitle('bug', 'Paging through tasks drops the last one', 21) } },
       { sha: 's0', commit: { message: SEED_MESSAGES.workflowUpdate } },
     ]
-    const pulls = new Map([['m1', [{ number: 21, merged_at: 't', merge_commit_sha: 'm1', head: { ref: 'agent/x' }, user: { login: EXAMPLE_TARGET.agentLogin }, merged_by: { login: EXAMPLE_TARGET.ownerLogin } }]]])
-    expect(harnessMergesOnly(commits, pulls, { agentLogin: EXAMPLE_TARGET.agentLogin, ownerLogin: EXAMPLE_TARGET.ownerLogin })).toBe(true)
+    const pulls = new Map([
+      [
+        'm1',
+        [
+          {
+            number: 21,
+            merged_at: 't',
+            merge_commit_sha: 'm1',
+            head: { ref: 'agent/x' },
+            user: { login: EXAMPLE_TARGET.agentLogin },
+            merged_by: { login: EXAMPLE_TARGET.ownerLogin },
+          },
+        ],
+      ],
+    ])
+    expect(
+      harnessMergesOnly(commits, pulls, {
+        agentLogin: EXAMPLE_TARGET.agentLogin,
+        ownerLogin: EXAMPLE_TARGET.ownerLogin,
+      }),
+    ).toBe(true)
     expect(seedCommitIndex(commits)).toBe(1)
   })
 
@@ -204,7 +294,9 @@ describe('owner merge', () => {
   it('merge refuses without a live target', async () => {
     clearLiveTarget()
     const { run, calls } = fakeRun({})
-    await expect(mergeOwnerPulls([{ kind: 'bug', pull: 1, head: 'h' }], { token: 't', run })).rejects.toThrow(/live target not configured/)
+    await expect(mergeOwnerPulls([{ kind: 'bug', pull: 1, head: 'h' }], { token: 't', run })).rejects.toThrow(
+      /live target not configured/,
+    )
     expect(calls).toHaveLength(0)
   })
 })
@@ -228,14 +320,29 @@ describe('owner merge mergeable settling and 405 retry', () => {
   const PUT_KEY = 'PUT ' + EP + '/merge'
   const DEL_KEY = 'DELETE repos/' + P + '/git/refs/heads/agent/one'
   const pick = [{ kind: 'bug' as const, pull: 7, head: 'abc' }]
-  const merged: RunResult = { code: 0, stdout: Buffer.from(JSON.stringify({ sha: 'merged-1', merged: true })), stderr: '' }
+  const merged: RunResult = {
+    code: 0,
+    stdout: Buffer.from(JSON.stringify({ sha: 'merged-1', merged: true })),
+    stderr: '',
+  }
   const deleted: RunResult = { code: 0, stdout: Buffer.alloc(0), stderr: '' }
-  const pullBody = (mergeable: boolean | null, extra: Record<string, unknown> = {}): RunResult => result({ title: 'fix: one', head: { ref: 'agent/one', sha: 'abc' }, mergeable, ...extra })
+  const pullBody = (mergeable: boolean | null, extra: Record<string, unknown> = {}): RunResult =>
+    result({ title: 'fix: one', head: { ref: 'agent/one', sha: 'abc' }, mergeable, ...extra })
 
   it('polls a null mergeable until GitHub settles it, then merges', async () => {
-    const { run, calls } = queuedRun({ [GET_KEY]: [pullBody(null), pullBody(null), pullBody(true)], [PUT_KEY]: [merged], [DEL_KEY]: [deleted] })
+    const { run, calls } = queuedRun({
+      [GET_KEY]: [pullBody(null), pullBody(null), pullBody(true)],
+      [PUT_KEY]: [merged],
+      [DEL_KEY]: [deleted],
+    })
     const delays: number[] = []
-    const records = await mergeOwnerPulls(pick, { token: 'owner-token', run, sleep: async ms => { delays.push(ms) } })
+    const records = await mergeOwnerPulls(pick, {
+      token: 'owner-token',
+      run,
+      sleep: async ms => {
+        delays.push(ms)
+      },
+    })
     expect(calls.filter(c => c.method === 'GET')).toHaveLength(3)
     expect(delays).toEqual([3000, 3000])
     expect(calls.filter(c => c.method === 'PUT')).toHaveLength(1)
@@ -245,7 +352,13 @@ describe('owner merge mergeable settling and 405 retry', () => {
   it('bounds the poll and still attempts the merge when mergeable stays unknown', async () => {
     const { run, calls } = queuedRun({ [GET_KEY]: [pullBody(null)], [PUT_KEY]: [merged], [DEL_KEY]: [deleted] })
     const delays: number[] = []
-    const records = await mergeOwnerPulls(pick, { token: 'owner-token', run, sleep: async ms => { delays.push(ms) } })
+    const records = await mergeOwnerPulls(pick, {
+      token: 'owner-token',
+      run,
+      sleep: async ms => {
+        delays.push(ms)
+      },
+    })
     expect(calls.filter(c => c.method === 'GET')).toHaveLength(10)
     expect(delays).toHaveLength(9)
     expect(delays.every(ms => ms === 3000)).toBe(true)
@@ -255,7 +368,11 @@ describe('owner merge mergeable settling and 405 retry', () => {
 
   // Reconstructed: the live 405 text was not captured in the raw record; GitHub's standard wording is used.
   it('retries a 405 once after re-polling and merges', async () => {
-    const { run, calls } = queuedRun({ [GET_KEY]: [pullBody(true)], [PUT_KEY]: [failure('gh: Pull Request is not mergeable (HTTP 405)'), merged], [DEL_KEY]: [deleted] })
+    const { run, calls } = queuedRun({
+      [GET_KEY]: [pullBody(true)],
+      [PUT_KEY]: [failure('gh: Pull Request is not mergeable (HTTP 405)'), merged],
+      [DEL_KEY]: [deleted],
+    })
     const records = await mergeOwnerPulls(pick, { token: 'owner-token', run, sleep: async () => {} })
     expect(calls.filter(c => c.method === 'PUT')).toHaveLength(2)
     expect(records[0]).toMatchObject({ merged: true, attempts: { putCalls: 2 } })
@@ -266,7 +383,10 @@ describe('owner merge mergeable settling and 405 retry', () => {
   it('a second 405 is recorded and never retried a third time', async () => {
     const { run, calls } = queuedRun({
       [GET_KEY]: [pullBody(true)],
-      [PUT_KEY]: [failure('gh: Pull Request is not mergeable (HTTP 405) first'), failure('gh: Pull Request is not mergeable (HTTP 405) second')],
+      [PUT_KEY]: [
+        failure('gh: Pull Request is not mergeable (HTTP 405) first'),
+        failure('gh: Pull Request is not mergeable (HTTP 405) second'),
+      ],
     })
     const records = await mergeOwnerPulls(pick, { token: 'owner-token', run, sleep: async () => {} })
     expect(calls.filter(c => c.method === 'PUT')).toHaveLength(2)
@@ -278,7 +398,11 @@ describe('owner merge mergeable settling and 405 retry', () => {
   })
 
   it('mergeable false is recorded without a PUT', async () => {
-    const { run, calls } = queuedRun({ [GET_KEY]: [pullBody(false, { mergeable_state: 'dirty' })], [PUT_KEY]: [merged], [DEL_KEY]: [deleted] })
+    const { run, calls } = queuedRun({
+      [GET_KEY]: [pullBody(false, { mergeable_state: 'dirty' })],
+      [PUT_KEY]: [merged],
+      [DEL_KEY]: [deleted],
+    })
     const records = await mergeOwnerPulls(pick, { token: 'owner-token', run, sleep: async () => {} })
     expect(calls.some(c => c.method === 'PUT')).toBe(false)
     expect(calls.some(c => c.method === 'DELETE')).toBe(false)

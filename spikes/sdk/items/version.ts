@@ -7,9 +7,9 @@ const META = { id: 'version', req: 'R20', title: 'SDK 버전 고정·최소 요�
 const SDK = '@anthropic-ai/claude-agent-sdk'
 
 interface PkgJson {
-  version?: string;
-  claudeCodeVersion?: string;
-  dependencies?: Record<string, string>;
+  version?: string
+  claudeCodeVersion?: string
+  dependencies?: Record<string, string>
 }
 
 function readText(path: URL): string {
@@ -27,9 +27,9 @@ function cmpSemver(a: string, b: string): number {
 }
 
 interface Check {
-  name: string;
-  ok: boolean;
-  detail: string;
+  name: string
+  ok: boolean
+  detail: string
 }
 
 async function run(): Promise<ItemResult> {
@@ -86,13 +86,13 @@ async function run(): Promise<ItemResult> {
     },
   ]
 
-  const failed = checks.filter((c) => !c.ok)
+  const failed = checks.filter(c => !c.ok)
   const observations = [
     `sdkVersion=${installed}`,
     `cliVersion=${cliVersion}`,
     `node=${process.version}`,
     `os=${os.type()} ${os.release()} ${os.arch()}`,
-    ...checks.map((c) => `${c.name}: ${c.ok ? 'ok' : 'FAIL'} (${c.detail})`),
+    ...checks.map(c => `${c.name}: ${c.ok ? 'ok' : 'FAIL'} (${c.detail})`),
   ]
 
   return {
@@ -102,7 +102,7 @@ async function run(): Promise<ItemResult> {
     summary:
       failed.length === 0
         ? `R20 최소 요구 충족 (SDK ${installed}, CLI ${cliVersion})`
-        : `요구 미충족: ${failed.map((c) => c.name).join(', ')}`,
+        : `요구 미충족: ${failed.map(c => c.name).join(', ')}`,
     observations,
     evidence: [],
     attempts: 1,

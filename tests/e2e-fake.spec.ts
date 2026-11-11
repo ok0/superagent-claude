@@ -25,21 +25,34 @@ afterEach(async () => {
 })
 
 async function boot(mode: 'off' | 'observe' | 'auto' | undefined, script: FakeScript, dir: string) {
-  const config = ConfigSchema.parse({ repositories: ['owner/repo'], policy: { allowed: ['alice'], ...(mode ? { acceptMode: mode } : {}) }, stateDir: dir })
+  const config = ConfigSchema.parse({
+    repositories: ['owner/repo'],
+    policy: { allowed: ['alice'], ...(mode ? { acceptMode: mode } : {}) },
+    stateDir: dir,
+  })
   const chat = testSource()
   const fake = new FakeRuntime(script)
   const records: LogRecord[] = []
-  runtime = new Runtime({ config, runtime: fake, kinds: [chat.kind], services: [chat.service], log: record => { records.push(record) } })
+  runtime = new Runtime({
+    config,
+    runtime: fake,
+    kinds: [chat.kind],
+    services: [chat.service],
+    log: record => {
+      records.push(record)
+    },
+  })
   await runtime.start()
   return { runtime, chat, fake, records }
 }
 
-const ready: FakeScript = ({ index }) => index === 0
-  ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'Done: the fake worker finished' } }] }
-  : {}
+const ready: FakeScript = ({ index }) =>
+  index === 0
+    ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'Done: the fake worker finished' } }] }
+    : {}
 const mention = trigger('1', { addressed: 'mention', meta: { repository: 'owner/repo' } })
 
-it('auto: an allowed sender\'s mention opens one Ticket whose fake worker reports and replies once', async () => {
+it("auto: an allowed sender's mention opens one Ticket whose fake worker reports and replies once", async () => {
   directory = mkdtempSync(join(tmpdir(), 'e2e-'))
   const { runtime: r, chat, fake, records } = await boot('auto', ready, directory)
   expect(chat.emit(mention)).toBe('stored')
@@ -54,16 +67,34 @@ it('auto: an allowed sender\'s mention opens one Ticket whose fake worker report
 
   const opened = fake.opened[0]!
   expect(opened.key).toBe(`worker-${ticket.id}`)
-  expect(opened.tools.map(tool => tool.name)).toEqual(['orchestrator_read', 'orchestrator_ack', 'orchestrator_thread_unrelated', 'orchestrator_thread_follow', 'orchestrator_trigger_handback', 'orchestrator_report', 'orchestrator_publish', 'orchestrator_review_reply', 'orchestrator_pr_auto_merge', 'orchestrator_pr_close'])
+  expect(opened.tools.map(tool => tool.name)).toEqual([
+    'orchestrator_read',
+    'orchestrator_ack',
+    'orchestrator_thread_unrelated',
+    'orchestrator_thread_follow',
+    'orchestrator_trigger_handback',
+    'orchestrator_report',
+    'orchestrator_publish',
+    'orchestrator_review_reply',
+    'orchestrator_pr_auto_merge',
+    'orchestrator_pr_close',
+  ])
   expect(opened.instructions.startsWith('## Host rules')).toBe(true)
   expect(opened.instructions).toContain('## Communication')
   expect(opened.instructions).toContain('<external-data source="ticket-title">')
-  expect(r.store.db.prepare('SELECT prompt_version FROM worker WHERE ticket_id = ?').get(ticket.id)?.prompt_version).toBe(r.prompts.version('worker'))
+  expect(
+    r.store.db.prepare('SELECT prompt_version FROM worker WHERE ticket_id = ?').get(ticket.id)?.prompt_version,
+  ).toBe(r.prompts.version('worker'))
 
   expect(ticket.assignments.at(-1)!.report!.state).toBe('ready')
   expect(chat.sent).toHaveLength(1)
   const [sent] = chat.sent
-  expect(sent).toMatchObject({ kind: 'reply', channel: mention.channel, text: 'Done: the fake worker finished', ticketId: ticket.id })
+  expect(sent).toMatchObject({
+    kind: 'reply',
+    channel: mention.channel,
+    text: 'Done: the fake worker finished',
+    ticketId: ticket.id,
+  })
   expect(r.store.receipts.get(sent!.id)!.status).toBe('sent')
   expect(records.some(record => record.event === 'ticket.created' && record.ticketId === ticket.id)).toBe(true)
 

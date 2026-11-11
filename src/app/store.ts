@@ -8,23 +8,48 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:
 import { hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import { lockSync } from 'proper-lockfile'
-import { key, threadKey, type ChannelRef, type Decision, type OutboundMessage, type ReplyStatus, type Repositories, type Thread, type ThreadFact,
-  type ThreadFacts, type Ticket, type Trigger, type TriggerDisposition } from '../core/index.ts'
+import {
+  key,
+  threadKey,
+  type ChannelRef,
+  type Decision,
+  type OutboundMessage,
+  type ReplyStatus,
+  type Repositories,
+  type Thread,
+  type ThreadFact,
+  type ThreadFacts,
+  type Ticket,
+  type Trigger,
+  type TriggerDisposition,
+} from '../core/index.ts'
 import { KV, type Family, type Key } from './kv.ts'
 import { storeReads } from './store-read.ts'
 
 /** A Trigger's position on its thread timeline, ordered by timestamp and then `id` as tie-breaker. */
-export interface TimelinePlace { at: string; id: string }
+export interface TimelinePlace {
+  at: string
+  id: string
+}
 /** Why a message was dropped: its conversation can never receive it (`channelGone`), or its Source no longer listens to it (`channelIgnored`). */
 export type DropReason = 'channelGone' | 'channelIgnored'
 /** Outbound message receipt tracked in the outbox from the moment it is queued (`pending`, `sent`, or `dropped`); delivery attempt counts live on its `reply` effect. */
-export interface Receipt extends OutboundMessage { status: ReplyStatus; dropped?: { at: string; reason: DropReason } }
+export interface Receipt extends OutboundMessage {
+  status: ReplyStatus
+  dropped?: { at: string; reason: DropReason }
+}
 /** A dropped outbound message receipt, with the timestamp and reason it was dropped. */
 export type Dropped = Receipt & { dropped: { at: string; reason: DropReason } }
 /** Why the AdmissionFilter refused a Trigger: its actor is not allowed, it is a bot, its repository is not configured, or it names no ticket. */
 export type RejectionReason = 'rejected-actor' | 'rejected-bot' | 'rejected-repo' | 'no-ticket'
 /** A Trigger the AdmissionFilter refused, with its repository (empty when it names none), actor, time and reason. */
-export interface RejectedTrigger { triggerId: string; repository: string; actor: string; at: string; reason: RejectionReason }
+export interface RejectedTrigger {
+  triggerId: string
+  repository: string
+  actor: string
+  at: string
+  reason: RejectionReason
+}
 /**
  * Generated columns and partial indexes defining active working sets so passes scan only active rows.
  * `schemaSql` declares them in the version 1 tables, and SQLite computes them from the stored JSON rows.
@@ -37,12 +62,16 @@ const SETS: Record<string, Record<string, string>> = {
       OR value ->> '$.assignments[#-1].state' IN ('pending', 'running') THEN 1 END)`,
   },
   thread: {
-    active: "INTEGER AS (CASE WHEN json_array_length(value, '$.pending') > 0 OR value -> '$.evaluating' IS NOT NULL THEN 1 END)",
+    active:
+      "INTEGER AS (CASE WHEN json_array_length(value, '$.pending') > 0 OR value -> '$.evaluating' IS NOT NULL THEN 1 END)",
     subscribed: "TEXT AS (CASE WHEN json_array_length(value, '$.subscriptions') > 0 THEN value ->> '$.ref.source' END)",
   },
   // Composite key (ticketId + thread) used to preserve per-conversation reply order.
-  outbox: { dropped: "TEXT AS (value ->> '$.dropped.at')", pending: `TEXT AS (CASE WHEN value ->> '$.status' = 'pending'
-    AND value ->> '$.ticketId' IS NOT NULL THEN (value ->> '$.ticketId') || ' ' || (value ->> '$.channel.thread') END)` },
+  outbox: {
+    dropped: "TEXT AS (value ->> '$.dropped.at')",
+    pending: `TEXT AS (CASE WHEN value ->> '$.status' = 'pending'
+    AND value ->> '$.ticketId' IS NOT NULL THEN (value ->> '$.ticketId') || ' ' || (value ->> '$.channel.thread') END)`,
+  },
 }
 /** Schema version this build reads and writes; a database stored at any other version is refused. */
 export const SCHEMA_VERSION = 1
@@ -53,9 +82,15 @@ export const databasePath = (stateDir: string): string => join(stateDir, DATABAS
 
 /** Table, column and index DDL for schema version 1, with the working-set columns and indexes from `SETS`. */
 function schemaSql(): string {
-  const extra = (table: string): string => Object.entries(SETS[table] ?? {}).map(([name, definition]) => `, ${name} ${definition}`).join('')
-  const sets = Object.entries(SETS).flatMap(([table, definitions]) => Object.keys(definitions).map(name =>
-    `CREATE INDEX IF NOT EXISTS ${table}_${name} ON ${table}(${name}) WHERE ${name} IS NOT NULL;`))
+  const extra = (table: string): string =>
+    Object.entries(SETS[table] ?? {})
+      .map(([name, definition]) => `, ${name} ${definition}`)
+      .join('')
+  const sets = Object.entries(SETS).flatMap(([table, definitions]) =>
+    Object.keys(definitions).map(
+      name => `CREATE INDEX IF NOT EXISTS ${table}_${name} ON ${table}(${name}) WHERE ${name} IS NOT NULL;`,
+    ),
+  )
   return `
     CREATE TABLE IF NOT EXISTS trigger (id TEXT PRIMARY KEY, value TEXT NOT NULL, at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS disposition (id TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -81,17 +116,30 @@ function schemaSql(): string {
 
 /** Maps a `rejected_trigger` row to its RejectedTrigger. */
 function toRejected(row: Record<string, SQLInputValue>): RejectedTrigger {
-  return { triggerId: String(row.trigger_id), repository: String(row.repository), actor: String(row.actor), at: String(row.at), reason: String(row.reason) as RejectionReason }
+  return {
+    triggerId: String(row.trigger_id),
+    repository: String(row.repository),
+    actor: String(row.actor),
+    at: String(row.at),
+    reason: String(row.reason) as RejectionReason,
+  }
 }
 
 /** The file next to the database that names the pid holding its single-writer lock. */
 const ownerFile = (path: string): string => `${path}.owner`
 /** The process that holds the single-writer lock on the database: its pid and, when recorded, the host it runs on. */
-export interface LockOwner { pid: number; host?: string }
+export interface LockOwner {
+  pid: number
+  host?: string
+}
 /** The lock owner recorded on `path` (undefined when the file is missing or names no positive pid); a legacy pid-only file has no host. */
 export function lockOwner(path: string): LockOwner | undefined {
   let text: string
-  try { text = readFileSync(ownerFile(path), 'utf8') } catch { return undefined }
+  try {
+    text = readFileSync(ownerFile(path), 'utf8')
+  } catch {
+    return undefined
+  }
   const [pidText, host] = text.trim().split(/\s+/)
   const pid = Number(pidText)
   if (!Number.isInteger(pid) || pid <= 0) return undefined
@@ -105,16 +153,30 @@ export function lockOwnerGone(path: string): boolean {
   const owner = lockOwner(path)
   if (!owner || owner.pid === process.pid) return false
   if (owner.host !== undefined && owner.host !== hostname()) return false
-  try { process.kill(owner.pid, 0); return false } catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH' }
+  try {
+    process.kill(owner.pid, 0)
+    return false
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ESRCH'
+  }
 }
 /**
  * Takes the single-writer lock on `path`; a lock held by another process is reported as a clear error. Returns the release function.
  * A lock left by a killed process is taken over at once when its recorded owner pid no longer runs; otherwise the 30 s stale rule applies.
  */
 function lockDatabase(path: string, report: (error: unknown) => void): () => void {
-  const take = () => lockSync(path, { realpath: false, stale: 30_000, onCompromised: error => { report(error) } })
-  const locked = (error: unknown): boolean => typeof error === 'object' && error !== null && 'code' in error && error.code === 'ELOCKED'
-  const refused = (cause: unknown): Error => new Error(`Another superagent-claude process is writing ${path}`, { cause })
+  const take = () =>
+    lockSync(path, {
+      realpath: false,
+      stale: 30_000,
+      onCompromised: error => {
+        report(error)
+      },
+    })
+  const locked = (error: unknown): boolean =>
+    typeof error === 'object' && error !== null && 'code' in error && error.code === 'ELOCKED'
+  const refused = (cause: unknown): Error =>
+    new Error(`Another superagent-claude process is writing ${path}`, { cause })
   let release: () => void
   try {
     release = take()
@@ -122,10 +184,22 @@ function lockDatabase(path: string, report: (error: unknown) => void): () => voi
     if (!locked(error)) throw error
     if (!lockOwnerGone(path)) throw refused(error)
     rmSync(`${path}.lock`, { recursive: true, force: true })
-    try { release = take() } catch (again) { if (locked(again)) throw refused(again); throw again }
+    try {
+      release = take()
+    } catch (again) {
+      if (locked(again)) throw refused(again)
+      throw again
+    }
   }
   writeFileSync(ownerFile(path), `${process.pid} ${hostname()}`, { mode: 0o600 })
-  return () => { try { rmSync(ownerFile(path), { force: true }); release() } catch (error) { report(error) } }
+  return () => {
+    try {
+      rmSync(ownerFile(path), { force: true })
+      release()
+    } catch (error) {
+      report(error)
+    }
+  }
 }
 
 /**
@@ -146,13 +220,21 @@ export class Store implements Repositories {
     this.report = report
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
     this.unlock = lockDatabase(path, report)
-    try { this.db = new DatabaseSync(path) } catch (error) { this.unlock(); throw error }
+    try {
+      this.db = new DatabaseSync(path)
+    } catch (error) {
+      this.unlock()
+      throw error
+    }
     this.read = storeReads(this.db)
     try {
       chmodSync(path, 0o600)
-      this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+      this.db.exec(
+        'PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+      )
       const version = this.get(KV.store.schema)
-      if (version !== undefined && version !== SCHEMA_VERSION) throw new Error(`Unsupported database version ${version}: this build reads schema ${SCHEMA_VERSION} only`)
+      if (version !== undefined && version !== SCHEMA_VERSION)
+        throw new Error(`Unsupported database version ${version}: this build reads schema ${SCHEMA_VERSION} only`)
       this.atomic(() => {
         this.db.exec(schemaSql())
         if (version === undefined) this.set(KV.store.schema, SCHEMA_VERSION)
@@ -164,10 +246,16 @@ export class Store implements Repositories {
     }
   }
   /** Closes the underlying SQLite database connection and releases the single-writer lock. */
-  close(): void { this.db.close(); this.unlock() }
+  close(): void {
+    this.db.close()
+    this.unlock()
+  }
   /** Parses JSON `value` columns returned by `sql`. */
   private values<T>(sql: string, ...parameters: SQLInputValue[]): T[] {
-    return this.db.prepare(sql).all(...parameters).map(row => JSON.parse(String(row.value)) as T)
+    return this.db
+      .prepare(sql)
+      .all(...parameters)
+      .map(row => JSON.parse(String(row.value)) as T)
   }
   /** Re-indexes which threads a Trigger belongs to, replacing any rows from an earlier save of the same Trigger. */
   private indexThreads(trigger: Trigger): void {
@@ -188,12 +276,26 @@ export class Store implements Repositories {
     this.committed[level] = []
     this.db.exec(`SAVEPOINT ${name}`)
     let value: T
-    try { value = operation(); this.db.exec(`RELEASE ${name}`) }
-    catch (error) { this.db.exec(`ROLLBACK TO ${name}`); this.db.exec(`RELEASE ${name}`); throw error }
-    finally { this.depth-- }
+    try {
+      value = operation()
+      this.db.exec(`RELEASE ${name}`)
+    } catch (error) {
+      this.db.exec(`ROLLBACK TO ${name}`)
+      this.db.exec(`RELEASE ${name}`)
+      throw error
+    } finally {
+      this.depth--
+    }
     const actions = this.committed.splice(level)[0]!
     if (level) this.committed[level - 1]!.push(...actions)
-    else for (const action of actions) { try { action() } catch (error) { this.report(error) } }
+    else
+      for (const action of actions) {
+        try {
+          action()
+        } catch (error) {
+          this.report(error)
+        }
+      }
     return value
   }
   /**
@@ -208,58 +310,113 @@ export class Store implements Repositories {
   /** Reads a typed KV record by its key in `KV`. */
   get<V>(name: Key<V>): V | undefined {
     const row = this.db.prepare('SELECT value FROM kv WHERE key=?').get(name)
-    return row === undefined ? undefined : JSON.parse(String(row.value)) as V
+    return row === undefined ? undefined : (JSON.parse(String(row.value)) as V)
   }
   /** Writes a typed KV record under `name`. */
   set<V>(name: Key<V>, value: V): void {
-    this.db.prepare('INSERT INTO kv VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(name, JSON.stringify(value))
+    this.db
+      .prepare('INSERT INTO kv VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+      .run(name, JSON.stringify(value))
   }
   /** Deletes the KV record at `name`. */
-  delete(name: string): void { this.db.prepare('DELETE FROM kv WHERE key=?').run(name) }
+  delete(name: string): void {
+    this.db.prepare('DELETE FROM kv WHERE key=?').run(name)
+  }
   /** Returns all KV keys belonging to `family` or starting with `prefix`. */
   keys<V>(family: Family<V, never>): Key<V>[]
   keys(prefix: string): string[]
   keys(family: string | { prefix: string }): string[] {
     const prefix = typeof family === 'string' ? family : family.prefix
     const pattern = `${prefix.replace(/[\\%_]/g, match => `\\${match}`)}%`
-    return this.db.prepare("SELECT key FROM kv WHERE key LIKE ? ESCAPE '\\'").all(pattern).map(row => String(row.key))
+    return this.db
+      .prepare("SELECT key FROM kv WHERE key LIKE ? ESCAPE '\\'")
+      .all(pattern)
+      .map(row => String(row.key))
   }
 
   readonly triggers = {
-    get: (id: string): Trigger | undefined => { const row = this.db.prepare('SELECT value FROM trigger WHERE id=?').get(id); return row ? JSON.parse(String(row.value)) as Trigger : undefined },
-    save: (trigger: Trigger): void => this.atomic(() => {
-      this.db.prepare('INSERT INTO trigger VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value, at=excluded.at').run(trigger.id, JSON.stringify(trigger), trigger.at)
-      this.indexThreads(trigger)
-    }),
-    disposition: (id: string): TriggerDisposition | undefined => { const row = this.db.prepare('SELECT value FROM disposition WHERE id=?').get(id); return row ? JSON.parse(String(row.value)) as TriggerDisposition : undefined },
-    saveDisposition: (id: string, value: TriggerDisposition): void => { this.db.prepare('INSERT INTO disposition VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(id, JSON.stringify(value)) },
+    get: (id: string): Trigger | undefined => {
+      const row = this.db.prepare('SELECT value FROM trigger WHERE id=?').get(id)
+      return row ? (JSON.parse(String(row.value)) as Trigger) : undefined
+    },
+    save: (trigger: Trigger): void =>
+      this.atomic(() => {
+        this.db
+          .prepare(
+            'INSERT INTO trigger VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value, at=excluded.at',
+          )
+          .run(trigger.id, JSON.stringify(trigger), trigger.at)
+        this.indexThreads(trigger)
+      }),
+    disposition: (id: string): TriggerDisposition | undefined => {
+      const row = this.db.prepare('SELECT value FROM disposition WHERE id=?').get(id)
+      return row ? (JSON.parse(String(row.value)) as TriggerDisposition) : undefined
+    },
+    saveDisposition: (id: string, value: TriggerDisposition): void => {
+      this.db
+        .prepare('INSERT INTO disposition VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value')
+        .run(id, JSON.stringify(value))
+    },
   }
   readonly threads = {
-    get: (keyValue: string): Thread | undefined => { const row = this.db.prepare('SELECT value FROM thread WHERE key=?').get(keyValue); return row ? JSON.parse(String(row.value)) as Thread : undefined },
-    save: (thread: Thread): void => { this.db.prepare('INSERT INTO thread VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(thread.key, JSON.stringify(thread)) },
-    list: (): Thread[] => this.db.prepare('SELECT value FROM thread ORDER BY rowid').all().map(row => JSON.parse(String(row.value)) as Thread),
+    get: (keyValue: string): Thread | undefined => {
+      const row = this.db.prepare('SELECT value FROM thread WHERE key=?').get(keyValue)
+      return row ? (JSON.parse(String(row.value)) as Thread) : undefined
+    },
+    save: (thread: Thread): void => {
+      this.db
+        .prepare('INSERT INTO thread VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+        .run(thread.key, JSON.stringify(thread))
+    },
+    list: (): Thread[] =>
+      this.db
+        .prepare('SELECT value FROM thread ORDER BY rowid')
+        .all()
+        .map(row => JSON.parse(String(row.value)) as Thread),
     active: (): Thread[] => this.values('SELECT value FROM thread WHERE active = 1 ORDER BY rowid'),
     /** Updates human-facing thread metadata (`label`, `url`, and `facts`, where `null` removes a fact by ID); no-op if the thread does not exist. */
-    describe: (keyValue: string, patch: { label?: string; url?: string; facts?: Record<string, ThreadFact | null> }): void => {
+    describe: (
+      keyValue: string,
+      patch: { label?: string; url?: string; facts?: Record<string, ThreadFact | null> },
+    ): void => {
       const thread = this.threads.get(keyValue)
       if (!thread) return
       const facts: ThreadFacts = { ...(thread.meta.facts as ThreadFacts | undefined) }
-      for (const [id, fact] of Object.entries(patch.facts ?? {})) { if (fact) facts[id] = fact; else delete facts[id] }
-      const meta = { ...thread.meta, ...(patch.label === undefined ? {} : { label: patch.label }), ...(patch.url === undefined ? {} : { url: patch.url }), facts }
+      for (const [id, fact] of Object.entries(patch.facts ?? {})) {
+        if (fact) facts[id] = fact
+        else delete facts[id]
+      }
+      const meta = {
+        ...thread.meta,
+        ...(patch.label === undefined ? {} : { label: patch.label }),
+        ...(patch.url === undefined ? {} : { url: patch.url }),
+        facts,
+      }
       if (JSON.stringify(meta) !== JSON.stringify(thread.meta)) this.threads.save({ ...thread, meta })
     },
     /** Atomically sets or removes (`undefined`) source-specific metadata keys on a thread after re-reading it; no-op if the thread does not exist. */
-    patchMeta: (keyValue: string, patch: Record<string, unknown>): void => this.atomic(() => {
-      const thread = this.threads.get(keyValue)
-      if (!thread) return
-      const meta = { ...thread.meta }
-      for (const [name, value] of Object.entries(patch)) { if (value === undefined) delete meta[name]; else meta[name] = value }
-      if (JSON.stringify(meta) !== JSON.stringify(thread.meta)) this.threads.save({ ...thread, meta })
-    }),
+    patchMeta: (keyValue: string, patch: Record<string, unknown>): void =>
+      this.atomic(() => {
+        const thread = this.threads.get(keyValue)
+        if (!thread) return
+        const meta = { ...thread.meta }
+        for (const [name, value] of Object.entries(patch)) {
+          if (value === undefined) delete meta[name]
+          else meta[name] = value
+        }
+        if (JSON.stringify(meta) !== JSON.stringify(thread.meta)) this.threads.save({ ...thread, meta })
+      }),
   }
   readonly tickets = {
-    get: (id: string): Ticket | undefined => { const row = this.db.prepare('SELECT value FROM ticket WHERE id=?').get(id); return row ? JSON.parse(String(row.value)) as Ticket : undefined },
-    save: (ticket: Ticket): void => { this.db.prepare('INSERT INTO ticket VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(ticket.id, JSON.stringify(ticket)) },
+    get: (id: string): Ticket | undefined => {
+      const row = this.db.prepare('SELECT value FROM ticket WHERE id=?').get(id)
+      return row ? (JSON.parse(String(row.value)) as Ticket) : undefined
+    },
+    save: (ticket: Ticket): void => {
+      this.db
+        .prepare('INSERT INTO ticket VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value')
+        .run(ticket.id, JSON.stringify(ticket))
+    },
     /** Newest first. */
     list: (): Ticket[] => this.values('SELECT value FROM ticket ORDER BY rowid DESC'),
     /** Newest first. */
@@ -268,60 +425,107 @@ export class Store implements Repositories {
     active: (): Ticket[] => this.values('SELECT value FROM ticket WHERE active = 1 ORDER BY rowid DESC'),
   }
   readonly decisions = {
-    get: (id: string): Decision | undefined => { const row = this.db.prepare('SELECT value FROM decision WHERE id=?').get(id); return row ? JSON.parse(String(row.value)) as Decision : undefined },
-    save: (decision: Decision): void => { this.db.prepare('INSERT INTO decision VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value, thread=excluded.thread').run(decision.id, decision.threadKey, JSON.stringify(decision)) },
-    byThread: (threadKeyValue: string): Decision[] => this.db.prepare('SELECT value FROM decision WHERE thread=? ORDER BY rowid').all(threadKeyValue).map(row => JSON.parse(String(row.value)) as Decision),
+    get: (id: string): Decision | undefined => {
+      const row = this.db.prepare('SELECT value FROM decision WHERE id=?').get(id)
+      return row ? (JSON.parse(String(row.value)) as Decision) : undefined
+    },
+    save: (decision: Decision): void => {
+      this.db
+        .prepare(
+          'INSERT INTO decision VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value, thread=excluded.thread',
+        )
+        .run(decision.id, decision.threadKey, JSON.stringify(decision))
+    },
+    byThread: (threadKeyValue: string): Decision[] =>
+      this.db
+        .prepare('SELECT value FROM decision WHERE thread=? ORDER BY rowid')
+        .all(threadKeyValue)
+        .map(row => JSON.parse(String(row.value)) as Decision),
   }
   /** Triggers the AdmissionFilter refused, one row per Trigger id (recording again is a no-op). */
   readonly rejected = {
-    record: (entry: RejectedTrigger): boolean => Number(this.db.prepare('INSERT INTO rejected_trigger (trigger_id, repository, actor, at, reason) VALUES (?,?,?,?,?) ON CONFLICT(trigger_id) DO NOTHING').run(entry.triggerId, entry.repository, entry.actor, entry.at, entry.reason).changes) > 0,
+    record: (entry: RejectedTrigger): boolean =>
+      Number(
+        this.db
+          .prepare(
+            'INSERT INTO rejected_trigger (trigger_id, repository, actor, at, reason) VALUES (?,?,?,?,?) ON CONFLICT(trigger_id) DO NOTHING',
+          )
+          .run(entry.triggerId, entry.repository, entry.actor, entry.at, entry.reason).changes,
+      ) > 0,
     get: (triggerId: string): RejectedTrigger | undefined => {
-      const row = this.db.prepare('SELECT trigger_id, repository, actor, at, reason FROM rejected_trigger WHERE trigger_id=?').get(triggerId)
+      const row = this.db
+        .prepare('SELECT trigger_id, repository, actor, at, reason FROM rejected_trigger WHERE trigger_id=?')
+        .get(triggerId)
       return row === undefined ? undefined : toRejected(row)
     },
     /** Oldest first. */
-    list: (): RejectedTrigger[] => this.db.prepare('SELECT trigger_id, repository, actor, at, reason FROM rejected_trigger ORDER BY rowid').all().map(toRejected),
+    list: (): RejectedTrigger[] =>
+      this.db
+        .prepare('SELECT trigger_id, repository, actor, at, reason FROM rejected_trigger ORDER BY rowid')
+        .all()
+        .map(toRejected),
   }
   /** Read-only queries for management views, orchestrator tools, and source polling (see `storeReads`). */
   readonly read: ReturnType<typeof storeReads>
 
   /** Delivery status of a queued message; receipts are retained permanently so message IDs are idempotent. */
-  replyStatus(id: string): ReplyStatus | undefined { return this.receipts.get(id)?.status }
+  replyStatus(id: string): ReplyStatus | undefined {
+    return this.receipts.get(id)?.status
+  }
   /** Outbox message receipts for channel delivery; only `Outbox` writes to `receipts`. */
   readonly receipts = {
     get: (id: string): Receipt | undefined => this.values<Receipt>('SELECT value FROM outbox WHERE id = ?', id)[0],
     /** Pending message receipts, oldest first. */
-    waiting: (): Receipt[] => this.values("SELECT value FROM outbox WHERE value ->> '$.status' = 'pending' ORDER BY rowid"),
+    waiting: (): Receipt[] =>
+      this.values("SELECT value FROM outbox WHERE value ->> '$.status' = 'pending' ORDER BY rowid"),
     /** True if an earlier message for the same ticket and conversation is still pending with fewer than `failures` consecutive failed `reply` effect attempts. */
-    behind: (id: string, failures: number): boolean => !!this.db.prepare(`SELECT 1 FROM outbox earlier
+    behind: (id: string, failures: number): boolean =>
+      !!this.db
+        .prepare(
+          `SELECT 1 FROM outbox earlier
       JOIN outbox message ON message.id = ? LEFT JOIN effect ON effect.kind = 'reply' AND effect.key = earlier.id
-      WHERE earlier.pending = message.pending AND earlier.rowid < message.rowid AND IFNULL(effect.attempts, 0) < ? LIMIT 1`).get(id, failures),
+      WHERE earlier.pending = message.pending AND earlier.rowid < message.rowid AND IFNULL(effect.attempts, 0) < ? LIMIT 1`,
+        )
+        .get(id, failures),
     /**
      * Records a new pending message receipt; an already-recorded message ID keeps its original receipt.
      * @returns Whether the message ID was newly recorded.
      */
     add: (message: OutboundMessage): boolean => {
       const receipt: Receipt = { ...message, status: 'pending' }
-      return Number(this.db.prepare('INSERT OR IGNORE INTO outbox (id, value) VALUES (?, ?)').run(message.id, JSON.stringify(receipt)).changes) > 0
+      return (
+        Number(
+          this.db
+            .prepare('INSERT OR IGNORE INTO outbox (id, value) VALUES (?, ?)')
+            .run(message.id, JSON.stringify(receipt)).changes,
+        ) > 0
+      )
     },
     /**
      * Marks a pending receipt as sent or dropped (with drop reason and timestamp), recreating the receipt if the message
      * was withdrawn while being sent so its ID cannot be queued again.
      */
     settle: (message: OutboundMessage, outcome: 'sent' | DropReason): void => {
-      const settled = outcome === 'sent' ? { status: 'sent' } : { status: 'dropped', dropped: { at: new Date().toISOString(), reason: outcome } }
+      const settled =
+        outcome === 'sent'
+          ? { status: 'sent' }
+          : { status: 'dropped', dropped: { at: new Date().toISOString(), reason: outcome } }
       const { id, channel, text, kind, ticketId } = message
-      const updated = this.db.prepare("UPDATE outbox SET value = json_patch(value, ?) WHERE id = ? AND value ->> '$.status' = 'pending'")
+      const updated = this.db
+        .prepare("UPDATE outbox SET value = json_patch(value, ?) WHERE id = ? AND value ->> '$.status' = 'pending'")
         .run(JSON.stringify(settled), id)
-      if (!Number(updated.changes)) this.db.prepare('INSERT OR IGNORE INTO outbox (id, value) VALUES (?, ?)')
-        .run(id, JSON.stringify({ id, channel, text, kind, ...ticketId ? { ticketId } : {}, ...settled }))
+      if (!Number(updated.changes))
+        this.db
+          .prepare('INSERT OR IGNORE INTO outbox (id, value) VALUES (?, ?)')
+          .run(id, JSON.stringify({ id, channel, text, kind, ...(ticketId ? { ticketId } : {}), ...settled }))
     },
     /**
      * Withdraws a pending message that has not yet been sent.
      * @returns Whether a pending message with `id` was waiting and removed.
      */
     withdraw: (id: string): boolean =>
-      Number(this.db.prepare("DELETE FROM outbox WHERE id = ? AND value ->> '$.status' = 'pending'").run(id).changes) > 0,
+      Number(this.db.prepare("DELETE FROM outbox WHERE id = ? AND value ->> '$.status' = 'pending'").run(id).changes) >
+      0,
   }
 }
 export { key, threadKey }

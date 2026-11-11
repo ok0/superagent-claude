@@ -20,11 +20,21 @@ export class ManualClock {
   private at: number
   private seq = 0
   private readonly due = new Map<number, { at: number; run: () => void }>()
-  constructor(start = Date.parse('2026-09-23T00:00:00Z')) { this.at = start }
+  constructor(start = Date.parse('2026-09-23T00:00:00Z')) {
+    this.at = start
+  }
   now = (): number => this.at
-  setTimeout = (run: () => void, ms: number): unknown => { const id = ++this.seq; this.due.set(id, { at: this.at + ms, run }); return id }
-  clearTimeout = (handle: unknown): void => { this.due.delete(handle as number) }
-  get pending(): number { return this.due.size }
+  setTimeout = (run: () => void, ms: number): unknown => {
+    const id = ++this.seq
+    this.due.set(id, { at: this.at + ms, run })
+    return id
+  }
+  clearTimeout = (handle: unknown): void => {
+    this.due.delete(handle as number)
+  }
+  get pending(): number {
+    return this.due.size
+  }
   /** Moves time forward by ms, running each due callback in time order at its own time. */
   advance(ms: number): void {
     const end = this.at + ms
@@ -39,9 +49,16 @@ export class ManualClock {
     this.at = end
   }
 }
-export interface WorkerHarnessOptions { script?: FakeScript; max?: number; limits?: { maxTurns: number; maxBudgetUsd: number }
-  prepare?: WorkerDeps['prepare']; retries?: number; directory?: string; start?: boolean
-  deps?: Partial<Pick<WorkerDeps, 'instructions' | 'promptVersion' | 'promptChange' | 'history' | 'launchNote'>> }
+export interface WorkerHarnessOptions {
+  script?: FakeScript
+  max?: number
+  limits?: { maxTurns: number; maxBudgetUsd: number }
+  prepare?: WorkerDeps['prepare']
+  retries?: number
+  directory?: string
+  start?: boolean
+  deps?: Partial<Pick<WorkerDeps, 'instructions' | 'promptVersion' | 'promptChange' | 'history' | 'launchNote'>>
+}
 export function workerHarness(options: WorkerHarnessOptions = {}) {
   const directory = options.directory ?? mkdtempSync(join(tmpdir(), 'worker-'))
   const store = new Store(join(directory, 'db.sqlite'))
@@ -51,27 +68,90 @@ export function workerHarness(options: WorkerHarnessOptions = {}) {
   const slots = new Slots(options.max ?? 2)
   const workers = new WorkerStore(store, clock.now)
   let h: Harness | undefined
-  const prepare = vi.fn(options.prepare ?? (async (ticket: Ticket) => ({ repository: 'owner/repo', cwd: join(directory, 'work', ticket.id), branch: `agent/${ticket.id}` })))
+  const prepare = vi.fn(
+    options.prepare ??
+      (async (ticket: Ticket) => ({
+        repository: 'owner/repo',
+        cwd: join(directory, 'work', ticket.id),
+        branch: `agent/${ticket.id}`,
+      })),
+  )
   const tools = (ticket: Ticket): ToolSpec[] => [
     { name: 'wait', description: 'Wait briefly', schema: z.object({}), execute: async () => 'ok' },
-    { name: 'report', description: 'Report the ticket status', schema: z.object({ state: z.enum(['progress', 'waiting', 'ready', 'blocked', 'failed', 'dropped']), summary: z.string() }),
-      execute: async args => { h!.engine.report(ticket.id, args as WorkerReport); return 'ok' } },
+    {
+      name: 'report',
+      description: 'Report the ticket status',
+      schema: z.object({
+        state: z.enum(['progress', 'waiting', 'ready', 'blocked', 'failed', 'dropped']),
+        summary: z.string(),
+      }),
+      execute: async args => {
+        h!.engine.report(ticket.id, args as WorkerReport)
+        return 'ok'
+      },
+    },
   ]
   const events: { type: string; data: Record<string, unknown> }[] = []
   const executor = new WorkerExecutor({
-    store, effects, engine: () => h!.engine, runtime, slots, workers, deps: { prepare, instructions: async () => 'instructions', tools, ...options.deps },
-    limits: options.limits ?? { maxTurns: 100, maxBudgetUsd: 5 }, timers: clock, now: clock.now, ...(options.retries === undefined ? {} : { retries: options.retries }),
+    store,
+    effects,
+    engine: () => h!.engine,
+    runtime,
+    slots,
+    workers,
+    deps: { prepare, instructions: async () => 'instructions', tools, ...options.deps },
+    limits: options.limits ?? { maxTurns: 100, maxBudgetUsd: 5 },
+    timers: clock,
+    now: clock.now,
+    ...(options.retries === undefined ? {} : { retries: options.retries }),
   })
-  h = harness({}, { repo: store, executor, emit: event => { events.push(event) } })
+  h = harness(
+    {},
+    {
+      repo: store,
+      executor,
+      emit: event => {
+        events.push(event)
+      },
+    },
+  )
   if (options.start !== false) effects.start()
-  return { ...h, store, clock, effects, runtime, slots, workers, executor, prepare, directory, events, ticket: (id: string) => store.tickets.get(id)!,
-    close: async () => { await executor.dispose(); await effects.drain(); store.close(); if (!options.directory) rmSync(directory, { recursive: true, force: true }) } }
+  return {
+    ...h,
+    store,
+    clock,
+    effects,
+    runtime,
+    slots,
+    workers,
+    executor,
+    prepare,
+    directory,
+    events,
+    ticket: (id: string) => store.tickets.get(id)!,
+    close: async () => {
+      await executor.dispose()
+      await effects.drain()
+      store.close()
+      if (!options.directory) rmSync(directory, { recursive: true, force: true })
+    },
+  }
 }
 type Harness = ReturnType<typeof harness>
 /** Named gates: `get` returns a promise that resolves once `open` is called for the same name. */
-interface Gate { promise: Promise<void>; resolve: (value: void) => void }
+interface Gate {
+  promise: Promise<void>
+  resolve: (value: void) => void
+}
 export function gates() {
   const map = new Map<string, Gate>()
-  const of = (name: string): Gate => { let gate = map.get(name); if (!gate) { gate = deferred(); map.set(name, gate) } return gate }
+  const of = (name: string): Gate => {
+    let gate = map.get(name)
+    if (!gate) {
+      gate = deferred()
+      map.set(name, gate)
+    }
+    return gate
+  }
   return { get: (name: string): Promise<void> => of(name).promise, open: (name: string): void => of(name).resolve() }
 }

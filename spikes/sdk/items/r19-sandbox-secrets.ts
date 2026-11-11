@@ -16,10 +16,10 @@ const SANDBOX: SandboxSettings = {
 }
 
 interface NetOutcome {
-  sub: ItemResult;
-  sandboxLive?: boolean;
-  costs: number[][];
-  evidence: string[];
+  sub: ItemResult
+  sandboxLive?: boolean
+  costs: number[][]
+  evidence: string[]
 }
 
 export function spikeSandbox(env: Readonly<Record<string, string | undefined>> = process.env): SandboxSettings {
@@ -36,11 +36,11 @@ function stopAtResult(e: TimelineEntry, c: { end(): void }): void {
 }
 
 function toolOutputs(entries: TimelineEntry[]): string[] {
-  return entries.flatMap((e) => (e.toolResults ?? []).map((r) => r.content))
+  return entries.flatMap(e => (e.toolResults ?? []).map(r => r.content))
 }
 
 function httpCodes(entries: TimelineEntry[]): string[] {
-  return toolOutputs(entries).flatMap((text) => [...text.matchAll(/HTTP:(\d{3})/g)].map((m) => m[1] ?? ''))
+  return toolOutputs(entries).flatMap(text => [...text.matchAll(/HTTP:(\d{3})/g)].map(m => m[1] ?? ''))
 }
 
 function reachable(code: string | undefined): boolean {
@@ -128,8 +128,8 @@ async function networkTest(ctx: SpikeContext, id: string): Promise<NetOutcome> {
   const sb = httpCodes(sandboxed.timeline)
   const ct = httpCodes(control.timeline)
   const bp = httpCodes(bypass.timeline)
-  const hasToolResult = sandboxed.timeline.some((e) => (e.toolResults ?? []).length > 0)
-  const unavailable = toolOutputs(sandboxed.timeline).some((text) =>
+  const hasToolResult = sandboxed.timeline.some(e => (e.toolResults ?? []).length > 0)
+  const unavailable = toolOutputs(sandboxed.timeline).some(text =>
     /sandbox[^\n]*(unavailable|not available)|bwrap:|bubblewrap/i.test(text),
   )
   const sandboxLive = hasToolResult && !unavailable
@@ -182,9 +182,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   const evidence: string[] = []
 
   const macOut =
-    process.platform === 'darwin'
-      ? await networkTest(ctx, 'a-network-macos')
-      : notRun('a-network-macos', 'not macOS')
+    process.platform === 'darwin' ? await networkTest(ctx, 'a-network-macos') : notRun('a-network-macos', 'not macOS')
   const linuxOut =
     process.platform === 'linux'
       ? await networkTest(ctx, 'a-network-linux')
@@ -193,11 +191,10 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   evidence.push(...macOut.evidence, ...linuxOut.evidence)
 
   const varName = ctx.auth.varName
-  const CHECK =
-    'if [ -n "${' + varName + '+x}" ]; then echo SPIKE_VAR_PRESENT; else echo SPIKE_VAR_ABSENT; fi'
+  const CHECK = 'if [ -n "${' + varName + '+x}" ]; then echo SPIKE_VAR_PRESENT; else echo SPIKE_VAR_ABSENT; fi'
   const visPrompt = `Use the Bash tool to run exactly this command and nothing else: ${CHECK} . Then reply DONE.`
 
-  const scrub: HookCallback = async (input) => {
+  const scrub: HookCallback = async input => {
     const raw = field(input, 'tool_input')
     const toolInput: Record<string, unknown> = typeof raw === 'object' && raw !== null ? { ...raw } : {}
     const command = typeof toolInput.command === 'string' ? toolInput.command : ''
@@ -345,10 +342,8 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   }
 
   const subs = [macOut.sub, linuxOut.sub, bSub, cSub, dSub]
-  const failedIds = [macOut.sub, linuxOut.sub, cSub, dSub, bSub]
-    .filter((s) => s.status === 'FAIL')
-    .map((s) => s.id)
-  const blockedIds = subs.filter((s) => s.status === 'BLOCKED').map((s) => s.id)
+  const failedIds = [macOut.sub, linuxOut.sub, cSub, dSub, bSub].filter(s => s.status === 'FAIL').map(s => s.id)
+  const blockedIds = subs.filter(s => s.status === 'BLOCKED').map(s => s.id)
   const status: Status = failedIds.length > 0 ? 'FAIL' : blockedIds.length > 0 ? 'BLOCKED' : 'PASS'
 
   return {
@@ -362,7 +357,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
         : status === 'BLOCKED'
           ? `BLOCKED 하위 항목: ${blockedIds.join(', ')}`
           : `FAIL 하위 항목: ${failedIds.join(', ')}`,
-    observations: subs.map((s) => `${s.id}: ${s.status}${s.deviation ? ' (deviation)' : ''} — ${s.summary}`),
+    observations: subs.map(s => `${s.id}: ${s.status}${s.deviation ? ' (deviation)' : ''} — ${s.summary}`),
     evidence,
     attempts: 1,
     costs,

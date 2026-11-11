@@ -26,7 +26,8 @@ echo "S:$(env | grep -c '^CLAUDE_CODE_OAUTH_TOKEN=')"
 if [ -d /proc/1 ]; then echo "P:visible"; else echo "P:hidden"; fi
 echo "Z:done"
 `
-const CMD = "curl -sS -m 10 -o /dev/null -w 'A:%{http_code}\\n' https://example.com > net.txt 2>&1; curl -sS -m 10 -o /dev/null -w 'B:%{http_code}\\n' https://www.iana.org >> net.txt 2>&1; sh ./probe.sh >> net.txt 2>&1"
+const CMD =
+  "curl -sS -m 10 -o /dev/null -w 'A:%{http_code}\\n' https://example.com > net.txt 2>&1; curl -sS -m 10 -o /dev/null -w 'B:%{http_code}\\n' https://www.iana.org >> net.txt 2>&1; sh ./probe.sh >> net.txt 2>&1"
 
 function reachable(code: string | undefined): boolean {
   return code !== undefined && /^[23]\d\d$/.test(code)
@@ -60,8 +61,14 @@ describe.skipIf(!LIVE || !OAUTH || process.platform !== 'linux')('linux sandbox 
     })
     const session = await runtime.open(spec)
     const events: RuntimeEvent[] = []
-    void (async () => { for await (const event of session.events()) events.push(event) })()
-    session.send({ id: 'A', text: `Use the Bash tool to run exactly this command and nothing else: ${CMD} . Then reply DONE.`, mode: 'followup' })
+    void (async () => {
+      for await (const event of session.events()) events.push(event)
+    })()
+    session.send({
+      id: 'A',
+      text: `Use the Bash tool to run exactly this command and nothing else: ${CMD} . Then reply DONE.`,
+      mode: 'followup',
+    })
     await waitUntil(() => events.some(event => event.type === 'turnEnded' || event.type === 'error'), 300_000)
     await session.close()
 
@@ -74,31 +81,38 @@ describe.skipIf(!LIVE || !OAUTH || process.platform !== 'linux')('linux sandbox 
     const envS = /S:(\d+)/.exec(net)?.[1]
     const proc = /P:(visible|hidden)/.exec(net)?.[1]
     const probeRan = /Z:done/.test(net)
-    const status = reachable(b) && probe.sandbox
-      ? 'FAIL'
-      : reachable(a) && b !== undefined && !reachable(b) && probe.sandbox
-        ? 'PASS'
-        : 'BLOCKED'
+    const status =
+      reachable(b) && probe.sandbox
+        ? 'FAIL'
+        : reachable(a) && b !== undefined && !reachable(b) && probe.sandbox
+          ? 'PASS'
+          : 'BLOCKED'
 
     const outDir = process.env.SANDBOX_LINUX_OUT ?? root
     mkdirSync(outDir, { recursive: true })
-    const body = JSON.stringify({
-      at: new Date().toISOString(),
-      probe,
-      codes: { a, b },
-      environ: { readable: envE, readableGithub: envG, self: envS, proc, probeRan },
-      weakerNested: process.env.SANDBOX_WEAKER_NESTED === '1',
-      allowUnsandboxed: process.env.SANDBOX_ALLOW_UNSANDBOXED === '1',
-      sessions: events.filter(e => e.type === 'session').length,
-      net,
-      events: events.map(e => e.type === 'error' ? { type: e.type, message: e.message } : { type: e.type }),
-      stderrTail: stderr.slice(-40),
-      status,
-    }, null, 2)
+    const body = JSON.stringify(
+      {
+        at: new Date().toISOString(),
+        probe,
+        codes: { a, b },
+        environ: { readable: envE, readableGithub: envG, self: envS, proc, probeRan },
+        weakerNested: process.env.SANDBOX_WEAKER_NESTED === '1',
+        allowUnsandboxed: process.env.SANDBOX_ALLOW_UNSANDBOXED === '1',
+        sessions: events.filter(e => e.type === 'session').length,
+        net,
+        events: events.map(e => (e.type === 'error' ? { type: e.type, message: e.message } : { type: e.type })),
+        stderrTail: stderr.slice(-40),
+        status,
+      },
+      null,
+      2,
+    )
     const secrets = [OAUTH, GITHUB].filter((v): v is string => !!v && v.length >= 8)
     const redacted = secrets.reduce((text, secret) => text.split(secret).join('***'), body)
     writeFileSync(join(outDir, 'adapter.json'), redacted)
-    console.log(`[sandbox-linux] status=${status} probe.sandbox=${probe.sandbox} A=${a ?? 'none'} B=${b ?? 'none'} environ=${envE ?? 'none'} environGithub=${envG ?? 'none'} proc=${proc ?? 'none'} probeRan=${probeRan} sessions=${events.filter(e => e.type === 'session').length} weakerNested=${process.env.SANDBOX_WEAKER_NESTED === '1'} allowUnsandboxed=${process.env.SANDBOX_ALLOW_UNSANDBOXED === '1'}`)
+    console.log(
+      `[sandbox-linux] status=${status} probe.sandbox=${probe.sandbox} A=${a ?? 'none'} B=${b ?? 'none'} environ=${envE ?? 'none'} environGithub=${envG ?? 'none'} proc=${proc ?? 'none'} probeRan=${probeRan} sessions=${events.filter(e => e.type === 'session').length} weakerNested=${process.env.SANDBOX_WEAKER_NESTED === '1'} allowUnsandboxed=${process.env.SANDBOX_ALLOW_UNSANDBOXED === '1'}`,
+    )
     expect(status).not.toBe('FAIL')
   }, 600_000)
 })

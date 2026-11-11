@@ -2,7 +2,16 @@
  * Live conversation quality run against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth. Checks that a steer which changes the request renames the ticket in status and needs and that its pull request carries only the requested files; that an acknowledgement does not assert a premise the request does not give; that an out-of-scope refusal has a readable reason, with the raw reason and the posted body recorded; and that no live content in the repository names a milestone. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token.
  */
 import { EventEmitter } from 'node:events'
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
@@ -29,20 +38,43 @@ const MARKER = /<!--\s*superagent-claude:(.+?)\s*-->/
 const STRIP = /<!--\s*superagent-claude:.*?-->/g
 const REFUSAL_PREFIX = "I can't take this on here: "
 const FALLBACK_BODY = REFUSAL_PREFIX + 'it is outside what I can do.'
-const INTERNAL_TERMS = /\b(?:tickets?|workers?|hand(?:ed|s|ing)?[\s-]?backs?|evals?|triggers?|orchestrator|assignments?)\b|\b[0-9a-f]{16,}\b/i
+const INTERNAL_TERMS =
+  /\b(?:tickets?|workers?|hand(?:ed|s|ing)?[\s-]?backs?|evals?|triggers?|orchestrator|assignments?)\b|\b[0-9a-f]{16,}\b/i
 const AGREED_NAME = /\b(?:to|as) the agreed (?:new )?name\b/i
 const STEER_TITLE = 'Add a greeting file'
-const STEER_BODY = text('@{{agent}} please add a file GREETING.md containing the single line "hello" and open a pull request.')
-const STEER_COMMENT = text('@{{agent}} change of plan: name the file WELCOME.md instead, with the single line "welcome", and do not add GREETING.md.')
+const STEER_BODY = text(
+  '@{{agent}} please add a file GREETING.md containing the single line "hello" and open a pull request.',
+)
+const STEER_COMMENT = text(
+  '@{{agent}} change of plan: name the file WELCOME.md instead, with the single line "welcome", and do not add GREETING.md.',
+)
 const RENAME_TITLE = 'Rename the helper'
 const RENAME_BODY = text('@{{agent}} please rename the helper to the name we agreed on.')
 const WEEKEND_TITLE = 'Weekend plans'
 const WEEKEND_BODY = text('@{{agent}} could you suggest a good hiking trail for this weekend?')
 
 type Line = Record<string, unknown>
-interface Comment { id: number; body: string; html_url: string; created_at: string; user: { login: string } }
-interface Pull { number: number; html_url: string; title: string; body?: string | null; created_at: string; head: { ref: string; sha: string }; user: { login: string } }
-interface Commit { sha: string; html_url: string; commit: { message: string } }
+interface Comment {
+  id: number
+  body: string
+  html_url: string
+  created_at: string
+  user: { login: string }
+}
+interface Pull {
+  number: number
+  html_url: string
+  title: string
+  body?: string | null
+  created_at: string
+  head: { ref: string; sha: string }
+  user: { login: string }
+}
+interface Commit {
+  sha: string
+  html_url: string
+  commit: { message: string }
+}
 
 const evidence: Record<string, unknown> = {}
 const TOKENS = [AGENT_TOKEN, OWNER_TOKEN, OAUTH].filter((token): token is string => Boolean(token))
@@ -52,24 +84,36 @@ async function owner(args: string[]): Promise<unknown> {
 }
 
 async function createIssue(title: string, body: string): Promise<{ number: number; html_url: string }> {
-  return await owner(['repos/' + REPO + '/issues', '-X', 'POST', '-f', 'title=' + title, '-f', 'body=' + body]) as { number: number; html_url: string }
+  return (await owner(['repos/' + REPO + '/issues', '-X', 'POST', '-f', 'title=' + title, '-f', 'body=' + body])) as {
+    number: number
+    html_url: string
+  }
 }
 
 async function addComment(n: number, body: string): Promise<{ id: number; html_url: string; created_at: string }> {
-  return await owner(['repos/' + REPO + '/issues/' + n + '/comments', '-X', 'POST', '-f', 'body=' + body]) as { id: number; html_url: string; created_at: string }
+  return (await owner(['repos/' + REPO + '/issues/' + n + '/comments', '-X', 'POST', '-f', 'body=' + body])) as {
+    id: number
+    html_url: string
+    created_at: string
+  }
 }
 
 async function agentComments(n: number): Promise<Comment[]> {
-  const all = await owner(['repos/' + REPO + '/issues/' + n + '/comments?per_page=100']) as Comment[]
+  const all = (await owner(['repos/' + REPO + '/issues/' + n + '/comments?per_page=100'])) as Comment[]
   return all.filter(comment => comment.user.login === AGENT)
 }
 
 async function agentPulls(): Promise<Pull[]> {
-  const all = await owner(['repos/' + REPO + '/pulls?state=all&per_page=100']) as Pull[]
+  const all = (await owner(['repos/' + REPO + '/pulls?state=all&per_page=100'])) as Pull[]
   return all.filter(pull => pull.user.login === AGENT)
 }
 
-async function until<T>(probe: () => Promise<T | undefined> | T | undefined, timeoutMs: number, stepMs = 15_000, label = 'condition'): Promise<T> {
+async function until<T>(
+  probe: () => Promise<T | undefined> | T | undefined,
+  timeoutMs: number,
+  stepMs = 15_000,
+  label = 'condition',
+): Promise<T> {
   const deadline = Date.now() + timeoutMs
   for (;;) {
     const value = await probe()
@@ -114,12 +158,17 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
   let running = false
   let failed = false
   let scanned = false
-  afterEach(ctx => { if (ctx.task.result?.state === 'fail') failed = true })
+  afterEach(ctx => {
+    if (ctx.task.result?.state === 'fail') failed = true
+  })
 
   const storeRows = <T>(table: string): T[] => {
     const reader = openReadOnly(databasePath(join(dir, 'state')))
     try {
-      return reader.db.prepare(`SELECT value FROM ${table}`).all().map(row => JSON.parse(String(row.value)) as T)
+      return reader.db
+        .prepare(`SELECT value FROM ${table}`)
+        .all()
+        .map(row => JSON.parse(String(row.value)) as T)
     } finally {
       reader.close()
     }
@@ -133,17 +182,35 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
     }
   }
   const triggerOfIssue = (n: number): Trigger | undefined =>
-    storeRows<Trigger>('trigger').find(trigger => trigger.meta.kind === 'issue' && trigger.meta.number === n && trigger.meta.repository === REPO)
+    storeRows<Trigger>('trigger').find(
+      trigger => trigger.meta.kind === 'issue' && trigger.meta.number === n && trigger.meta.repository === REPO,
+    )
   const ticketById = (id: string): Ticket | undefined => storeRows<Ticket>('ticket').find(ticket => ticket.id === id)
   const needsText = async (all = false): Promise<string> => {
     const out: string[] = []
-    const code = await main(['needs', ...(all ? ['--all'] : []), '--config', configPath], { out: s => { out.push(s) }, err: () => {}, cwd: dir, env: process.env, signals: new EventEmitter() })
+    const code = await main(['needs', ...(all ? ['--all'] : []), '--config', configPath], {
+      out: s => {
+        out.push(s)
+      },
+      err: () => {},
+      cwd: dir,
+      env: process.env,
+      signals: new EventEmitter(),
+    })
     expect(code).toBe(0)
     return out.join('')
   }
   const statusText = async (): Promise<string> => {
     const out: string[] = []
-    const code = await main(['status', '--config', configPath], { out: s => { out.push(s) }, err: () => {}, cwd: dir, env: process.env, signals: new EventEmitter() })
+    const code = await main(['status', '--config', configPath], {
+      out: s => {
+        out.push(s)
+      },
+      err: () => {},
+      cwd: dir,
+      env: process.env,
+      signals: new EventEmitter(),
+    })
     expect(code).toBe(0)
     return out.join('')
   }
@@ -153,17 +220,30 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
     signals = new EventEmitter()
     exitCode = undefined
     done = main(['start', '--config', configPath], {
-      out: s => { for (const line of s.split('\n')) if (line.trim()) lines.push(JSON.parse(line) as Line) },
-      err: s => { errs.push(s) },
+      out: s => {
+        for (const line of s.split('\n')) if (line.trim()) lines.push(JSON.parse(line) as Line)
+      },
+      err: s => {
+        errs.push(s)
+      },
       cwd: dir,
       env: process.env,
       signals,
-    }).then(code => { exitCode = code; running = false; return code })
+    }).then(code => {
+      exitCode = code
+      running = false
+      return code
+    })
     running = true
-    await until(() => {
-      if (exitCode !== undefined) throw new Error(errs.join(''))
-      return lines.slice(before).find(line => line.event === 'runtime.started')
-    }, 90_000, 1000, 'runtime.started')
+    await until(
+      () => {
+        if (exitCode !== undefined) throw new Error(errs.join(''))
+        return lines.slice(before).find(line => line.event === 'runtime.started')
+      },
+      90_000,
+      1000,
+      'runtime.started',
+    )
     await sleep(20_000)
   }
 
@@ -177,7 +257,14 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
   beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), 'sac-live-quality-'))
     configPath = join(dir, 'superagent-claude.json')
-    config = { repositories: [REPO], policy: { allowed: [OWNER], acceptMode: 'auto' }, auth: { mode: 'subscription', owner: OWNER }, delivery: { allowAutoMerge: false }, workers: LIMITS, stateDir: join(dir, 'state') }
+    config = {
+      repositories: [REPO],
+      policy: { allowed: [OWNER], acceptMode: 'auto' },
+      auth: { mode: 'subscription', owner: OWNER },
+      delivery: { allowAutoMerge: false },
+      workers: LIMITS,
+      stateDir: join(dir, 'state'),
+    }
     writeFileSync(configPath, JSON.stringify(config, null, 2))
     startedAt = new Date().toISOString()
     await start()
@@ -190,8 +277,13 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
 
       const state = join(dir, 'state')
       const files = walk(state)
-      const fileHits = files.filter(file => { const buffer = readFileSync(file); return TOKENS.some(token => buffer.includes(token)) }).length
-      const lineHits = [...lines.map(line => JSON.stringify(line)), ...errs].filter(text => TOKENS.some(token => text.includes(token))).length
+      const fileHits = files.filter(file => {
+        const buffer = readFileSync(file)
+        return TOKENS.some(token => buffer.includes(token))
+      }).length
+      const lineHits = [...lines.map(line => JSON.stringify(line)), ...errs].filter(text =>
+        TOKENS.some(token => text.includes(token)),
+      ).length
       expect(fileHits).toBe(0)
       expect(lineHits).toBe(0)
       scanned = true
@@ -206,7 +298,9 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
           if (!text.trim()) continue
           const entry = JSON.parse(text) as { cwd?: string; permissionMode?: string; message?: { content?: unknown } }
           if (entry.cwd === join(state, 'router')) {
-            const content = Array.isArray(entry.message?.content) ? entry.message.content as { type?: string; name?: string }[] : []
+            const content = Array.isArray(entry.message?.content)
+              ? (entry.message.content as { type?: string; name?: string }[])
+              : []
             for (const block of content) if (block.type === 'tool_use' && block.name) routerTools.add(block.name)
           } else if (entry.cwd?.startsWith(join(state, 'worktrees') + sep)) {
             if (entry.permissionMode) workerPermissionModes.add(entry.permissionMode)
@@ -216,7 +310,11 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
       const badRouterTools = [...routerTools].filter(name => !name.startsWith('mcp__superagent__'))
       expect(badRouterTools).toEqual([])
       expect(workerPermissionModes.has('bypassPermissions')).toBe(false)
-      evidence.transcripts = { transcripts: transcriptFiles.length, routerTools: [...routerTools].sort(), workerPermissionModes: [...workerPermissionModes].sort() }
+      evidence.transcripts = {
+        transcripts: transcriptFiles.length,
+        routerTools: [...routerTools].sort(),
+        workerPermissionModes: [...workerPermissionModes].sort(),
+      }
 
       const serialized = JSON.stringify({ evidence, config, limits: LIMITS, startedAt, warnings: errs })
       const jsonl = lines.map(line => JSON.stringify(line)).join('\n') + '\n'
@@ -224,13 +322,23 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
       const stem = `conversation-quality-${stamp(new Date(startedAt))}`
       const outDir = join(resolve(import.meta.dirname, '../..'), '.docs', 'acceptance', 'raw')
       mkdirSync(outDir, { recursive: true })
-      writeFileSync(join(outDir, stem + '.json'), JSON.stringify({ config, limits: LIMITS, startedAt, warnings: errs, ...evidence }, null, 2))
+      writeFileSync(
+        join(outDir, stem + '.json'),
+        JSON.stringify({ config, limits: LIMITS, startedAt, warnings: errs, ...evidence }, null, 2),
+      )
       writeFileSync(join(outDir, stem + '.jsonl'), jsonl)
     } finally {
       if (failed && scanned) {
-        const kept = join(resolve(import.meta.dirname, '../..'), '.docs', 'acceptance', 'raw', `conversation-quality-failed-${stamp(new Date(startedAt))}`)
+        const kept = join(
+          resolve(import.meta.dirname, '../..'),
+          '.docs',
+          'acceptance',
+          'raw',
+          `conversation-quality-failed-${stamp(new Date(startedAt))}`,
+        )
         mkdirSync(kept, { recursive: true })
-        for (const name of readdirSync(join(dir, 'state')).filter(name => name.startsWith(DATABASE_FILE))) copyFileSync(join(dir, 'state', name), join(kept, name))
+        for (const name of readdirSync(join(dir, 'state')).filter(name => name.startsWith(DATABASE_FILE)))
+          copyFileSync(join(dir, 'state', name), join(kept, name))
         writeFileSync(join(kept, 'log.jsonl'), lines.map(line => JSON.stringify(line)).join('\n') + '\n')
         console.log(`[LIVE-KEPT] ${kept}`)
       }
@@ -243,29 +351,67 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
     const issue = await createIssue(STEER_TITLE, STEER_BODY)
     const n = issue.number
     const trigger = await until(() => triggerOfIssue(n), 300_000, 5_000, 'trigger for the issue')
-    const ticketId = await until(() => storeRows<Ticket>('ticket').find(ticket => ticket.origin.triggerId === trigger.id)?.id, 600_000, 10_000, 'ticket for the issue')
-    await until(async () => (await agentComments(n)).length >= 1 ? true : undefined, 600_000, 15_000, 'first agent comment on the issue')
+    const ticketId = await until(
+      () => storeRows<Ticket>('ticket').find(ticket => ticket.origin.triggerId === trigger.id)?.id,
+      600_000,
+      10_000,
+      'ticket for the issue',
+    )
+    await until(
+      async () => ((await agentComments(n)).length >= 1 ? true : undefined),
+      600_000,
+      15_000,
+      'first agent comment on the issue',
+    )
     const initialTitle = ticketById(ticketId)!.title
 
     const steer = await addComment(n, STEER_COMMENT)
-    const pull = await until(async () => {
-      const ticket = ticketById(ticketId)
-      if (!ticket) return undefined
-      const pulls = await agentPulls()
-      return pulls.find(item => item.head.ref.startsWith('agent/') && ticket.follows?.some(follow => follow.own && follow.thread.toLowerCase() === ('github:' + REPO + '#' + item.number).toLowerCase()))
-    }, 1_200_000, 20_000, 'pull request for the ticket')
-    const ready = await until(() => {
-      const report = latestReport(ticketById(ticketId)!)
-      if (report?.state === 'failed' || report?.state === 'blocked') throw new Error(`ticket ${ticketId} reported ${report.state}`)
-      return report?.state === 'ready' && Date.parse(report.at) >= Date.parse(steer.created_at) ? report : undefined
-    }, 1_200_000, 20_000, 'ready report after the steer')
+    const pull = await until(
+      async () => {
+        const ticket = ticketById(ticketId)
+        if (!ticket) return undefined
+        const pulls = await agentPulls()
+        return pulls.find(
+          item =>
+            item.head.ref.startsWith('agent/') &&
+            ticket.follows?.some(
+              follow =>
+                follow.own && follow.thread.toLowerCase() === ('github:' + REPO + '#' + item.number).toLowerCase(),
+            ),
+        )
+      },
+      1_200_000,
+      20_000,
+      'pull request for the ticket',
+    )
+    const ready = await until(
+      () => {
+        const report = latestReport(ticketById(ticketId)!)
+        if (report?.state === 'failed' || report?.state === 'blocked')
+          throw new Error(`ticket ${ticketId} reported ${report.state}`)
+        return report?.state === 'ready' && Date.parse(report.at) >= Date.parse(steer.created_at) ? report : undefined
+      },
+      1_200_000,
+      20_000,
+      'ready report after the steer',
+    )
 
-    const renamed = await until(() => { const title = ticketById(ticketId)?.title; return title !== undefined && title !== initialTitle ? title : undefined }, 600_000, 20_000, 'renamed ticket title')
+    const renamed = await until(
+      () => {
+        const title = ticketById(ticketId)?.title
+        return title !== undefined && title !== initialTitle ? title : undefined
+      },
+      600_000,
+      20_000,
+      'renamed ticket title',
+    )
     const ticket = ticketById(ticketId)!
     const titleAfter = renamed
     const status = await statusText()
     const needs = await needsText(true)
-    const files = (await owner(['repos/' + REPO + '/pulls/' + pull.number + '/files?per_page=100']) as { filename: string }[]).map(file => file.filename)
+    const files = (
+      (await owner(['repos/' + REPO + '/pulls/' + pull.number + '/files?per_page=100'])) as { filename: string }[]
+    ).map(file => file.filename)
     const workers = storeQuery('SELECT * FROM worker WHERE ticket_id = ?', ticketId)
     const turns = workers.reduce((sum, row) => sum + Number(row.turns), 0)
     const costUsd = workers.reduce((sum, row) => sum + Number(row.cost_usd), 0)
@@ -285,7 +431,9 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
       worker: { turns, costUsd },
       durationMs: Date.now() - t0,
     }
-    console.log(`[QUALITY] steer initialTitle=${JSON.stringify(initialTitle)} titleAfter=${JSON.stringify(titleAfter)} pr=${pull.html_url} files=${JSON.stringify(files)} costUsd=${String(costUsd)} turns=${String(turns)}`)
+    console.log(
+      `[QUALITY] steer initialTitle=${JSON.stringify(initialTitle)} titleAfter=${JSON.stringify(titleAfter)} pr=${pull.html_url} files=${JSON.stringify(files)} costUsd=${String(costUsd)} turns=${String(turns)}`,
+    )
 
     expect(titleAfter).not.toBe(initialTitle)
     expect(titleAfter).toMatch(/welcome/i)
@@ -300,11 +448,25 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
     const issue = await createIssue(RENAME_TITLE, RENAME_BODY)
     const n = issue.number
     const trigger = await until(() => triggerOfIssue(n), 300_000, 5_000, 'trigger for the issue')
-    await until(async () => {
-      if ((await agentComments(n)).length > 0) return true
-      if (storeRows<Decision>('decision').some(decision => decision.kind === 'ignore' && decision.triggerIds.includes(trigger.id))) return true
-      return storeRows<Ticket>('ticket').some(ticket => ticket.origin.triggerId === trigger.id && ticket.attention !== undefined) ? true : undefined
-    }, 600_000, 15_000, 'first agent comment, ignore decision or attention question')
+    await until(
+      async () => {
+        if ((await agentComments(n)).length > 0) return true
+        if (
+          storeRows<Decision>('decision').some(
+            decision => decision.kind === 'ignore' && decision.triggerIds.includes(trigger.id),
+          )
+        )
+          return true
+        return storeRows<Ticket>('ticket').some(
+          ticket => ticket.origin.triggerId === trigger.id && ticket.attention !== undefined,
+        )
+          ? true
+          : undefined
+      },
+      600_000,
+      15_000,
+      'first agent comment, ignore decision or attention question',
+    )
 
     const comments = await agentComments(n)
     const firstBody = comments[0] ? stripMarker(comments[0].body) : undefined
@@ -322,18 +484,35 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
       attention: attention ?? null,
       durationMs: Date.now() - t0,
     }
-    console.log(`[QUALITY] premise firstComment=${JSON.stringify(firstBody ?? null)} decision=${String(decision?.kind)} attention=${JSON.stringify(attention ?? null)}`)
+    console.log(
+      `[QUALITY] premise firstComment=${JSON.stringify(firstBody ?? null)} decision=${String(decision?.kind)} attention=${JSON.stringify(attention ?? null)}`,
+    )
   }, 900_000)
 
   it('an out-of-scope mention gets a refusal whose reason is readable', async () => {
     const issue = await createIssue(WEEKEND_TITLE, WEEKEND_BODY)
     const n = issue.number
     const trigger = await until(() => triggerOfIssue(n), 300_000, 5_000, 'trigger for the issue')
-    const decision = await until(() => {
-      if (storeRows<Ticket>('ticket').some(ticket => ticket.origin.triggerId === trigger.id)) throw new Error(`router accepted the request on ${issue.html_url}: a ticket was created; reword once and re-run`)
-      return storeRows<Decision>('decision').find(item => item.kind === 'ignore' && item.triggerIds.includes(trigger.id))
-    }, 600_000, 15_000, 'ignore decision for the issue')
-    const comment = await until(async () => (await agentComments(n))[0], 600_000, 15_000, 'refusal comment on the issue')
+    const decision = await until(
+      () => {
+        if (storeRows<Ticket>('ticket').some(ticket => ticket.origin.triggerId === trigger.id))
+          throw new Error(
+            `router accepted the request on ${issue.html_url}: a ticket was created; reword once and re-run`,
+          )
+        return storeRows<Decision>('decision').find(
+          item => item.kind === 'ignore' && item.triggerIds.includes(trigger.id),
+        )
+      },
+      600_000,
+      15_000,
+      'ignore decision for the issue',
+    )
+    const comment = await until(
+      async () => (await agentComments(n))[0],
+      600_000,
+      15_000,
+      'refusal comment on the issue',
+    )
     const body = stripMarker(comment.body)
     const fallback = body === FALLBACK_BODY
 
@@ -348,15 +527,24 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
       comment: { url: comment.html_url, body, id: markerId(comment.body), createdAt: comment.created_at },
       fallback,
     }
-    console.log(`[QUALITY] refusal reason=${JSON.stringify(decision.reason)} body=${JSON.stringify(body)} fallback=${String(fallback)}`)
+    console.log(
+      `[QUALITY] refusal reason=${JSON.stringify(decision.reason)} body=${JSON.stringify(body)} fallback=${String(fallback)}`,
+    )
   }, 1_800_000)
 
   it('no live content in the repository names a milestone', async () => {
     const queried: string[] = []
-    const get = async <T>(path: string): Promise<T> => { queried.push(path); return await owner([path]) as T }
-    const issues = await get<{ title: string; body?: string | null }[]>('repos/' + REPO + '/issues?state=all&per_page=100')
+    const get = async <T>(path: string): Promise<T> => {
+      queried.push(path)
+      return (await owner([path])) as T
+    }
+    const issues = await get<{ title: string; body?: string | null }[]>(
+      'repos/' + REPO + '/issues?state=all&per_page=100',
+    )
     const issueComments = await get<{ body?: string | null }[]>('repos/' + REPO + '/issues/comments?per_page=100')
-    const pulls = await get<{ number: number; title: string; body?: string | null; head: { ref: string } }[]>('repos/' + REPO + '/pulls?state=all&per_page=100')
+    const pulls = await get<{ number: number; title: string; body?: string | null; head: { ref: string } }[]>(
+      'repos/' + REPO + '/pulls?state=all&per_page=100',
+    )
     const reviewComments = await get<{ body?: string | null }[]>('repos/' + REPO + '/pulls/comments?per_page=100')
     const commitMessages: string[] = []
     for (const pull of pulls) {
@@ -373,7 +561,19 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
       ...branches.map(branch => branch.name),
     ]
     const matches = texts.filter(text => /\bM\d+\b|milestone/i.test(text))
-    const branding = { queried, results: { issues: issues.length, issueComments: issueComments.length, pulls: pulls.length, reviewComments: reviewComments.length, commits: commitMessages.length, branches: branches.length }, scanned: texts.length, matches: matches.length }
+    const branding = {
+      queried,
+      results: {
+        issues: issues.length,
+        issueComments: issueComments.length,
+        pulls: pulls.length,
+        reviewComments: reviewComments.length,
+        commits: commitMessages.length,
+        branches: branches.length,
+      },
+      scanned: texts.length,
+      matches: matches.length,
+    }
     evidence.branding = branding
     console.log(`[LIVE-TEXT] scanned=${branding.scanned} matches=${branding.matches} queried=${queried.length}`)
     expect(matches).toHaveLength(0)

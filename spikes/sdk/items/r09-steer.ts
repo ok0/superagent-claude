@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import { baseOptions, compact, findEcho, runScenario, textOf, type ScenarioOutcome, type TimelineEntry } from '../lib/session.ts'
+import {
+  baseOptions,
+  compact,
+  findEcho,
+  runScenario,
+  textOf,
+  type ScenarioOutcome,
+  type TimelineEntry,
+} from '../lib/session.ts'
 import { isMain, type ItemResult, type SpikeContext, type SpikeItem } from '../lib/types.ts'
 
 const ID = 'steer'
@@ -19,7 +27,7 @@ function initLines(init: Record<string, unknown> | undefined): string[] {
 }
 
 function classify(timeline: TimelineEntry[]): Klass {
-  const first = timeline.findIndex((e) => e.type === 'result')
+  const first = timeline.findIndex(e => e.type === 'result')
   const cut = first === -1 ? timeline.length : first + 1
   if (textOf(timeline.slice(0, cut)).includes(MARKER)) return 'same-turn'
   if (textOf(timeline.slice(cut)).includes(MARKER)) return 'next-turn'
@@ -38,16 +46,20 @@ async function attempt(ctx: SpikeContext, n: number): Promise<{ outcome: Scenari
       uuid: randomUUID(),
     },
     onEntry: (e, c) => {
-      if (!injected && e.toolUses?.some((u) => u.name === 'Bash') === true) {
+      if (!injected && e.toolUses?.some(u => u.name === 'Bash') === true) {
         injected = true
-        c.push({ text: `Additional instruction: your final answer must contain the word ${MARKER}.`, uuid: bUuid, priority: 'next' })
+        c.push({
+          text: `Additional instruction: your final answer must contain the word ${MARKER}.`,
+          uuid: bUuid,
+          priority: 'next',
+        })
       }
       if (e.type !== 'result') return
       if (c.results.length >= 2) {
         c.end()
       } else if (!firstResultSeen) {
         firstResultSeen = true
-        c.after(60000, (cc) => cc.end())
+        c.after(60000, cc => cc.end())
       }
     },
   })
@@ -72,8 +84,8 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
     init ??= outcome.init
     costs.push(outcome.costs)
     const echo = findEcho(outcome.timeline, bUuid)[0]?.index ?? -1
-    const toolResult = outcome.timeline.findIndex((e) => (e.toolResults?.length ?? 0) > 0)
-    const firstResult = outcome.timeline.findIndex((e) => e.type === 'result')
+    const toolResult = outcome.timeline.findIndex(e => (e.toolResults?.length ?? 0) > 0)
+    const firstResult = outcome.timeline.findIndex(e => e.type === 'result')
     const numTurns = firstResult === -1 ? undefined : outcome.timeline[firstResult]?.result?.numTurns
     observations.push(
       `attempt ${n}: ${klass}; echo(B)=${echo}; bash_tool_result=${toolResult}; first_result=${firstResult}; num_turns=${numTurns ?? 'n/a'}`,

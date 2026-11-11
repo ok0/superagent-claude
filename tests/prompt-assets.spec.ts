@@ -23,16 +23,7 @@ const ASSETS = [
 
 const HEADER = /^<!-- Ported from dsh-superagent-prototype \(MIT\) \S+ -->$/
 
-const FORBIDDEN = [
-  /feishu/i,
-  /lark/i,
-  /\bdsh\b/i,
-  /dsh[-_]/i,
-  /\bIM\b/,
-  /skills read/i,
-  /read_image/,
-  /DSH_SUPERAGENT/,
-]
+const FORBIDDEN = [/feishu/i, /lark/i, /\bdsh\b/i, /dsh[-_]/i, /\bIM\b/, /skills read/i, /read_image/, /DSH_SUPERAGENT/]
 
 function body(text: string): string {
   return text.split('\n').slice(1).join('\n')
@@ -76,7 +67,9 @@ describe('ported prompt and skill assets', () => {
   })
 
   it('detects a tool outside the canonical set', () => {
-    expect(toolNameViolations('call mcp__superagent__orchestrator_settings_save now')).toEqual(['orchestrator_settings_save'])
+    expect(toolNameViolations('call mcp__superagent__orchestrator_settings_save now')).toEqual([
+      'orchestrator_settings_save',
+    ])
     expect(toolNameViolations('use orchestrator_report')).toEqual(['orchestrator_report (missing mcp__superagent__)'])
     expect(toolNameViolations('mcp__github__get_issue')).toEqual(['mcp__github__get_issue'])
     expect(MCP_TOOL_PREFIX).toBe('mcp__superagent__')
@@ -101,19 +94,34 @@ describe('ported prompt and skill assets', () => {
 
   it('restores delivery and review-thread guidance on the host tools', () => {
     const delivery = body(read('prompts/team/delivery.md'))
-    for (const token of ['mcp__superagent__orchestrator_publish', 'coAuthors', 'mcp__superagent__orchestrator_pr_auto_merge', 'mcp__superagent__orchestrator_pr_close']) {
+    for (const token of [
+      'mcp__superagent__orchestrator_publish',
+      'coAuthors',
+      'mcp__superagent__orchestrator_pr_auto_merge',
+      'mcp__superagent__orchestrator_pr_close',
+    ]) {
       expect(delivery, token).toContain(token)
     }
     expect(body(read('prompts/team/communication.md'))).toContain('mcp__superagent__orchestrator_review_reply')
     const skill = body(read('skills/github.md'))
-    for (const token of ['mcp__superagent__orchestrator_review_reply', 'mcp__superagent__orchestrator_publish', 'mcp__superagent__orchestrator_pr_close']) {
+    for (const token of [
+      'mcp__superagent__orchestrator_review_reply',
+      'mcp__superagent__orchestrator_publish',
+      'mcp__superagent__orchestrator_pr_close',
+    ]) {
       expect(skill, token).toContain(token)
     }
   })
 
   it('guides the no-write-access branch with the publish and report tools and no fork', () => {
     const delivery = body(read('prompts/team/delivery.md'))
-    for (const token of ['published: false', 'mcp__superagent__orchestrator_publish', 'mcp__superagent__orchestrator_report', 'state: blocked', 'write access']) {
+    for (const token of [
+      'published: false',
+      'mcp__superagent__orchestrator_publish',
+      'mcp__superagent__orchestrator_report',
+      'state: blocked',
+      'write access',
+    ]) {
       expect(delivery, token).toContain(token)
     }
     expect(body(read('skills/github.md'))).toContain('published: false')
@@ -130,14 +138,23 @@ describe('ported prompt and skill assets', () => {
 
   it('the worker prompt renames a changed ticket, waits for host push retries and limits changes to the request', () => {
     const work = body(read('prompts/work.md'))
-    for (const token of ['pass title with a new short label of at most 200 characters', 'retries a transient push failure up to 3 times', 'only when it still fails after the host\'s retries', 'Change only the files the request needs', '.gitignore']) {
+    for (const token of [
+      'pass title with a new short label of at most 200 characters',
+      'retries a transient push failure up to 3 times',
+      "only when it still fails after the host's retries",
+      'Change only the files the request needs',
+      '.gitignore',
+    ]) {
       expect(work, token).toContain(token)
     }
   })
 
   it('acknowledgements state only facts from the request and a doubtful premise gets a question', () => {
     const replies = body(read('prompts/replies.md'))
-    for (const token of ['never present a name, value, decision or earlier agreement', 'do not acknowledge it: the worker asks one question']) {
+    for (const token of [
+      'never present a name, value, decision or earlier agreement',
+      'do not acknowledge it: the worker asks one question',
+    ]) {
       expect(replies, token).toContain(token)
     }
   })
@@ -156,6 +173,8 @@ describe('ported prompt and skill assets', () => {
   })
 
   it('the router writes an ignore reason in plain words', () => {
-    expect(body(read('prompts/router.md'))).toContain('without internal terms such as ticket, worker, hand back, Eval, trigger or assignment')
+    expect(body(read('prompts/router.md'))).toContain(
+      'without internal terms such as ticket, worker, hand back, Eval, trigger or assignment',
+    )
   })
 })

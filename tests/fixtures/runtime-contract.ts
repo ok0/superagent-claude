@@ -2,14 +2,28 @@
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { type AgentRuntime, type AgentSession, type RuntimeEvent, ReadLedger, type SessionSpec, type ToolSpec } from '../../src/executor/contract.ts'
+import {
+  type AgentRuntime,
+  type AgentSession,
+  type RuntimeEvent,
+  ReadLedger,
+  type SessionSpec,
+  type ToolSpec,
+} from '../../src/executor/contract.ts'
 import { waitUntil } from './async.ts'
 
-export const CONTRACT_CASES = ['steer joins the running turn', 'steer in a running turn is reported read before the turn ends',
-  'followup starts a new turn', 'inject does not wake the session', 'a tool call reaches the host',
-  'a turn over the limit ends with a limit outcome', 'interrupt returns the pending inputs', 'the host reads each input once',
-  'resume keeps the session id'] as const
-export type ContractCase = typeof CONTRACT_CASES[number]
+export const CONTRACT_CASES = [
+  'steer joins the running turn',
+  'steer in a running turn is reported read before the turn ends',
+  'followup starts a new turn',
+  'inject does not wake the session',
+  'a tool call reaches the host',
+  'a turn over the limit ends with a limit outcome',
+  'interrupt returns the pending inputs',
+  'the host reads each input once',
+  'resume keeps the session id',
+] as const
+export type ContractCase = (typeof CONTRACT_CASES)[number]
 /** Instructions a real runtime gets for each case (a scripted runtime may ignore them). */
 export const CONTRACT_INSTRUCTIONS: Record<ContractCase, string> = {
   'steer joins the running turn': 'Call the wait tool once, then end your turn.',
@@ -26,24 +40,45 @@ export const CONTRACT_INSTRUCTIONS: Record<ContractCase, string> = {
 let contractIndex = 0
 
 /** The spec for one contract case, with the wait and report tools and the reports they collect. */
-export function contractSpec(name: ContractCase, overrides: Partial<SessionSpec> = {}): { spec: SessionSpec; reports: unknown[] } {
+export function contractSpec(
+  name: ContractCase,
+  overrides: Partial<SessionSpec> = {},
+): { spec: SessionSpec; reports: unknown[] } {
   const reports: unknown[] = []
   contractIndex += 1
   const tools: ToolSpec[] = [
     { name: 'wait', description: 'Wait briefly', schema: z.object({}), execute: async () => 'ok' },
-    { name: 'report', description: 'Report the ticket status', schema: z.object({ state: z.string(), summary: z.string() }), execute: async args => { reports.push(args); return 'ok' } },
+    {
+      name: 'report',
+      description: 'Report the ticket status',
+      schema: z.object({ state: z.string(), summary: z.string() }),
+      execute: async args => {
+        reports.push(args)
+        return 'ok'
+      },
+    },
   ]
   const spec: SessionSpec = {
-    key: `contract-${contractIndex}`, role: 'worker', cwd: tmpdir(), instructions: CONTRACT_INSTRUCTIONS[name], tools,
-    builtins: { fs: 'none', shell: false, web: false }, network: { allow: [] },
-    limits: { maxTurns: name === 'a turn over the limit ends with a limit outcome' ? 1 : 10, maxBudgetUsd: 1 }, env: {},
+    key: `contract-${contractIndex}`,
+    role: 'worker',
+    cwd: tmpdir(),
+    instructions: CONTRACT_INSTRUCTIONS[name],
+    tools,
+    builtins: { fs: 'none', shell: false, web: false },
+    network: { allow: [] },
+    limits: { maxTurns: name === 'a turn over the limit ends with a limit outcome' ? 1 : 10, maxBudgetUsd: 1 },
+    env: {},
     ...overrides,
   }
   return { spec, reports }
 }
 
 type Opened = { session: AgentSession; events: RuntimeEvent[]; reports: unknown[]; ended: (n: number) => Promise<void> }
-interface CaseContext { open(overrides?: Partial<SessionSpec>): Promise<Opened>; quiet: () => Promise<void>; wait: (check: () => boolean) => Promise<unknown> }
+interface CaseContext {
+  open(overrides?: Partial<SessionSpec>): Promise<Opened>
+  quiet: () => Promise<void>
+  wait: (check: () => boolean) => Promise<unknown>
+}
 
 const defaultQuiet = async (): Promise<void> => {
   for (let i = 0; i < 3; i++) await new Promise(resolve => setImmediate(resolve))
@@ -51,12 +86,14 @@ const defaultQuiet = async (): Promise<void> => {
 
 function watch(session: AgentSession): RuntimeEvent[] {
   const events: RuntimeEvent[] = []
-  void (async () => { for await (const event of session.events()) events.push(event) })()
+  void (async () => {
+    for await (const event of session.events()) events.push(event)
+  })()
   return events
 }
 
 function readBatches(events: RuntimeEvent[]): string[][] {
-  return events.flatMap(event => event.type === 'inputsRead' ? [event.ids] : [])
+  return events.flatMap(event => (event.type === 'inputsRead' ? [event.ids] : []))
 }
 
 function readIds(events: RuntimeEvent[]): string[] {
@@ -96,7 +133,7 @@ const CHECKS: Record<ContractCase, (c: CaseContext) => Promise<void>> = {
     await ended(2)
     const sequence = events
       .filter(event => event.type === 'inputsRead' || event.type === 'turnEnded')
-      .map(event => event.type === 'inputsRead' ? event.ids : 'turnEnded')
+      .map(event => (event.type === 'inputsRead' ? event.ids : 'turnEnded'))
     expect(sequence).toEqual([['A'], 'turnEnded', ['B'], 'turnEnded'])
   },
   'inject does not wake the session': async ({ open, quiet, wait }) => {
@@ -153,8 +190,11 @@ const CHECKS: Record<ContractCase, (c: CaseContext) => Promise<void>> = {
 }
 
 /** Adds one `it` per contract case (all cases unless options.cases narrows them), each against a session from factory(case). */
-export function runtimeContract(name: string, factory: (contractCase: ContractCase) => AgentRuntime,
-  options: { cases?: readonly ContractCase[]; quiet?: () => Promise<void>; timeoutMs?: number } = {}): void {
+export function runtimeContract(
+  name: string,
+  factory: (contractCase: ContractCase) => AgentRuntime,
+  options: { cases?: readonly ContractCase[]; quiet?: () => Promise<void>; timeoutMs?: number } = {},
+): void {
   const quiet = options.quiet ?? defaultQuiet
   const timeoutMs = options.timeoutMs ?? 3000
   const wait = (check: () => boolean) => waitUntil(check, timeoutMs)
@@ -168,7 +208,8 @@ export function runtimeContract(name: string, factory: (contractCase: ContractCa
           const session = await runtime.open(spec)
           sessions.push(session)
           const events = watch(session)
-          const ended = (n: number) => waitUntil(() => events.filter(event => event.type === 'turnEnded').length >= n, timeoutMs)
+          const ended = (n: number) =>
+            waitUntil(() => events.filter(event => event.type === 'turnEnded').length >= n, timeoutMs)
           return { session, events, reports, ended }
         }
         try {

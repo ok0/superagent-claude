@@ -11,7 +11,8 @@ export const scenario: LiveScenario = {
     path: 'api/test/list-pages.test.ts',
     fixture: 'playground-prepared/ci-failure/list-pages.test.ts',
     commitMessage: 'test: list every task page by page',
-    comment: '@{{agent}} The checks on this pull request fail. Please find the cause and fix it so that the checks pass, and keep the new test as it is.',
+    comment:
+      '@{{agent}} The checks on this pull request fail. Please find the cause and fix it so that the checks pass, and keep the new test as it is.',
   },
   hidden: {
     dir: 'playground-hidden/bug-paging',

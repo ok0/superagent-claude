@@ -53,7 +53,7 @@ describe('parseReleaseTag', () => {
     expect(parseReleaseTag('v0.1.0-rc.1')).toEqual({ version: '0.1.0-rc.1', prerelease: true })
   })
 
-  it.each(['0.1.0', 'v1.2', 'v01.2.3', 'v1.2.3+b'])('rejects %s', (tag) => {
+  it.each(['0.1.0', 'v1.2', 'v01.2.3', 'v1.2.3+b'])('rejects %s', tag => {
     expect(() => parseReleaseTag(tag)).toThrow()
   })
 })
@@ -82,12 +82,12 @@ describe('npmDistTag and imageTags', () => {
 })
 
 describe('ciGate', () => {
-  const run = (
-    status: string,
-    conclusion: string | null,
-    event = 'push',
-    head_branch = 'main',
-  ): WorkflowRun => ({ status, conclusion, event, head_branch })
+  const run = (status: string, conclusion: string | null, event = 'push', head_branch = 'main'): WorkflowRun => ({
+    status,
+    conclusion,
+    event,
+    head_branch,
+  })
 
   it('passes when a main push run succeeded', () => {
     expect(ciGate([run('completed', 'success')])).toBe('pass')
@@ -114,21 +114,21 @@ describe('checkPackFiles', () => {
       expect(packed).toContain(file)
     }
     for (const path of packed) {
-      expect(FORBIDDEN_PACK_PREFIXES.some((prefix) => path.startsWith(prefix))).toBe(false)
+      expect(FORBIDDEN_PACK_PREFIXES.some(prefix => path.startsWith(prefix))).toBe(false)
       expect(path).not.toContain('.env')
       expect(path).not.toContain('fixtures')
       expect(path.endsWith('.tgz')).toBe(false)
     }
   })
 
-  it.each(['tests/x.spec.ts', '.docs/a.md', '.env'])('flags %s', (p) => {
+  it.each(['tests/x.spec.ts', '.docs/a.md', '.env'])('flags %s', p => {
     const violations = checkPackFiles([...packed, p])
     expect(violations).toHaveLength(1)
     expect(violations[0]).toContain(p)
   })
 
   it('reports a missing required file', () => {
-    expect(checkPackFiles(packed.filter((p) => p !== 'NOTICE'))).toEqual(['missing required file: NOTICE'])
+    expect(checkPackFiles(packed.filter(p => p !== 'NOTICE'))).toEqual(['missing required file: NOTICE'])
   })
 
   it('lists every required file', () => {
@@ -159,7 +159,7 @@ describe('cli', () => {
   it('outputs prints release metadata for a prerelease tag', () => {
     const result = cli(['outputs', 'v0.1.0-rc.1'])
     expect(result.status).toBe(0)
-    const lines = result.stdout.split('\n').filter((l) => l !== '')
+    const lines = result.stdout.split('\n').filter(l => l !== '')
     expect(lines).toContain('dist_tag=next')
     expect(lines).toContain('image_tags=0.1.0-rc.1')
     expect(lines).toContain('prerelease=true')

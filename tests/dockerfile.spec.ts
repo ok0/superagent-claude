@@ -10,7 +10,7 @@ const REQUIRED_IGNORES = ['.docs', '.env', 'node_modules']
 
 export function dockerfileProblems(dockerfile: string, dockerignore: string): string[] {
   const problems: string[] = []
-  const fromStarts = [...dockerfile.matchAll(/^FROM\s/gm)].map((m) => m.index ?? 0)
+  const fromStarts = [...dockerfile.matchAll(/^FROM\s/gm)].map(m => m.index ?? 0)
   const finalStage = dockerfile.slice(fromStarts.at(-1) ?? 0)
 
   const users = [...finalStage.matchAll(/^USER\s+(\S+)/gm)]
@@ -27,14 +27,14 @@ export function dockerfileProblems(dockerfile: string, dockerignore: string): st
 
   for (const m of dockerfile.matchAll(/^(ENV|ARG)\s+(.*)$/gm)) {
     const tokens = (m[2] ?? '').trim().split(/\s+/)
-    const withEquals = tokens.every((t) => t.includes('='))
-    const names = withEquals || m[1] === 'ARG' ? tokens.map((t) => t.split('=')[0] ?? '') : tokens.slice(0, 1)
+    const withEquals = tokens.every(t => t.includes('='))
+    const names = withEquals || m[1] === 'ARG' ? tokens.map(t => t.split('=')[0] ?? '') : tokens.slice(0, 1)
     for (const name of names) {
       if (SECRET_NAME.test(name)) problems.push(`${m[1]} sets a secret-named variable: ${name}`)
     }
   }
 
-  const ignored = new Set(dockerignore.split('\n').map((l) => l.trim()))
+  const ignored = new Set(dockerignore.split('\n').map(l => l.trim()))
   for (const entry of REQUIRED_IGNORES) {
     if (!ignored.has(entry)) problems.push(`.dockerignore lacks ${entry}`)
   }
@@ -62,7 +62,7 @@ describe('dockerfile', () => {
     expect(dockerfileProblems(dockerfile, dockerignore)).toEqual([])
     expect(dockerfile).toContain('FROM node:24-bookworm-slim')
     expect(dockerfile).toContain('VOLUME /var/lib/superagent-claude')
-    const aptLine = dockerfile.split('\n').find((l) => l.includes('apt-get install')) ?? ''
+    const aptLine = dockerfile.split('\n').find(l => l.includes('apt-get install')) ?? ''
     for (const pkg of ['git', 'gh', 'bubblewrap', 'socat', 'tini']) {
       expect(aptLine).toMatch(new RegExp(`\\b${pkg}\\b`))
     }
@@ -71,10 +71,26 @@ describe('dockerfile', () => {
   it.each([
     ['USER node', GOOD_DOCKERFILE.replace('USER 10001:10001', 'USER node'), GOOD_DOCKERIGNORE],
     ['no USER', GOOD_DOCKERFILE.replace('USER 10001:10001\n', ''), GOOD_DOCKERIGNORE],
-    ['ENTRYPOINT ["node"]', GOOD_DOCKERFILE.replace('ENTRYPOINT ["/usr/bin/tini", "--", "superagent-claude"]', 'ENTRYPOINT ["node"]'), GOOD_DOCKERIGNORE],
-    ['ENV ANTHROPIC_API_KEY=x', GOOD_DOCKERFILE.replace('USER 10001:10001', 'ENV ANTHROPIC_API_KEY=x\nUSER 10001:10001'), GOOD_DOCKERIGNORE],
-    ['ARG GITHUB_TOKEN', GOOD_DOCKERFILE.replace('USER 10001:10001', 'ARG GITHUB_TOKEN\nUSER 10001:10001'), GOOD_DOCKERIGNORE],
-    ['ENV HOME=/h CLAUDE_CODE_OAUTH_TOKEN=x', GOOD_DOCKERFILE.replace('USER 10001:10001', 'ENV HOME=/h CLAUDE_CODE_OAUTH_TOKEN=x\nUSER 10001:10001'), GOOD_DOCKERIGNORE],
+    [
+      'ENTRYPOINT ["node"]',
+      GOOD_DOCKERFILE.replace('ENTRYPOINT ["/usr/bin/tini", "--", "superagent-claude"]', 'ENTRYPOINT ["node"]'),
+      GOOD_DOCKERIGNORE,
+    ],
+    [
+      'ENV ANTHROPIC_API_KEY=x',
+      GOOD_DOCKERFILE.replace('USER 10001:10001', 'ENV ANTHROPIC_API_KEY=x\nUSER 10001:10001'),
+      GOOD_DOCKERIGNORE,
+    ],
+    [
+      'ARG GITHUB_TOKEN',
+      GOOD_DOCKERFILE.replace('USER 10001:10001', 'ARG GITHUB_TOKEN\nUSER 10001:10001'),
+      GOOD_DOCKERIGNORE,
+    ],
+    [
+      'ENV HOME=/h CLAUDE_CODE_OAUTH_TOKEN=x',
+      GOOD_DOCKERFILE.replace('USER 10001:10001', 'ENV HOME=/h CLAUDE_CODE_OAUTH_TOKEN=x\nUSER 10001:10001'),
+      GOOD_DOCKERIGNORE,
+    ],
     ['dockerignore missing .env', GOOD_DOCKERFILE, '.docs\nnode_modules\n'],
     ['dockerignore missing .docs', GOOD_DOCKERFILE, '.env\nnode_modules\n'],
     ['dockerignore missing node_modules', GOOD_DOCKERFILE, '.docs\n.env\n'],

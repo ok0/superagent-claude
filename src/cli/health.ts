@@ -21,7 +21,11 @@ function firstLine(text: string): string {
   return newline === -1 ? text : text.slice(0, newline)
 }
 
-export function healthCommand(argv: readonly string[], io: Pick<CliIo, 'out' | 'err' | 'cwd' | 'env'>, now: () => number = Date.now): number {
+export function healthCommand(
+  argv: readonly string[],
+  io: Pick<CliIo, 'out' | 'err' | 'cwd' | 'env'>,
+  now: () => number = Date.now,
+): number {
   let mode: 'live' | 'ready' | undefined
   let configArg: string | undefined
   for (let i = 0; i < argv.length; i++) {
@@ -91,7 +95,8 @@ export function healthCommand(argv: readonly string[], io: Pick<CliIo, 'out' | '
   if (!snapshot || snapshot.pid !== owner.pid) return fail('no health snapshot from the running daemon')
   const age = now() - Date.parse(snapshot.at)
   if (!(age <= LIVE_SNAPSHOT_MS)) return fail(`the health snapshot is ${Math.round(age / 1000)}s old`)
-  if (checked === 'ready' && (!marker || marker.pid !== owner.pid)) return fail('the daemon has not finished starting or is stopping')
+  if (checked === 'ready' && (!marker || marker.pid !== owner.pid))
+    return fail('the daemon has not finished starting or is stopping')
 
   io.out(`${checked}\n`)
   return 0

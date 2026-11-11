@@ -30,17 +30,40 @@ function make(acceptMode: 'off' | 'observe' | 'auto' = 'auto') {
   const scope = { scope: () => ({ listened: true as const, observed: true }) }
   const policy = settingsPolicy(settings, scope)
   const assessor = new MasterAssessor({
-    engine: () => engine, effects: { enqueue: vi.fn(), handle: vi.fn(), cancel: vi.fn() }, settings: () => settings, paused: () => false,
-    threadContext: () => undefined, deliver: vi.fn(async () => {}), candidateCard: c => ({ trigger_id: c.triggers[0]!.id }),
+    engine: () => engine,
+    effects: { enqueue: vi.fn(), handle: vi.fn(), cancel: vi.fn() },
+    settings: () => settings,
+    paused: () => false,
+    threadContext: () => undefined,
+    deliver: vi.fn(async () => {}),
+    candidateCard: c => ({ trigger_id: c.triggers[0]!.id }),
   })
   executor = { start: vi.fn(), deliver: vi.fn(), stop: vi.fn() }
   const outbox = { send: vi.fn(), status: () => undefined, withdraw: vi.fn() }
-  engine = new Engine({ repo: store, policy: () => policy, scope, assessor, executor: executor as unknown as Executor, outbox })
-  const resources = { store, pages: new TextCache(1000), repositories: () => ['owner/repo'], repositoryOf: () => undefined, skill: () => '' }
+  engine = new Engine({
+    repo: store,
+    policy: () => policy,
+    scope,
+    assessor,
+    executor: executor as unknown as Executor,
+    outbox,
+  })
+  const resources = {
+    store,
+    pages: new TextCache(1000),
+    repositories: () => ['owner/repo'],
+    repositoryOf: () => undefined,
+    skill: () => '',
+  }
   const host: MainToolsHost = {
-    engine: () => engine, store, assessor, settings: () => settings,
+    engine: () => engine,
+    store,
+    assessor,
+    settings: () => settings,
     read: (resource, offset, limit, signal) => readResource(resources, resource, offset, limit, undefined, signal),
-    requestPass: vi.fn(), sendReplies: async () => {}, quietly: next => next(),
+    requestPass: vi.fn(),
+    sendReplies: async () => {},
+    quietly: next => next(),
   }
   const tools = mainTools(host)
   run = (name, args) => {
@@ -51,16 +74,27 @@ function make(acceptMode: 'off' | 'observe' | 'auto' = 'auto') {
   return { tools }
 }
 const accept = (triggerId: string, extra: Record<string, unknown> = {}) => ({
-  kind: 'accept', trigger_id: triggerId, title: 'Fix', worktree_name: 'fix-it', acknowledgement: 'On it.', ...extra,
+  kind: 'accept',
+  trigger_id: triggerId,
+  title: 'Fix',
+  worktree_name: 'fix-it',
+  acknowledgement: 'On it.',
+  ...extra,
 })
 const ticketsOf = () => store.tickets.list() as Ticket[]
 /** Receives a mention from an allowed sender and runs the Eval for it, so it is an explicit candidate. */
 function explicit(id: string) {
-  engine.receive(trigger(id, { addressed: 'mention' })); engine.evaluateDue()
+  engine.receive(trigger(id, { addressed: 'mention' }))
+  engine.evaluateDue()
 }
 
-beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'router-tools-')) })
-afterEach(() => { store.close(); rmSync(dir, { recursive: true, force: true }) })
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'router-tools-'))
+})
+afterEach(() => {
+  store.close()
+  rmSync(dir, { recursive: true, force: true })
+})
 
 describe('router tools', () => {
   it('registers exactly the eleven Router tools', () => {
@@ -76,26 +110,41 @@ describe('router tools', () => {
   it('answers routing in one shape, and an accept again keeps the first ticket', async () => {
     make()
     explicit('1')
-    const result = await run('orchestrator_route', { decisions: [accept('1')] }) as { results: Record<string, unknown>[] }
-    expect(result.results[0]).toMatchObject({ trigger_id: '1', kind: 'accept', decision: 'accept', reason: expect.any(String),
-      ticket: expect.objectContaining({ ticket_id: expect.any(String) }) })
+    const result = (await run('orchestrator_route', { decisions: [accept('1')] })) as {
+      results: Record<string, unknown>[]
+    }
+    expect(result.results[0]).toMatchObject({
+      trigger_id: '1',
+      kind: 'accept',
+      decision: 'accept',
+      reason: expect.any(String),
+      ticket: expect.objectContaining({ ticket_id: expect.any(String) }),
+    })
     expect(executor.start).toHaveBeenCalledTimes(1)
-    const again = await run('orchestrator_route', { decisions: [accept('1')] }) as { results: Record<string, unknown>[] }
+    const again = (await run('orchestrator_route', { decisions: [accept('1')] })) as {
+      results: Record<string, unknown>[]
+    }
     const id = ticketsOf()[0]!.id
-    expect(again.results[0]).toMatchObject({ decision: 'accept', reason: `Already accepted as ${id}; title and acknowledgement unchanged` })
+    expect(again.results[0]).toMatchObject({
+      decision: 'accept',
+      reason: `Already accepted as ${id}; title and acknowledgement unchanged`,
+    })
     expect(ticketsOf()).toHaveLength(1)
   })
 
   it('refuses an item alone', async () => {
     make()
     explicit('1')
-    engine.receive(trigger('2', { threads: [{ source: 'chat', id: 't2' }] })); engine.evaluateDue()
+    engine.receive(trigger('2', { threads: [{ source: 'chat', id: 't2' }] }))
+    engine.evaluateDue()
     const { worktree_name: _name, ...missing } = accept('1')
-    const result = await run('orchestrator_route', { decisions: [
-      missing,
-      { kind: 'attach', trigger_id: '1', ticket_id: 'no-such-ticket' },
-      { kind: 'ignore', trigger_id: '2', reason: 'Chatter' },
-    ] }) as { results: Record<string, unknown>[] }
+    const result = (await run('orchestrator_route', {
+      decisions: [
+        missing,
+        { kind: 'attach', trigger_id: '1', ticket_id: 'no-such-ticket' },
+        { kind: 'ignore', trigger_id: '2', reason: 'Chatter' },
+      ],
+    })) as { results: Record<string, unknown>[] }
     expect(result.results[0]).toMatchObject({ refused: 'accept needs worktree_name' })
     expect(result.results[1]).toMatchObject({ refused: 'Unknown ticket' })
     expect(result.results[2]).toMatchObject({ trigger_id: '2', decision: 'ignore' })
@@ -104,7 +153,9 @@ describe('router tools', () => {
   it('route accept under observe records what it would accept, without a ticket', async () => {
     make('observe')
     explicit('1')
-    const observed = await run('orchestrator_route', { decisions: [accept('1')] }) as { results: Record<string, unknown>[] }
+    const observed = (await run('orchestrator_route', { decisions: [accept('1')] })) as {
+      results: Record<string, unknown>[]
+    }
     expect(observed.results[0]).toMatchObject({ decision: 'ignore' })
     expect(ticketsOf()).toHaveLength(0)
     const stored = store.decisions.byThread(threadKey({ source: 'chat', id: 't1' })).at(-1)
@@ -114,7 +165,9 @@ describe('router tools', () => {
   it('route accept under off ignores it, without a ticket', async () => {
     make('off')
     explicit('1')
-    const off = await run('orchestrator_route', { decisions: [accept('1')] }) as { results: Record<string, unknown>[] }
+    const off = (await run('orchestrator_route', { decisions: [accept('1')] })) as {
+      results: Record<string, unknown>[]
+    }
     expect(off.results[0]).toMatchObject({ decision: 'ignore' })
     expect(ticketsOf()).toHaveLength(0)
   })
@@ -148,8 +201,20 @@ describe('router tools', () => {
     make()
     explicit('1')
     await expect(run('orchestrator_eval', { trigger_id: '1' })).rejects.toThrow(/orchestrator_route/)
-    const decision = { trigger_id: '1', decision: 'ignore', rule_assessments: [], title: 't', scope: 's', reason: 'r',
-      direction: { implementation_requested: false, target_basis: 'undetermined', requires_design_decision: false, evidence: 'e' } }
+    const decision = {
+      trigger_id: '1',
+      decision: 'ignore',
+      rule_assessments: [],
+      title: 't',
+      scope: 's',
+      reason: 'r',
+      direction: {
+        implementation_requested: false,
+        target_basis: 'undetermined',
+        requires_design_decision: false,
+        evidence: 'e',
+      },
+    }
     await expect(run('orchestrator_eval_decide', decision)).rejects.toThrow(/orchestrator_route/)
     const { direction: _direction, ...noDirection } = decision
     await expect(run('orchestrator_eval_decide', noDirection)).rejects.toThrow()

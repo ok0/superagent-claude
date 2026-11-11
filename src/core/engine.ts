@@ -49,7 +49,9 @@ export class Engine {
    * and queue it for Eval on its primary Thread unless a ticket's worker decides it (see `followupOwners`).
    * Triggers that arrive while an Eval of that Thread runs wait together for the next one.
    */
-  receive(trigger: Trigger): ReceiveResult { return this.repo.atomic(() => this.intake.receive(trigger)) }
+  receive(trigger: Trigger): ReceiveResult {
+    return this.repo.atomic(() => this.intake.receive(trigger))
+  }
   /**
    * A Source's request to make an open ticket follow one of its Threads, such as a pull request's, `own` when the ticket
    * opened it: the ticket subscribes to it, and a ready report ends it only once `followsDone` holds (see `Tickets.followsDone`).
@@ -66,7 +68,9 @@ export class Engine {
   threadClosed(thread: ThreadRef, outcome: 'merged' | 'closed', at: string): void {
     // Port note: example in comment neutralised to a generic source (charter R11); behavior unchanged.
     // Normalize source timestamps (such as whole-second ones) to canonical ISO form.
-    this.repo.atomic(() => { this.tickets.threadClosed(thread, outcome, isoTime(at)) })
+    this.repo.atomic(() => {
+      this.tickets.threadClosed(thread, outcome, isoTime(at))
+    })
   }
 
   // The clock
@@ -79,20 +83,32 @@ export class Engine {
    */
   evaluateDue(): void {
     const policy = this.options.policy()
-    for (const thread of this.repo.threads.active()) if (thread.evaluating) this.repo.atomic(() => { this.evals.due(thread, policy) })
+    for (const thread of this.repo.threads.active())
+      if (thread.evaluating)
+        this.repo.atomic(() => {
+          this.evals.due(thread, policy)
+        })
     if (policy.paused) return
     for (const ticket of this.repo.tickets.active()) {
-      if (!liveTicket(ticket) && ticket.undelivered.length) this.repo.atomic(() => { this.tickets.wake(ticket.id) })
+      if (!liveTicket(ticket) && ticket.undelivered.length)
+        this.repo.atomic(() => {
+          this.tickets.wake(ticket.id)
+        })
     }
     for (const thread of this.repo.threads.active()) {
-      if (thread.pending.length && !thread.evaluating) this.repo.atomic(() => { this.evals.start(thread.key, policy) })
+      if (thread.pending.length && !thread.evaluating)
+        this.repo.atomic(() => {
+          this.evals.start(thread.key, policy)
+        })
     }
   }
 
   // The main Session
 
   /** The candidate of the Eval that holds a Trigger, as its assessor sees it; undefined while no Eval holds it. */
-  candidate(triggerId: string): Candidate | undefined { return this.evals.candidate(triggerId) }
+  candidate(triggerId: string): Candidate | undefined {
+    return this.evals.candidate(triggerId)
+  }
   /**
    * Decide a Trigger: the Eval that holds it, or a direct Eval of it alone when none does, such as a person's explicit
    * request the main Session routes. A proactive candidate is accepted only in `auto` mode with enabled rules its assessment
@@ -102,7 +118,9 @@ export class Engine {
    * ticket's worker still decides the Trigger and the outcome is not a stop, or an inferred candidate is accepted outside `auto`
    * mode or without enabled matching rules.
    */
-  decide(triggerId: string, outcome: Outcome): Decision { return this.repo.atomic(() => this.evals.decide(triggerId, outcome)) }
+  decide(triggerId: string, outcome: Outcome): Decision {
+    return this.repo.atomic(() => this.evals.decide(triggerId, outcome))
+  }
   /**
    * Attach a Trigger to a ticket that the message points at: the ticket follows the Trigger's Threads and receives it as an
    * Input with the routing note, and the Eval that holds the Trigger ends, since the ticket has it now; the other Triggers of
@@ -129,7 +147,9 @@ export class Engine {
    * @returns whether the worker was asked.
    * @throws UserError when the ticket is unknown.
    */
-  requestStatus(ticketId: string): boolean { return this.repo.atomic(() => this.tickets.requestStatus(ticketId)) }
+  requestStatus(ticketId: string): boolean {
+    return this.repo.atomic(() => this.tickets.requestStatus(ticketId))
+  }
   /**
    * Queue a message for the Channel its purpose names: an acknowledgement or an answer goes where the person's message was
    * written, attention where the message that raised the question was, else, like a result, to the conversation the ticket
@@ -137,38 +157,54 @@ export class Engine {
    * @throws UserError when the ticket or trigger is unknown or the purpose's rule refuses it, such as a result of a ticket that
    * is not ready, completed, merged, or dropped.
    */
-  reply(request: ReplyRequest): Reply { return this.repo.atomic(() => this.replies.reply(request)) }
+  reply(request: ReplyRequest): Reply {
+    return this.repo.atomic(() => this.replies.reply(request))
+  }
 
   // People, through the panel or the main Session
 
   /** The assessor delivered an Eval's candidate to its Session: the Eval's deadline counts from now. */
-  candidateDelivered(evalId: string): void { this.repo.atomic(() => { this.evals.delivered(evalId, this.options.policy()) }) }
+  candidateDelivered(evalId: string): void {
+    this.repo.atomic(() => {
+      this.evals.delivered(evalId, this.options.policy())
+    })
+  }
   /**
    * Queue a stored Trigger for a fresh Eval, such as a person's replay; returns false while an Eval holds it.
    * @throws UserError when the trigger is unknown.
    */
-  reevaluate(triggerId: string): boolean { return this.repo.atomic(() => this.evals.reevaluate(triggerId)) }
+  reevaluate(triggerId: string): boolean {
+    return this.repo.atomic(() => this.evals.reevaluate(triggerId))
+  }
   /**
    * A person dismisses the problem an unavailable Decision shows: the overview lists it no more.
    * @throws UserError for a Decision that is unknown or not unavailable.
    */
-  dismiss(decisionId: string): Decision { return this.repo.atomic(() => this.evals.dismiss(decisionId)) }
+  dismiss(decisionId: string): Decision {
+    return this.repo.atomic(() => this.evals.dismiss(decisionId))
+  }
   /**
    * Drop every ticket's Subscription to a Thread, until a new Decision subscribes one again.
    * @returns whether a Subscription was dropped.
    */
-  unsubscribe(thread: string): boolean { return this.repo.atomic(() => this.tickets.dropSubscriptions(thread, 'person')) }
+  unsubscribe(thread: string): boolean {
+    return this.repo.atomic(() => this.tickets.dropSubscriptions(thread, 'person'))
+  }
   /**
    * A person stops a ticket, which withdraws its Mandate: it ends and receives nothing more.
    * @throws UserError when the ticket is unknown.
    */
-  stopTicket(ticketId: string, reason?: string): Ticket { return this.repo.atomic(() => this.tickets.stop(ticketId, reason)) }
+  stopTicket(ticketId: string, reason?: string): Ticket {
+    return this.repo.atomic(() => this.tickets.stop(ticketId, reason))
+  }
   /**
    * A person retries a ticket whose worker reported failed or blocked (or whose input delivery failed): the stalled
    * Assignment ends and a new one starts under the same Mandate.
    * @throws UserError when the ticket is unknown, has ended, or is not retryable.
    */
-  retryTicket(ticketId: string): Ticket { return this.repo.atomic(() => this.tickets.retry(ticketId)) }
+  retryTicket(ticketId: string): Ticket {
+    return this.repo.atomic(() => this.tickets.retry(ticketId))
+  }
 
   // The Executor
 
@@ -177,14 +213,18 @@ export class Engine {
    * @throws UserError when the ticket is unknown.
    */
   assignmentStarted(ticketId: string, assignmentId: string): void {
-    this.repo.atomic(() => { this.assignments.started(ticketId, assignmentId) })
+    this.repo.atomic(() => {
+      this.assignments.started(ticketId, assignmentId)
+    })
   }
   /**
    * The Executor's fact that Inputs reached the Assignment that runs the ticket, which clears a failed delivery. A fact about
    * an Assignment that no longer runs is dropped. Its worker reads each once its Session takes it into a step (`inputsRead`).
    */
   inputsDelivered(ticketId: string, assignmentId: string, inputIds: string[]): void {
-    this.repo.atomic(() => { this.assignments.delivered(ticketId, assignmentId, inputIds) })
+    this.repo.atomic(() => {
+      this.assignments.delivered(ticketId, assignmentId, inputIds)
+    })
   }
   /**
    * The Executor's fact that the worker's Session of an open ticket took the messages that carried Inputs into a step, from
@@ -192,15 +232,21 @@ export class Engine {
    * @throws UserError when the ticket is unknown.
    */
   inputsRead(ticketId: string, inputIds: string[]): void {
-    this.repo.atomic(() => { this.assignments.read(ticketId, inputIds) })
+    this.repo.atomic(() => {
+      this.assignments.read(ticketId, inputIds)
+    })
   }
   /** The Executor's fact that a turn of the worker of the Assignment that runs the ticket ended, after a report too. */
   turnEnded(ticketId: string, assignmentId: string): void {
-    this.repo.atomic(() => { this.assignments.turnEnded(ticketId, assignmentId) })
+    this.repo.atomic(() => {
+      this.assignments.turnEnded(ticketId, assignmentId)
+    })
   }
   /** The Executor's fact that delivering Inputs to the Assignment that runs the ticket failed; the ticket shows it until a delivery succeeds. */
   deliveryFailed(ticketId: string, assignmentId: string, error: string): void {
-    this.repo.atomic(() => { this.assignments.deliveryFailed(ticketId, assignmentId, error) })
+    this.repo.atomic(() => {
+      this.assignments.deliveryFailed(ticketId, assignmentId, error)
+    })
   }
   /**
    * A worker's request, through its Executor, to mark a Thread attached to its ticket unrelated, for `reason`: only that
@@ -209,7 +255,9 @@ export class Engine {
    * its pull request's), or one it does not follow.
    */
   markUnrelated(ticketId: string, thread: string, reason: string): void {
-    this.repo.atomic(() => { this.tickets.markUnrelated(ticketId, thread, reason) })
+    this.repo.atomic(() => {
+      this.tickets.markUnrelated(ticketId, thread, reason)
+    })
   }
   /**
    * An Executor's Subscription to a Thread it found related, for context: see `Tickets.followForContext` and `Thread.context`.
@@ -223,7 +271,9 @@ export class Engine {
    * A fact the main Session gives an open ticket's Executor: see `Tickets.note`.
    * @throws UserError when the ticket is unknown or has ended.
    */
-  note(ticketId: string, text: string): Ticket { return this.repo.atomic(() => this.tickets.note(ticketId, text)) }
+  note(ticketId: string, text: string): Ticket {
+    return this.repo.atomic(() => this.tickets.note(ticketId, text))
+  }
   /**
    * An Executor's hand-back of a message that reached its ticket but asks for more than it: see `Evals.handback`.
    * @returns whether it was queued for Eval: false while another ticket still decides it, and for one this ticket did not decide (see `Evals.handback`).
@@ -241,16 +291,22 @@ export class Engine {
    * @throws UserError for an unknown or ended ticket, an ended assignment, a question that comes with a ready result or an
    * answer, or a question or answer that names a message that is not a person's or did not reach the ticket.
    */
-  report(ticketId: string, report: WorkerReport): Ticket { return this.repo.atomic(() => this.assignments.report(ticketId, report)) }
+  report(ticketId: string, report: WorkerReport): Ticket {
+    return this.repo.atomic(() => this.assignments.report(ticketId, report))
+  }
   /** A worker's Session stopped at a turn or budget limit: see `Assignments.limited`. @returns whether the ticket kept its ready report, so no blocked report follows. */
-  limitReached(ticketId: string, assignmentId: string, limit: string): boolean { return this.repo.atomic(() => this.assignments.limited(ticketId, assignmentId, limit)) }
+  limitReached(ticketId: string, assignmentId: string, limit: string): boolean {
+    return this.repo.atomic(() => this.assignments.limited(ticketId, assignmentId, limit))
+  }
   /**
    * Handles an assignment that was running when the host stopped: restarts it with a recovery note unless its latest report is
    * `waiting`, `ready`, `blocked`, or `failed` and no Input reached its worker after that report that a later finished turn did
    * not take in (ADR-32), in which case it keeps its Session and state and gets the Inputs that wait for it.
    */
   assignmentInterrupted(ticketId: string, assignmentId: string): void {
-    this.repo.atomic(() => { this.assignments.interrupted(ticketId, assignmentId) })
+    this.repo.atomic(() => {
+      this.assignments.interrupted(ticketId, assignmentId)
+    })
   }
 
   // Settings
@@ -260,18 +316,38 @@ export class Engine {
    * under the new version.
    */
   policyChanged(from: string, to: string, effects: ReadonlyMap<string, PolicyEffect> = new Map()): void {
-    this.repo.atomic(() => { this.tickets.policyChanged(from, to, effects); this.evals.policyChanged(from, to) })
+    this.repo.atomic(() => {
+      this.tickets.policyChanged(from, to, effects)
+      this.evals.policyChanged(from, to)
+    })
   }
 }
 
 /** What Sources ask and tell the Engine. */
 export type EngineForSources = Pick<Engine, 'receive' | 'bindThread' | 'threadClosed'>
 /** What the main Session asks of the Engine. */
-export type EngineForMainSession = Pick<Engine, 'candidate' | 'candidateDelivered' | 'decide' | 'attach' | 'reply' | 'requestStatus' | 'note'>
+export type EngineForMainSession = Pick<
+  Engine,
+  'candidate' | 'candidateDelivered' | 'decide' | 'attach' | 'reply' | 'requestStatus' | 'note'
+>
 /** What people ask of the Engine, through the panel or the main Session. */
 export type EngineForPeople = Pick<Engine, 'stopTicket' | 'retryTicket' | 'reevaluate' | 'unsubscribe' | 'dismiss'>
 /** What Settings tells the Engine. */
 export type EngineForSettings = Pick<Engine, 'policyChanged'>
 /** What the Executor tells the Engine, and what its workers ask of it. */
-export type EngineForExecutor = Pick<Engine, 'assignmentStarted' | 'inputsDelivered' | 'inputsRead' | 'turnEnded' | 'deliveryFailed'
-  | 'assignmentInterrupted' | 'report' | 'limitReached' | 'markUnrelated' | 'handback' | 'followForContext' | 'reply' | 'bindThread'>
+export type EngineForExecutor = Pick<
+  Engine,
+  | 'assignmentStarted'
+  | 'inputsDelivered'
+  | 'inputsRead'
+  | 'turnEnded'
+  | 'deliveryFailed'
+  | 'assignmentInterrupted'
+  | 'report'
+  | 'limitReached'
+  | 'markUnrelated'
+  | 'handback'
+  | 'followForContext'
+  | 'reply'
+  | 'bindThread'
+>

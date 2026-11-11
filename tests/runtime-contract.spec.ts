@@ -9,9 +9,10 @@ const SCRIPTS: Record<ContractCase, FakeScript> = {
   'steer in a running turn is reported read before the turn ends': () => ({ tools: [{ name: 'wait', args: {} }] }),
   'followup starts a new turn': () => ({}),
   'inject does not wake the session': () => ({}),
-  'a tool call reaches the host': ({ index }) => index === 0 ? { tools: [{ name: 'report', args: { state: 'ready', summary: 'done' } }] } : {},
+  'a tool call reaches the host': ({ index }) =>
+    index === 0 ? { tools: [{ name: 'report', args: { state: 'ready', summary: 'done' } }] } : {},
   'a turn over the limit ends with a limit outcome': () => ({ turnEnded: { outcome: 'max_turns', turns: 2 } }),
-  'interrupt returns the pending inputs': ({ index }) => index === 0 ? { hold: new Promise(() => {}) } : {},
+  'interrupt returns the pending inputs': ({ index }) => (index === 0 ? { hold: new Promise(() => {}) } : {}),
   'the host reads each input once': () => ({ repeatReads: true }),
   'resume keeps the session id': () => ({}),
 }
@@ -21,7 +22,13 @@ runtimeContract('fake', name => new FakeRuntime(SCRIPTS[name]))
 describe('fake runtime', () => {
   it('uses the injected timers for delays', async () => {
     const pending: (() => void)[] = []
-    const runtime = new FakeRuntime(() => ({ delayMs: 1000 }), { timers: { setTimeout: run => { pending.push(run) } } })
+    const runtime = new FakeRuntime(() => ({ delayMs: 1000 }), {
+      timers: {
+        setTimeout: run => {
+          pending.push(run)
+        },
+      },
+    })
     const { spec } = contractSpec('followup starts a new turn')
     const session = await runtime.open(spec)
     session.send({ id: 'A', text: 'A', mode: 'followup' })

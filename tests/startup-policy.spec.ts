@@ -6,7 +6,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ConfigError, ConfigSchema, loadConfig, StartupRefused, type Config } from '../src/app/config.ts'
-import { allowedHash, assertAgentLogin, assertRepositoryAccess, assertStartupPolicy, resolveCredential, SHARED_USE_WARNING, SUBSCRIPTION_POLICY_WARNING, UNSANDBOXED_WARNING } from '../src/app/credentials.ts'
+import {
+  allowedHash,
+  assertAgentLogin,
+  assertRepositoryAccess,
+  assertStartupPolicy,
+  resolveCredential,
+  SHARED_USE_WARNING,
+  SUBSCRIPTION_POLICY_WARNING,
+  UNSANDBOXED_WARNING,
+} from '../src/app/credentials.ts'
 import { installedSources } from '../src/app/sources.ts'
 import { main } from '../src/cli/main.ts'
 import type { SourceService } from '../src/sources/host.ts'
@@ -32,7 +41,8 @@ function tempDir(): string {
   return dir
 }
 
-const cfg = (over: Record<string, unknown>): Config => ConfigSchema.parse({ repositories: ['owner/repo'], policy: { allowed: ['owner'] }, ...over })
+const cfg = (over: Record<string, unknown>): Config =>
+  ConfigSchema.parse({ repositories: ['owner/repo'], policy: { allowed: ['owner'] }, ...over })
 
 function refusal(work: () => unknown): StartupRefused {
   try {
@@ -89,7 +99,10 @@ describe('startup rules', () => {
   })
 
   it('rule 6 (b): with consent the shared-use warnings are returned and the consent is recorded', () => {
-    const accepted = cfg({ policy: { allowed: ['owner', 'mate'] }, auth: { mode: 'subscription', owner: 'owner', acceptSubscriptionSharedUseRisk: true } })
+    const accepted = cfg({
+      policy: { allowed: ['owner', 'mate'] },
+      auth: { mode: 'subscription', owner: 'owner', acceptSubscriptionSharedUseRisk: true },
+    })
     const now = () => Date.parse('2026-11-10T00:00:00Z')
     const report = assertStartupPolicy(accepted, { mode: 'subscription' }, undefined, undefined, now)
     expect(report.warnings).toEqual([SUBSCRIPTION_POLICY_WARNING, SHARED_USE_WARNING])
@@ -105,14 +118,17 @@ describe('startup rules', () => {
     expect(report.consent).toBeUndefined()
   })
 
-  it.each(['api-key', 'bedrock', 'vertex'] as const)('rule 6 (d): %s with several people has no warning, no consent, and keeps acceptMode', mode => {
-    const observe = cfg({ policy: { allowed: ['owner', 'mate'] }, auth: { mode } })
-    expect(assertStartupPolicy(observe, { mode })).toEqual({ warnings: [] })
-    expect(observe.policy.acceptMode).toBe('observe')
-    const auto = cfg({ policy: { allowed: ['owner', 'mate'], acceptMode: 'auto' }, auth: { mode } })
-    expect(assertStartupPolicy(auto, { mode })).toEqual({ warnings: [] })
-    expect(auto.policy.acceptMode).toBe('auto')
-  })
+  it.each(['api-key', 'bedrock', 'vertex'] as const)(
+    'rule 6 (d): %s with several people has no warning, no consent, and keeps acceptMode',
+    mode => {
+      const observe = cfg({ policy: { allowed: ['owner', 'mate'] }, auth: { mode } })
+      expect(assertStartupPolicy(observe, { mode })).toEqual({ warnings: [] })
+      expect(observe.policy.acceptMode).toBe('observe')
+      const auto = cfg({ policy: { allowed: ['owner', 'mate'], acceptMode: 'auto' }, auth: { mode } })
+      expect(assertStartupPolicy(auto, { mode })).toEqual({ warnings: [] })
+      expect(auto.policy.acceptMode).toBe('auto')
+    },
+  )
 
   it('rule 7: auto acceptance without a sandbox is refused unless allowUnsandboxed is set', () => {
     const auto = cfg({ policy: { allowed: ['owner'], acceptMode: 'auto' } })
@@ -120,17 +136,28 @@ describe('startup rules', () => {
     expect(error.rule).toBe('unsandboxed')
     expect(error.message).toContain('rule 7')
     expect(error.message).toContain('docs/deploy.md#sandbox-in-containers')
-    expect(() => assertStartupPolicy(cfg({ policy: { allowed: ['owner'], acceptMode: 'auto' }, security: { allowUnsandboxed: true } }), { mode: 'api-key' }, undefined, unsandboxed)).not.toThrow()
+    expect(() =>
+      assertStartupPolicy(
+        cfg({ policy: { allowed: ['owner'], acceptMode: 'auto' }, security: { allowUnsandboxed: true } }),
+        { mode: 'api-key' },
+        undefined,
+        unsandboxed,
+      ),
+    ).not.toThrow()
     expect(() => assertStartupPolicy(auto, { mode: 'api-key' }, undefined, sandboxed)).not.toThrow()
     expect(() => assertStartupPolicy(auto, { mode: 'api-key' })).not.toThrow()
   })
 
   it('allowUnsandboxed without a sandbox returns the unsandboxed warning', () => {
     const allowed = cfg({ policy: { allowed: ['owner'], acceptMode: 'auto' }, security: { allowUnsandboxed: true } })
-    expect(assertStartupPolicy(allowed, { mode: 'api-key' }, undefined, unsandboxed).warnings).toEqual([UNSANDBOXED_WARNING])
+    expect(assertStartupPolicy(allowed, { mode: 'api-key' }, undefined, unsandboxed).warnings).toEqual([
+      UNSANDBOXED_WARNING,
+    ])
     expect(assertStartupPolicy(allowed, { mode: 'api-key' }, undefined, sandboxed).warnings).toEqual([])
     const observe = cfg({ policy: { allowed: ['owner'], acceptMode: 'observe' }, security: { allowUnsandboxed: true } })
-    expect(assertStartupPolicy(observe, { mode: 'api-key' }, undefined, unsandboxed).warnings).toContain(UNSANDBOXED_WARNING)
+    expect(assertStartupPolicy(observe, { mode: 'api-key' }, undefined, unsandboxed).warnings).toContain(
+      UNSANDBOXED_WARNING,
+    )
   })
 
   it('rule 8: no accessible repository is refused, partial access is not', () => {
@@ -144,22 +171,33 @@ describe('startup checks through the GitHub Source', () => {
   function sourcesFor(script: Parameters<typeof fakeGh>[0], allowed = ['alice'], clock = new ManualClock(START)) {
     const config = ConfigSchema.parse({ repositories: [A, B], policy: { allowed }, stateDir: '/unused' })
     const gh = fakeGh(script)
-    const sources = installedSources(config, { SUPERAGENT_CLAUDE_GITHUB_TOKEN: 't' }, { commands: gh.commands, timers: clock, now: clock.now })
+    const sources = installedSources(
+      config,
+      { SUPERAGENT_CLAUDE_GITHUB_TOKEN: 't' },
+      { commands: gh.commands, timers: clock, now: clock.now },
+    )
     return { sources, gh, clock }
   }
 
   it('rule 8: no accessible repository refuses start', async () => {
-    const { sources } = sourcesFor({ repositories: { [A]: { access: { status: 404 } }, [B]: { access: { status: 404 } } } })
+    const { sources } = sourcesFor({
+      repositories: { [A]: { access: { status: 404 } }, [B]: { access: { status: 404 } } },
+    })
     const service = sources.services[0]!
     services.push(service)
     const rec = recordingHost(sources.kinds[0]!)
-    const error = await service.start(rec.host, new AbortController().signal).then(() => undefined, (e: unknown) => e)
+    const error = await service.start(rec.host, new AbortController().signal).then(
+      () => undefined,
+      (e: unknown) => e,
+    )
     expect(error).toBeInstanceOf(StartupRefused)
     expect((error as StartupRefused).rule).toBe('no-repository')
   })
 
   it('rule 8: one inaccessible repository is reported in health and start resolves', async () => {
-    const { sources } = sourcesFor({ repositories: { [A]: { issues: { 1: issue(A, 1) } }, [B]: { access: { status: 404 } } } })
+    const { sources } = sourcesFor({
+      repositories: { [A]: { issues: { 1: issue(A, 1) } }, [B]: { access: { status: 404 } } },
+    })
     const service = sources.services[0]!
     services.push(service)
     const rec = recordingHost(sources.kinds[0]!)
@@ -172,9 +210,14 @@ describe('startup checks through the GitHub Source', () => {
     const service = sources.services[0]!
     services.push(service)
     const rec = recordingHost(sources.kinds[0]!)
-    const error = await service.start(rec.host, new AbortController().signal).then(() => undefined, (e: unknown) => e)
+    const error = await service.start(rec.host, new AbortController().signal).then(
+      () => undefined,
+      (e: unknown) => e,
+    )
     expect((error as StartupRefused).rule).toBe('agent-account')
-    expect(() => installedSources(ConfigSchema.parse({ repositories: [A], policy: { allowed: ['alice'] } }), {})).toThrow(StartupRefused)
+    expect(() =>
+      installedSources(ConfigSchema.parse({ repositories: [A], policy: { allowed: ['alice'] } }), {}),
+    ).toThrow(StartupRefused)
   })
 
   it('rule 4 at the hook: an agent account on policy.allowed refuses start; a good start exposes the login', async () => {
@@ -182,7 +225,10 @@ describe('startup checks through the GitHub Source', () => {
     const badService = refused.services[0]!
     services.push(badService)
     const badRec = recordingHost(refused.kinds[0]!)
-    const error = await badService.start(badRec.host, new AbortController().signal).then(() => undefined, (e: unknown) => e)
+    const error = await badService.start(badRec.host, new AbortController().signal).then(
+      () => undefined,
+      (e: unknown) => e,
+    )
     expect((error as StartupRefused).rule).toBe('agent-allowed')
 
     const good = sourcesFor({ repositories: { [A]: {}, [B]: {} } }, ['owner']).sources
@@ -197,7 +243,15 @@ describe('startup checks through the GitHub Source', () => {
 describe('startup refusals through the CLI', () => {
   function writeConfig(dir: string, extra: Record<string, unknown> = {}): string {
     const path = join(dir, 'superagent-claude.json')
-    writeFileSync(path, JSON.stringify({ repositories: ['owner/repo'], policy: { allowed: ['alice'] }, stateDir: join(dir, 'state'), ...extra }))
+    writeFileSync(
+      path,
+      JSON.stringify({
+        repositories: ['owner/repo'],
+        policy: { allowed: ['alice'] },
+        stateDir: join(dir, 'state'),
+        ...extra,
+      }),
+    )
     return path
   }
 
@@ -227,12 +281,25 @@ describe('startup refusals through the CLI', () => {
   it('auto acceptance without a sandbox exits 2 with rule 7; with allowUnsandboxed it starts and stops with 0', async () => {
     const dir = tempDir()
     const refused = cliIo(dir, cliEnv(dir))
-    expect(await main(['start', '--fake', '--config', writeConfig(dir, { policy: { allowed: ['alice'], acceptMode: 'auto' } })], refused.io)).toBe(2)
+    expect(
+      await main(
+        ['start', '--fake', '--config', writeConfig(dir, { policy: { allowed: ['alice'], acceptMode: 'auto' } })],
+        refused.io,
+      ),
+    ).toBe(2)
     expect(refused.err.join('')).toContain('rule 7')
     expect(refused.err.join('')).toContain('docs/deploy.md#sandbox-in-containers')
 
     const allowed = cliIo(dir, cliEnv(dir))
-    const p = main(['start', '--fake', '--config', writeConfig(dir, { policy: { allowed: ['alice'], acceptMode: 'auto' }, security: { allowUnsandboxed: true } })], allowed.io)
+    const p = main(
+      [
+        'start',
+        '--fake',
+        '--config',
+        writeConfig(dir, { policy: { allowed: ['alice'], acceptMode: 'auto' }, security: { allowUnsandboxed: true } }),
+      ],
+      allowed.io,
+    )
     await waitUntil(() => allowed.out.join('').includes('"runtime.started"'), 10_000)
     allowed.listeners.SIGINT!()
     expect(await p).toBe(0)
@@ -242,13 +309,18 @@ describe('startup refusals through the CLI', () => {
   it('an agent account on policy.allowed exits 2 with rule 4', async () => {
     const dir = tempDir()
     const c = cliIo(dir, cliEnv(dir, { PATH: `${fakeGhBin(join(dir, 'alice'), { login: 'alice' })}:/usr/bin:/bin` }))
-    expect(await main(['start', '--fake', '--config', writeConfig(dir, { policy: { allowed: ['alice'] } })], c.io)).toBe(2)
+    expect(
+      await main(['start', '--fake', '--config', writeConfig(dir, { policy: { allowed: ['alice'] } })], c.io),
+    ).toBe(2)
     expect(c.err.join('')).toContain('rule 4')
   }, 30_000)
 
   it('a consented subscription starts, records the consent without the token value, and warns on stderr', async () => {
     const dir = tempDir()
-    const path = writeConfig(dir, { policy: { allowed: ['owner', 'mate'] }, auth: { mode: 'subscription', acceptSubscriptionSharedUseRisk: true } })
+    const path = writeConfig(dir, {
+      policy: { allowed: ['owner', 'mate'] },
+      auth: { mode: 'subscription', acceptSubscriptionSharedUseRisk: true },
+    })
     const c = cliIo(dir, cliEnv(dir, { CLAUDE_CODE_OAUTH_TOKEN: 't-oauth-value' }))
     const p = main(['start', '--fake', '--config', path], c.io)
     await waitUntil(() => c.out.join('').includes('"runtime.started"'), 10_000)

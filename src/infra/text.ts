@@ -11,7 +11,8 @@ export function wordCount(text: string): number {
   for (const segment of words.segment(text)) if (segment.isWordLike) count++
   return count
 }
-export const fill = (template: string, values: Record<string, string>): string => template.replace(/\{(\w+)\}/g, (_, name: string) => values[name] ?? '')
+export const fill = (template: string, values: Record<string, string>): string =>
+  template.replace(/\{(\w+)\}/g, (_, name: string) => values[name] ?? '')
 export const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 /** Lines that credit the AI product as an author (ADR-34): a Co-authored-by trailer whose name has the word Claude or whose address is @anthropic.com, and a "Generated with … Claude" line. Case-insensitive, one line at a time. scripts/check-commits.ts uses the same predicate. */
 export const AI_ATTRIBUTION_PATTERNS: readonly RegExp[] = [
@@ -19,7 +20,8 @@ export const AI_ATTRIBUTION_PATTERNS: readonly RegExp[] = [
   /^\s*co-authored-by:.*@anthropic\.com\b/i,
   /\bgenerated with\b.*\bclaude\b/i,
 ]
-export const isAiAttributionLine = (line: string): boolean => AI_ATTRIBUTION_PATTERNS.some(pattern => pattern.test(line))
+export const isAiAttributionLine = (line: string): boolean =>
+  AI_ATTRIBUTION_PATTERNS.some(pattern => pattern.test(line))
 /** Removes AI attribution lines; returns `text` itself when there are none. Blank lines that the removal leaves doubled (or leading) are dropped, trailing blank lines are trimmed, and one final newline is kept when `text` had one. All other lines stay as they were. */
 export function stripAiAttribution(text: string): string {
   const lines = text.split('\n')

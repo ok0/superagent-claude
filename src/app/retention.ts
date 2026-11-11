@@ -38,7 +38,11 @@ export class Retention {
 
   /** Queues a cleanup for each ended ticket that still has a worker record and has expired, unless one is already waiting. Returns how many were queued. */
   evaluate(): number {
-    const rows = this.host.store.db.prepare("SELECT w.ticket_id AS id, t.value ->> '$.ended.at' AS ended FROM worker w JOIN ticket t ON t.id = w.ticket_id WHERE t.open IS NULL").all()
+    const rows = this.host.store.db
+      .prepare(
+        "SELECT w.ticket_id AS id, t.value ->> '$.ended.at' AS ended FROM worker w JOIN ticket t ON t.id = w.ticket_id WHERE t.open IS NULL",
+      )
+      .all()
     let queued = 0
     for (const row of rows) {
       const id = String(row.id)

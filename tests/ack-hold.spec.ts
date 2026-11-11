@@ -10,7 +10,7 @@ import { waitUntil } from './fixtures/async.ts'
 it('holds the accept acknowledgement of a ticket waiting for a slot until it launches', async () => {
   const g = gates()
   let a = ''
-  const w = workerHarness({ max: 1, script: ({ spec }) => spec.key === `worker-${a}` ? { hold: g.get('a') } : {} })
+  const w = workerHarness({ max: 1, script: ({ spec }) => (spec.key === `worker-${a}` ? { hold: g.get('a') } : {}) })
   try {
     a = accepted(w, '1', 't1').ticketId!
     await waitUntil(() => w.runtime.opened.length === 1)
@@ -26,13 +26,22 @@ it('holds the accept acknowledgement of a ticket waiting for a slot until it lau
     expect(acks[0]!.id).toBe(key('ack', '2'))
     expect(w.ticket(b).acknowledgement).toBeUndefined()
     expect(w.outbox.filter(m => m.ticketId === b)).toHaveLength(1)
-  } finally { await w.close() }
+  } finally {
+    await w.close()
+  }
 })
 
 it('never posts the acknowledgement of a ticket stopped before it launched', () => {
   const h = harness()
-  h.engine.receive(trigger('1')); h.pump()
-  const id = h.decide(h.requests.at(-1)!, { kind: 'accept', title: 'Fix', scope: 'small', reason: 'requested', acknowledgement: 'ok' }).ticketId!
+  h.engine.receive(trigger('1'))
+  h.pump()
+  const id = h.decide(h.requests.at(-1)!, {
+    kind: 'accept',
+    title: 'Fix',
+    scope: 'small',
+    reason: 'requested',
+    acknowledgement: 'ok',
+  }).ticketId!
   h.settle({ launch: false })
   expect(h.outbox.some(m => m.id === key('ack', '1'))).toBe(false)
   h.engine.stopTicket(id)

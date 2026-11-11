@@ -6,13 +6,31 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { query, type HookCallbackMatcher, type Options, type SpawnedProcess } from '@anthropic-ai/claude-agent-sdk'
 import type { SessionSpec, ToolSpec } from '../src/executor/contract.ts'
-import { AUTH_ENV, CLAUDE_INHERITED_ENV, ALWAYS_DISALLOWED, ATTRIBUTION_OFF, SUBAGENT_TYPES, claudeEnv, builtinTools, guardDecision, sdkOptions, underProc, type AuthMode, type OptionsContext } from '../src/runtimes/claude/options.ts'
+import {
+  AUTH_ENV,
+  CLAUDE_INHERITED_ENV,
+  ALWAYS_DISALLOWED,
+  ATTRIBUTION_OFF,
+  SUBAGENT_TYPES,
+  claudeEnv,
+  builtinTools,
+  guardDecision,
+  sdkOptions,
+  underProc,
+  type AuthMode,
+  type OptionsContext,
+} from '../src/runtimes/claude/options.ts'
 import { mcpTools, mcpServer, mcpToolName, toolHandler } from '../src/runtimes/claude/mcp.ts'
 import { WORKER_TOOLS } from '../src/app/tool-names.ts'
 
 const MODES: AuthMode[] = ['api-key', 'subscription', 'bedrock', 'vertex']
 
-const reportTool: ToolSpec = { name: 'orchestrator_report', description: 'report', schema: z.object({}), execute: async () => ({ ok: true }) }
+const reportTool: ToolSpec = {
+  name: 'orchestrator_report',
+  description: 'report',
+  schema: z.object({}),
+  execute: async () => ({ ok: true }),
+}
 
 function spec(overrides: Partial<SessionSpec> = {}): SessionSpec {
   return {
@@ -75,15 +93,21 @@ describe('fixed safety defaults', () => {
       { fs: 'read', shell: false, web: false },
       { fs: 'write', shell: true, web: false },
     ]
-    for (const mode of MODES) for (const builtins of builtinsList) for (const role of ['worker', 'router'] as const) for (const allow of [[], ['example.com']]) for (const resume of [undefined, 'S1']) {
-      const options: Options = sdkOptions(spec({ builtins, role, network: { allow }, resume }), ctx(mode))
-      expect(options.settingSources).toEqual([])
-      expect(options.settings).toEqual(ATTRIBUTION_OFF)
-      expect(options.permissionMode).toBe('dontAsk')
-      expect(JSON.stringify(options)).not.toContain('bypassPermissions')
-      expect('allowDangerouslySkipPermissions' in options).toBe(false)
-      expect(options.disallowedTools).toEqual(expect.arrayContaining(['AskUserQuestion', 'WebFetch', 'WebSearch']))
-    }
+    for (const mode of MODES)
+      for (const builtins of builtinsList)
+        for (const role of ['worker', 'router'] as const)
+          for (const allow of [[], ['example.com']])
+            for (const resume of [undefined, 'S1']) {
+              const options: Options = sdkOptions(spec({ builtins, role, network: { allow }, resume }), ctx(mode))
+              expect(options.settingSources).toEqual([])
+              expect(options.settings).toEqual(ATTRIBUTION_OFF)
+              expect(options.permissionMode).toBe('dontAsk')
+              expect(JSON.stringify(options)).not.toContain('bypassPermissions')
+              expect('allowDangerouslySkipPermissions' in options).toBe(false)
+              expect(options.disallowedTools).toEqual(
+                expect.arrayContaining(['AskUserQuestion', 'WebFetch', 'WebSearch']),
+              )
+            }
   })
 
   it('builtins map to allowed and disallowed tools', () => {
@@ -96,7 +120,9 @@ describe('fixed safety defaults', () => {
 
     const write = sdkOptions(spec(), ctx('api-key'))
     expect(write.allowedTools).toContain('mcp__superagent__orchestrator_report')
-    expect(builtinTools({ fs: 'write', shell: true, web: false }).allowed).toEqual(expect.arrayContaining(['Write', 'Edit', 'NotebookEdit', 'Bash']))
+    expect(builtinTools({ fs: 'write', shell: true, web: false }).allowed).toEqual(
+      expect.arrayContaining(['Write', 'Edit', 'NotebookEdit', 'Bash']),
+    )
   })
 
   it('the guard hook blocks on failure and the read hooks are registered', async () => {
@@ -107,7 +133,9 @@ describe('fixed safety defaults', () => {
     expect(options.hooks!.PostToolBatch).toHaveLength(1)
 
     const signal = new AbortController().signal
-    await hookFn(options.hooks!.UserPromptSubmit)({ hook_event_name: 'UserPromptSubmit', prompt: '' }, undefined, { signal })
+    await hookFn(options.hooks!.UserPromptSubmit)({ hook_event_name: 'UserPromptSubmit', prompt: '' }, undefined, {
+      signal,
+    })
     await hookFn(options.hooks!.PostToolBatch)({ hook_event_name: 'PostToolBatch' }, undefined, { signal })
     expect(onRead).toHaveBeenCalledTimes(2)
   })
@@ -128,15 +156,25 @@ describe('fixed safety defaults', () => {
     }
 
     const options = sdkOptions(s, ctx('api-key'))
-    const out = (await hookFn(options.hooks!.PreToolUse)({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: '/etc/x' } }, undefined, { signal: new AbortController().signal })) as {
+    const out = (await hookFn(options.hooks!.PreToolUse)(
+      { hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: '/etc/x' } },
+      undefined,
+      { signal: new AbortController().signal },
+    )) as {
       hookSpecificOutput?: { permissionDecision?: string }
     }
     expect(out.hookSpecificOutput?.permissionDecision).toBe('deny')
   })
 
-  it.each(MODES)('env is a whitelist with only the selected mode\'s credentials (%s)', mode => {
+  it.each(MODES)("env is a whitelist with only the selected mode's credentials (%s)", mode => {
     const env = claudeEnv(spec(), ctx(mode))
-    const allowedKeys = new Set<string>([...CLAUDE_INHERITED_ENV, 'FOO', ...AUTH_ENV[mode], 'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_DISABLE_AUTO_MEMORY'])
+    const allowedKeys = new Set<string>([
+      ...CLAUDE_INHERITED_ENV,
+      'FOO',
+      ...AUTH_ENV[mode],
+      'CLAUDE_CONFIG_DIR',
+      'CLAUDE_CODE_DISABLE_AUTO_MEMORY',
+    ])
     for (const key of Object.keys(env)) expect(allowedKeys.has(key)).toBe(true)
     for (const other of MODES) {
       if (other === mode) continue
@@ -170,14 +208,22 @@ describe('fixed safety defaults', () => {
 
   it('the sandbox maps the network allow list', () => {
     const on = sdkOptions(spec(), ctx('api-key'))
-    expect(on.sandbox).toMatchObject({ enabled: true, allowUnsandboxedCommands: false, network: { allowedDomains: ['registry.npmjs.org'] } })
+    expect(on.sandbox).toMatchObject({
+      enabled: true,
+      allowUnsandboxedCommands: false,
+      network: { allowedDomains: ['registry.npmjs.org'] },
+    })
     const off = sdkOptions(spec(), ctx('api-key', { sandbox: false }))
     expect(off.sandbox).toBeUndefined()
   })
 
   it('weakerNestedSandbox maps to enableWeakerNestedSandbox only when set', () => {
     const on = sdkOptions(spec(), ctx('api-key', { weakerNestedSandbox: true })).sandbox as Record<string, unknown>
-    expect(on).toMatchObject({ enableWeakerNestedSandbox: true, failIfUnavailable: true, allowUnsandboxedCommands: false })
+    expect(on).toMatchObject({
+      enableWeakerNestedSandbox: true,
+      failIfUnavailable: true,
+      allowUnsandboxedCommands: false,
+    })
     const def = sdkOptions(spec(), ctx('api-key')).sandbox as Record<string, unknown>
     expect(on.filesystem).toEqual({ denyRead: ['/proc'] })
     expect('enableWeakerNestedSandbox' in def).toBe(false)
@@ -223,7 +269,8 @@ describe('fixed safety defaults', () => {
     try {
       symlinkSync('/proc', join(dir, 'p'))
       const link = join(dir, 'p', '1', 'environ')
-      if (existsSync('/proc/1')) expect(guardDecision(s, 'Read', { file_path: link })).toBe('Reading /proc is not allowed')
+      if (existsSync('/proc/1'))
+        expect(guardDecision(s, 'Read', { file_path: link })).toBe('Reading /proc is not allowed')
       else expect(typeof underProc(link)).toBe('boolean')
     } finally {
       rmSync(dir, { recursive: true, force: true })
@@ -266,7 +313,12 @@ describe('fixed safety defaults', () => {
         return { ok: true }
       },
     }
-    const waitSpec: ToolSpec = { name: 'wait', description: 'wait', schema: z.object({}), execute: async () => 'waited' }
+    const waitSpec: ToolSpec = {
+      name: 'wait',
+      description: 'wait',
+      schema: z.object({}),
+      execute: async () => 'waited',
+    }
     const tools = [waitSpec, reportSpec]
     expect(mcpTools(tools, signal).map(t => t.name)).toEqual(['wait', 'report'])
 
@@ -274,7 +326,14 @@ describe('fixed safety defaults', () => {
     expect(result.isError).toBeFalsy()
     expect(reported).toEqual([{ state: 'ready', summary: 'done' }])
 
-    const failing: ToolSpec = { name: 'boom', description: 'boom', schema: z.object({}), execute: async () => { throw new Error('nope') } }
+    const failing: ToolSpec = {
+      name: 'boom',
+      description: 'boom',
+      schema: z.object({}),
+      execute: async () => {
+        throw new Error('nope')
+      },
+    }
     expect(await toolHandler(failing, signal)({})).toEqual({ isError: true, content: [{ type: 'text', text: 'nope' }] })
 
     const server = mcpServer(tools, signal)
@@ -283,7 +342,17 @@ describe('fixed safety defaults', () => {
   })
 
   it('the shell worker allows the nine read-only git rules and no broad git or push rule', () => {
-    const nine = ['Bash(git show:*)', 'Bash(git log:*)', 'Bash(git diff:*)', 'Bash(git status:*)', 'Bash(git branch:*)', 'Bash(git blame:*)', 'Bash(git cat-file:*)', 'Bash(git ls-files:*)', 'Bash(git rev-parse:*)']
+    const nine = [
+      'Bash(git show:*)',
+      'Bash(git log:*)',
+      'Bash(git diff:*)',
+      'Bash(git status:*)',
+      'Bash(git branch:*)',
+      'Bash(git blame:*)',
+      'Bash(git cat-file:*)',
+      'Bash(git ls-files:*)',
+      'Bash(git rev-parse:*)',
+    ]
     const allowed = sdkOptions(spec(), ctx('api-key')).allowedTools!
     for (const rule of nine) expect(allowed).toContain(rule)
     expect(allowed).not.toContain('Bash(git:*)')
@@ -294,11 +363,30 @@ describe('fixed safety defaults', () => {
 
   it('the guard hook denies push and gh variants with one onDeny call each and allows read-only git', async () => {
     const signal = new AbortController().signal
-    const denied = ['git push origin HEAD:main', 'git push --force', 'cd sub && git push', '(git push)', 'gh pr merge 1', 'gh api repos/x']
+    const denied = [
+      'git push origin HEAD:main',
+      'git push --force',
+      'cd sub && git push',
+      '(git push)',
+      'gh pr merge 1',
+      'gh api repos/x',
+    ]
     for (const command of denied) {
       const onDeny = vi.fn()
       const options = sdkOptions(spec(), ctx('api-key', { onDeny }))
-      const out = (await hookFn(options.hooks!.PreToolUse)({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, session_id: 's', transcript_path: '', cwd: '/work/t1', tool_use_id: 'u' }, 'u', { signal })) as {
+      const out = (await hookFn(options.hooks!.PreToolUse)(
+        {
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Bash',
+          tool_input: { command },
+          session_id: 's',
+          transcript_path: '',
+          cwd: '/work/t1',
+          tool_use_id: 'u',
+        },
+        'u',
+        { signal },
+      )) as {
         hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string }
       }
       expect(out.hookSpecificOutput?.permissionDecision).toBe('deny')
@@ -309,7 +397,19 @@ describe('fixed safety defaults', () => {
     for (const command of ['git show b:f', 'git log -1', 'git diff']) {
       const onDeny = vi.fn()
       const options = sdkOptions(spec(), ctx('api-key', { onDeny }))
-      const out = await hookFn(options.hooks!.PreToolUse)({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, session_id: 's', transcript_path: '', cwd: '/work/t1', tool_use_id: 'u' }, 'u', { signal })
+      const out = await hookFn(options.hooks!.PreToolUse)(
+        {
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Bash',
+          tool_input: { command },
+          session_id: 's',
+          transcript_path: '',
+          cwd: '/work/t1',
+          tool_use_id: 'u',
+        },
+        'u',
+        { signal },
+      )
       expect(out).toEqual({})
       expect(onDeny).not.toHaveBeenCalled()
     }
@@ -338,23 +438,33 @@ describe('fixed safety defaults', () => {
 
   it('the SDK hands the attribution-off settings to the CLI as --settings with the sandbox and empty setting sources', async () => {
     let resolve!: (args: string[]) => void
-    const captured = new Promise<string[]>(r => { resolve = r })
+    const captured = new Promise<string[]>(r => {
+      resolve = r
+    })
     const abortController = new AbortController()
     const children: ChildProcess[] = []
-    const options = sdkOptions(spec(), ctx('api-key', {
-      abortController,
-      sandbox: true,
-      spawn: o => {
-        resolve(o.args)
-        const child = nodeSpawn(process.execPath, ['-e', 'process.stdin.resume()'], { stdio: ['pipe', 'pipe', 'pipe'] })
-        children.push(child)
-        return child as unknown as SpawnedProcess
-      },
-    }))
+    const options = sdkOptions(
+      spec(),
+      ctx('api-key', {
+        abortController,
+        sandbox: true,
+        spawn: o => {
+          resolve(o.args)
+          const child = nodeSpawn(process.execPath, ['-e', 'process.stdin.resume()'], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+          })
+          children.push(child)
+          return child as unknown as SpawnedProcess
+        },
+      }),
+    )
     try {
       const q = query({ prompt: 'x', options })
       void q.next().catch(() => {})
-      const args = await Promise.race([captured, new Promise<never>((_, r) => setTimeout(() => r(new Error('no spawn')), 10000))])
+      const args = await Promise.race([
+        captured,
+        new Promise<never>((_, r) => setTimeout(() => r(new Error('no spawn')), 10000)),
+      ])
       expect(args).toContain('--setting-sources=')
       const i = args.indexOf('--settings')
       expect(i).toBeGreaterThanOrEqual(0)
@@ -386,7 +496,10 @@ describe('subagents', () => {
     expect(worker.allowedTools).toContain('Agent')
     expect(worker.disallowedTools).not.toContain('Agent')
 
-    const router = sdkOptions(spec({ role: 'router', builtins: { fs: 'none', shell: false, web: false } }), ctx('api-key'))
+    const router = sdkOptions(
+      spec({ role: 'router', builtins: { fs: 'none', shell: false, web: false } }),
+      ctx('api-key'),
+    )
     expect(router.disallowedTools).toContain('Agent')
     expect(router.allowedTools).not.toContain('Agent')
   })
@@ -397,22 +510,30 @@ describe('subagents', () => {
       { fs: 'read', shell: false, web: false },
       { fs: 'write', shell: true, web: false },
     ]
-    for (const mode of MODES) for (const builtins of builtinsList) for (const role of ['worker', 'router'] as const) {
-      const options = sdkOptions(spec({ builtins, role }), ctx(mode))
-      expect('agents' in options).toBe(false)
-      expect(JSON.stringify(options)).not.toContain('bypassPermissions')
-      expect(options.disallowedTools).toEqual(expect.arrayContaining(['AskUserQuestion', 'WebFetch', 'WebSearch']))
-    }
+    for (const mode of MODES)
+      for (const builtins of builtinsList)
+        for (const role of ['worker', 'router'] as const) {
+          const options = sdkOptions(spec({ builtins, role }), ctx(mode))
+          expect('agents' in options).toBe(false)
+          expect(JSON.stringify(options)).not.toContain('bypassPermissions')
+          expect(options.disallowedTools).toEqual(expect.arrayContaining(['AskUserQuestion', 'WebFetch', 'WebSearch']))
+        }
   })
 
   it('one env and the parent permission set', () => {
     const s = spec()
-    const options = sdkOptions(s, ctx('subscription', { env: { ...SOURCE_ENV, SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'ghp_x', ANTHROPIC_API_KEY: 'k' } }))
+    const options = sdkOptions(
+      s,
+      ctx('subscription', { env: { ...SOURCE_ENV, SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'ghp_x', ANTHROPIC_API_KEY: 'k' } }),
+    )
     expect(options.env).toBeDefined()
     expect('SUPERAGENT_CLAUDE_GITHUB_TOKEN' in options.env!).toBe(false)
     expect('ANTHROPIC_API_KEY' in options.env!).toBe(false)
     expect(Object.keys(options).some(key => key.toLowerCase().includes('agent'))).toBe(false)
-    expect(options.allowedTools!.filter(t => t !== 'Agent')).toEqual([...builtinTools(s.builtins).allowed, ...s.tools.map(t => mcpToolName(t.name))])
+    expect(options.allowedTools!.filter(t => t !== 'Agent')).toEqual([
+      ...builtinTools(s.builtins).allowed,
+      ...s.tools.map(t => mcpToolName(t.name)),
+    ])
     expect(options.disallowedTools).toEqual(builtinTools(s.builtins).disallowed)
   })
 
@@ -420,41 +541,64 @@ describe('subagents', () => {
     const worker = spec()
     const router = spec({ role: 'router', builtins: { fs: 'none', shell: false, web: false } })
     expect(guardDecision(worker, 'Agent', { prompt: 'p', description: 'd' })).toBeUndefined()
-    for (const type of SUBAGENT_TYPES) expect(guardDecision(worker, 'Agent', { prompt: 'p', description: 'd', subagent_type: type })).toBeUndefined()
+    for (const type of SUBAGENT_TYPES)
+      expect(guardDecision(worker, 'Agent', { prompt: 'p', description: 'd', subagent_type: type })).toBeUndefined()
     const typeReason = guardDecision(worker, 'Agent', { prompt: 'p', description: 'd', subagent_type: 'repo-reviewer' })
     expect(typeReason).toContain('Only these subagent types')
-    expect(guardDecision(worker, 'Agent', { prompt: 'p', description: 'd', isolation: 'worktree' })).toBe('Subagent isolation is not allowed')
-    expect(guardDecision(worker, 'Agent', { prompt: 'p', description: 'd', isolation: 'remote' })).toBe('Subagent isolation is not allowed')
-    expect(guardDecision(worker, 'Agent', { prompt: 'p', description: 'd' }, 'a1')).toBe('A subagent cannot start another subagent')
-    expect(guardDecision(router, 'Agent', { prompt: 'p', description: 'd' })).toBe('Agent is not allowed in this session')
+    expect(guardDecision(worker, 'Agent', { prompt: 'p', description: 'd', isolation: 'worktree' })).toBe(
+      'Subagent isolation is not allowed',
+    )
+    expect(guardDecision(worker, 'Agent', { prompt: 'p', description: 'd', isolation: 'remote' })).toBe(
+      'Subagent isolation is not allowed',
+    )
+    expect(guardDecision(worker, 'Agent', { prompt: 'p', description: 'd' }, 'a1')).toBe(
+      'A subagent cannot start another subagent',
+    )
+    expect(guardDecision(router, 'Agent', { prompt: 'p', description: 'd' })).toBe(
+      'Agent is not allowed in this session',
+    )
   })
 
   it('host tools are denied inside subagents only', async () => {
     const signal = new AbortController().signal
     const s = spec()
     for (const tool of ['mcp__superagent__orchestrator_report', 'mcp__superagent__orchestrator_publish']) {
-      expect(guardDecision(s, tool, { status: 'waiting', human_action: { kind: 'x' } }, 'a1')).toBe('Host tools are only available to the main worker, not to subagents')
+      expect(guardDecision(s, tool, { status: 'waiting', human_action: { kind: 'x' } }, 'a1')).toBe(
+        'Host tools are only available to the main worker, not to subagents',
+      )
       expect(guardDecision(s, tool, { status: 'waiting', human_action: { kind: 'x' } })).toBeUndefined()
     }
 
     const onDeny = vi.fn()
     const options = sdkOptions(s, ctx('api-key', { onDeny }))
-    const out = (await hookFn(options.hooks!.PreToolUse)(hookInput('mcp__superagent__orchestrator_report', {}, 'a1'), 'u', { signal })) as {
+    const out = (await hookFn(options.hooks!.PreToolUse)(
+      hookInput('mcp__superagent__orchestrator_report', {}, 'a1'),
+      'u',
+      { signal },
+    )) as {
       hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string }
     }
     expect(out.hookSpecificOutput?.permissionDecision).toBe('deny')
-    expect(out.hookSpecificOutput?.permissionDecisionReason).toBe('Host tools are only available to the main worker, not to subagents')
+    expect(out.hookSpecificOutput?.permissionDecisionReason).toBe(
+      'Host tools are only available to the main worker, not to subagents',
+    )
     expect(onDeny).toHaveBeenCalledTimes(1)
-    expect(onDeny).toHaveBeenCalledWith('mcp__superagent__orchestrator_report', 'Host tools are only available to the main worker, not to subagents', 'a1')
+    expect(onDeny).toHaveBeenCalledWith(
+      'mcp__superagent__orchestrator_report',
+      'Host tools are only available to the main worker, not to subagents',
+      'a1',
+    )
 
     const workerDeny = vi.fn()
     const workerOptions = sdkOptions(s, ctx('api-key', { onDeny: workerDeny }))
-    await hookFn(workerOptions.hooks!.PreToolUse)(hookInput('Bash', { command: 'git push origin main' }), 'u', { signal })
+    await hookFn(workerOptions.hooks!.PreToolUse)(hookInput('Bash', { command: 'git push origin main' }), 'u', {
+      signal,
+    })
     expect(workerDeny).toHaveBeenCalledTimes(1)
     expect(workerDeny.mock.calls[0]).toHaveLength(2)
   })
 
-  it('subagent tool calls get the parent\'s rules', () => {
+  it("subagent tool calls get the parent's rules", () => {
     const s = spec()
     const calls: [string, Record<string, unknown>][] = [
       ['Write', { file_path: '/etc/x' }],
@@ -471,13 +615,20 @@ describe('subagents', () => {
   it('Agent is forced to the foreground', async () => {
     const signal = new AbortController().signal
     const options = sdkOptions(spec(), ctx('api-key'))
-    const forced = (await hookFn(options.hooks!.PreToolUse)(hookInput('Agent', { prompt: 'p', description: 'd', run_in_background: true }), 'u', { signal })) as {
+    const forced = (await hookFn(options.hooks!.PreToolUse)(
+      hookInput('Agent', { prompt: 'p', description: 'd', run_in_background: true }),
+      'u',
+      { signal },
+    )) as {
       hookSpecificOutput?: { updatedInput?: unknown; permissionDecision?: string }
     }
     expect(forced.hookSpecificOutput?.updatedInput).toEqual({ prompt: 'p', description: 'd', run_in_background: false })
     expect(forced.hookSpecificOutput?.permissionDecision).toBeUndefined()
 
-    for (const tool_input of [{ prompt: 'p', description: 'd' }, { prompt: 'p', description: 'd', run_in_background: false }]) {
+    for (const tool_input of [
+      { prompt: 'p', description: 'd' },
+      { prompt: 'p', description: 'd', run_in_background: false },
+    ]) {
       const out = (await hookFn(options.hooks!.PreToolUse)(hookInput('Agent', tool_input), 'u', { signal })) as {
         hookSpecificOutput?: { updatedInput?: unknown; permissionDecision?: string }
       }
@@ -485,16 +636,39 @@ describe('subagents', () => {
       expect(out.hookSpecificOutput?.permissionDecision).toBeUndefined()
     }
 
-    expect(guardDecision(spec(), 'Agent', { prompt: 'p', description: 'd', run_in_background: true, model: 'opus', effort: 'high' })).toBeUndefined()
+    expect(
+      guardDecision(spec(), 'Agent', {
+        prompt: 'p',
+        description: 'd',
+        run_in_background: true,
+        model: 'opus',
+        effort: 'high',
+      }),
+    ).toBeUndefined()
   })
 
   it('read hooks ignore subagent signals', async () => {
     const signal = new AbortController().signal
     const onRead = vi.fn()
     const options = sdkOptions(spec(), ctx('api-key', { onRead }))
-    await hookFn(options.hooks!.PostToolBatch)({ hook_event_name: 'PostToolBatch', tool_calls: [], agent_id: 'a1', session_id: 's', transcript_path: 't', cwd: '/work/t1' }, undefined, { signal })
+    await hookFn(options.hooks!.PostToolBatch)(
+      {
+        hook_event_name: 'PostToolBatch',
+        tool_calls: [],
+        agent_id: 'a1',
+        session_id: 's',
+        transcript_path: 't',
+        cwd: '/work/t1',
+      },
+      undefined,
+      { signal },
+    )
     expect(onRead).not.toHaveBeenCalled()
-    await hookFn(options.hooks!.PostToolBatch)({ hook_event_name: 'PostToolBatch', tool_calls: [], session_id: 's', transcript_path: 't', cwd: '/work/t1' }, undefined, { signal })
+    await hookFn(options.hooks!.PostToolBatch)(
+      { hook_event_name: 'PostToolBatch', tool_calls: [], session_id: 's', transcript_path: 't', cwd: '/work/t1' },
+      undefined,
+      { signal },
+    )
     expect(onRead).toHaveBeenCalledTimes(1)
   })
 })

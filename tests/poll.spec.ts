@@ -6,7 +6,14 @@ import { ManualClock } from './fixtures/executor.ts'
 const createdAt = '2026-09-01T00:00:00.000Z'
 const day = 24 * 3600_000
 const thread = (subscriptions: string[], extra: Partial<Thread> = {}): Thread => ({
-  key: 'probe:1', ref: { source: 'probe', id: '1' }, createdAt, subscriptions, correlated: [], pending: [], meta: {}, ...extra,
+  key: 'probe:1',
+  ref: { source: 'probe', id: '1' },
+  createdAt,
+  subscriptions,
+  correlated: [],
+  pending: [],
+  meta: {},
+  ...extra,
 })
 const ticket = (ended?: { at: string }) => ({ ended }) as unknown as Ticket
 const tickets = (values: Record<string, Ticket>) => ({ get: (id: string) => values[id] })
@@ -26,19 +33,36 @@ it('records and clears pollError per thread and stops when asked', async () => {
   const patch = vi.fn()
   const threads = [thread(['t_live'], { key: 'probe:1' }), thread(['t_live'], { key: 'probe:2' })]
   const ctx = { threads: { subscribed: () => threads, patch }, tickets: tickets({ t_live: ticket() }) }
-  await pollThreads(ctx, 'probe', () => false, async current => { if (current.key === 'probe:1') throw new Error('boom') })
+  await pollThreads(
+    ctx,
+    'probe',
+    () => false,
+    async current => {
+      if (current.key === 'probe:1') throw new Error('boom')
+    },
+  )
   expect(patch).toHaveBeenCalledWith('probe:1', { pollError: 'Error: boom' })
   expect(patch).toHaveBeenCalledWith('probe:2', { pollError: undefined })
   const polledKeys: string[] = []
   let stopped = false
-  await pollThreads(ctx, 'probe', () => stopped, async current => { polledKeys.push(current.key); stopped = true })
+  await pollThreads(
+    ctx,
+    'probe',
+    () => stopped,
+    async current => {
+      polledKeys.push(current.key)
+      stopped = true
+    },
+  )
   expect(polledKeys).toEqual(['probe:1'])
 })
 it('pause waits for the injected timer and ends early on abort', async () => {
   const clock = new ManualClock()
   const controller = new AbortController()
   let settled = false
-  const first = pause(1000, controller.signal, clock).then(() => { settled = true })
+  const first = pause(1000, controller.signal, clock).then(() => {
+    settled = true
+  })
   clock.advance(999)
   await Promise.resolve()
   expect(settled).toBe(false)

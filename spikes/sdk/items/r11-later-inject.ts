@@ -33,14 +33,14 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
     injected = true
     injectAt = c.elapsed()
     c.push({ text: 'Remember the code word INJECTWORD. Do not reply.', uuid: C, shouldQuery: false })
-    c.after(10000, (cc) => {
+    c.after(10000, cc => {
       turnStartedByInject = cc.timeline.some(
-        (e) => e.t >= injectAt && e.t < injectAt + 10000 && (e.type === 'assistant' || e.type === 'result'),
+        e => e.t >= injectAt && e.t < injectAt + 10000 && (e.type === 'assistant' || e.type === 'result'),
       )
       dIndex = cc.timeline.length
       cc.push({ text: 'What code word were you told to remember? Reply with only the word.', uuid: D })
       dPushed = true
-      cc.after(60000, (c3) => c3.end())
+      cc.after(60000, c3 => c3.end())
     })
   }
 
@@ -49,11 +49,11 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
     options: baseOptions(ctx, ctx.newRepo(`${ID}-1`)),
     first: { text: 'Use the Bash tool to run exactly: sleep 6; echo X . Then reply exactly: FIRST DONE', uuid: A },
     onEntry: (e, c) => {
-      if (!pushedB && e.toolUses?.some((u) => u.name === 'Bash') === true) {
+      if (!pushedB && e.toolUses?.some(u => u.name === 'Bash') === true) {
         pushedB = true
         c.push({ text: 'Reply with exactly the single word LATERWORD.', uuid: B, priority: 'later' })
       }
-      if (e.type === 'result' && c.results.length === 1) c.after(60000, (cc) => inject(cc))
+      if (e.type === 'result' && c.results.length === 1) c.after(60000, cc => inject(cc))
       if (e.type === 'result' && c.results.length === 2) inject(c)
       if (dPushed && e.type === 'result') c.end()
     },

@@ -24,7 +24,17 @@ function tempDir(): string {
 function git(cwd: string, args: string[]): void {
   execFileSync(
     'git',
-    ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...args],
+    [
+      '-c',
+      'user.name=t',
+      '-c',
+      'user.email=t@example.com',
+      '-c',
+      'commit.gpgsign=false',
+      '-c',
+      'core.hooksPath=/dev/null',
+      ...args,
+    ],
     { cwd, stdio: 'pipe' },
   )
 }
@@ -47,14 +57,11 @@ describe('checkMessage', () => {
     "Merge branch 'topic' into main",
     'Revert "feat: add x"',
     'Merge ' + 'a'.repeat(40) + ' into ' + '0123456789'.repeat(4),
-  ])(
-    'accepts %s',
-    (m) => {
-      expect(checkMessage(m)).toHaveLength(0)
-    },
-  )
+  ])('accepts %s', m => {
+    expect(checkMessage(m)).toHaveLength(0)
+  })
 
-  it.each(['updated stuff', 'Feat add x', 'feat:', 'feat: ', '', 'Merge abc123 into def456'])('rejects %j', (m) => {
+  it.each(['updated stuff', 'Feat add x', 'feat:', 'feat: ', '', 'Merge abc123 into def456'])('rejects %j', m => {
     expect(checkMessage(m).length).toBeGreaterThan(0)
   })
 
@@ -64,8 +71,8 @@ describe('checkMessage', () => {
     'docs: z\n\nco-authored-by: claude opus <a@b.c>',
     "Merge branch 'x'\n\nCo-Authored-By: Claude <a@b.c>",
     'Merge ' + 'a'.repeat(40) + ' into ' + 'b'.repeat(40) + '\n\nCo-Authored-By: Claude <a@b.c>',
-  ])('rejects attribution %j', (m) => {
-    expect(checkMessage(m).some((reason) => reason.includes('attribution'))).toBe(true)
+  ])('rejects attribution %j', m => {
+    expect(checkMessage(m).some(reason => reason.includes('attribution'))).toBe(true)
   })
 })
 

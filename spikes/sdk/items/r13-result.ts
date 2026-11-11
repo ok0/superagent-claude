@@ -18,9 +18,9 @@ function initLines(init: Record<string, unknown> | undefined): string[] {
 function costModelOf(results: TimelineEntry[]): CostModel {
   const three = results.slice(0, 3)
   if (three.length < 3) return 'unknown'
-  const costRaw = three.map((r) => r.result?.totalCostUsd)
-  const turnRaw = three.map((r) => r.result?.numTurns)
-  if (costRaw.some((v) => v === undefined) || turnRaw.some((v) => v === undefined)) return 'unknown'
+  const costRaw = three.map(r => r.result?.totalCostUsd)
+  const turnRaw = three.map(r => r.result?.numTurns)
+  if (costRaw.some(v => v === undefined) || turnRaw.some(v => v === undefined)) return 'unknown'
   const costs = costRaw as number[]
   const turns = turnRaw as number[]
   const rising = (xs: number[]): boolean => xs.slice(1).every((x, i) => x >= (xs[i] ?? 0))
@@ -39,7 +39,7 @@ function isSuccess(e: TimelineEntry): boolean {
 }
 
 function subtypesOf(outcome: ScenarioOutcome): string {
-  return outcome.results.map((r) => r.result?.subtype ?? 'none').join(',') || 'none'
+  return outcome.results.map(r => r.result?.subtype ?? 'none').join(',') || 'none'
 }
 
 export const item: SpikeItem = { id: ID, req: REQ, title: TITLE, adrs: 'ADR-6', live: true, estimateUsd: 0.35, run }
@@ -82,14 +82,17 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
       bRes.totalCostUsd !== undefined &&
       bRes.numTurns !== undefined
     ) {
-      resumeContinuity = bRes.numTurns > aLast.numTurns && bRes.totalCostUsd >= aLast.totalCostUsd ? 'continues' : 'resets'
+      resumeContinuity =
+        bRes.numTurns > aLast.numTurns && bRes.totalCostUsd >= aLast.totalCostUsd ? 'continues' : 'resets'
     }
   }
 
   const cRun = await runScenario({
     ctx,
     options: baseOptions(ctx, ctx.newRepo(`${ID}-c`), { maxTurns: 1 }),
-    first: { text: 'Use the Bash tool to run: echo a . Then use the Bash tool again to run: echo b . Then reply DONE.' },
+    first: {
+      text: 'Use the Bash tool to run: echo a . Then use the Bash tool again to run: echo b . Then reply DONE.',
+    },
     onEntry: (e, c) => {
       if (e.type === 'result') c.end()
     },
@@ -106,8 +109,9 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
       else c.end()
     },
   })
-  const dSubtypes = d.results.map((r) => r.result?.subtype ?? 'none')
-  const maxTurnsUnit = dSubtypes[1] === 'error_max_turns' || dSubtypes[2] === 'error_max_turns' ? 'session' : 'per-message'
+  const dSubtypes = d.results.map(r => r.result?.subtype ?? 'none')
+  const maxTurnsUnit =
+    dSubtypes[1] === 'error_max_turns' || dSubtypes[2] === 'error_max_turns' ? 'session' : 'per-message'
 
   const aOk = a.results.length === 3 && a.results.every(isSuccess)
   const cOk = cSubtype === 'error_max_turns'
@@ -118,18 +122,28 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
     `costModel=${costModel}`,
     `resumeContinuity=${resumeContinuity}`,
     `maxTurnsUnit=${maxTurnsUnit}`,
-    `session a (streaming): subtypes=${subtypesOf(a)}; costs=${a.results.map((r) => r.result?.totalCostUsd ?? 'n/a').join(',')}; num_turns=${a.results.map((r) => r.result?.numTurns ?? 'n/a').join(',')}`,
+    `session a (streaming): subtypes=${subtypesOf(a)}; costs=${a.results.map(r => r.result?.totalCostUsd ?? 'n/a').join(',')}; num_turns=${a.results.map(r => r.result?.numTurns ?? 'n/a').join(',')}`,
     `session b (resume): ${b === undefined ? 'not run (no session id)' : `subtypes=${subtypesOf(b)}; cost=${b.results[0]?.result?.totalCostUsd ?? 'n/a'}; num_turns=${b.results[0]?.result?.numTurns ?? 'n/a'}`}`,
     `session c (maxTurns=1): subtype=${cSubtype}`,
     `session d (maxTurns=2, three messages): subtypes=${subtypesOf(d)}`,
     `aOk=${aOk}; cOk=${cOk}`,
   ]
-  for (const [label, outcome] of [['a', a], ['b', b], ['c', cRun], ['d', d]] as const) {
+  for (const [label, outcome] of [
+    ['a', a],
+    ['b', b],
+    ['c', cRun],
+    ['d', d],
+  ] as const) {
     if (outcome?.error !== undefined) observations.push(`session ${label} error: ${outcome.error}`)
   }
 
   const evidence: string[] = []
-  const sessions: [string, ScenarioOutcome | undefined][] = [['a', a], ['b', b], ['c', cRun], ['d', d]]
+  const sessions: [string, ScenarioOutcome | undefined][] = [
+    ['a', a],
+    ['b', b],
+    ['c', cRun],
+    ['d', d],
+  ]
   for (const [label, outcome] of sessions) {
     if (outcome === undefined) continue
     evidence.push(`session ${label}`, ...outcome.timeline.map(compact))

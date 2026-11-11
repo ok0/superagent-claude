@@ -51,7 +51,7 @@ function fixture(overrides: Partial<RunRecord> = {}, steer?: Partial<ItemResult>
   }
   const items: ItemResult[] = [version, ...IDS.map(([id, req]) => blocked(id, req))]
   if (steer !== undefined) {
-    const index = items.findIndex((item) => item.id === 'steer')
+    const index = items.findIndex(item => item.id === 'steer')
     items[index] = { ...items[index], ...steer } as ItemResult
   }
   return {
@@ -76,7 +76,7 @@ function fixture(overrides: Partial<RunRecord> = {}, steer?: Partial<ItemResult>
 }
 
 function tableRows(md: string): string[] {
-  return md.split('\n').filter((line) => line.startsWith('|'))
+  return md.split('\n').filter(line => line.startsWith('|'))
 }
 
 describe('renderReport', () => {
@@ -99,17 +99,17 @@ describe('renderReport', () => {
 
   it('lists each of the 11 items as a BLOCKED(no-credential) table row', () => {
     const md = renderReport(fixture())
-    const blockedRows = tableRows(md).filter((line) => line.includes('BLOCKED(no-credential)'))
+    const blockedRows = tableRows(md).filter(line => line.includes('BLOCKED(no-credential)'))
     expect(blockedRows).toHaveLength(11)
     for (const [, req] of IDS) {
-      expect(tableRows(md).some((line) => line.includes(`| ${req} |`))).toBe(true)
+      expect(tableRows(md).some(line => line.includes(`| ${req} |`))).toBe(true)
     }
   })
 
   it('keeps ADR-5 and ADR-10 conclusions pending without measurements', () => {
     const md = renderReport(fixture())
-    const adr5 = md.split('\n').find((line) => line.includes('ADR-5:'))
-    const adr10 = md.split('\n').find((line) => line.includes('ADR-10:'))
+    const adr5 = md.split('\n').find(line => line.includes('ADR-5:'))
+    const adr10 = md.split('\n').find(line => line.includes('ADR-10:'))
     expect(adr5).toContain('보류')
     expect(adr10).toContain('보류')
   })
@@ -133,9 +133,9 @@ describe('renderReport', () => {
 
   it('marks a steer deviation as PASS(의미 차이) with the deviation conclusion', () => {
     const md = renderReport(fixture({}, { status: 'PASS', deviation: true, reason: undefined }))
-    expect(tableRows(md).some((line) => line.includes('PASS(의미 차이)'))).toBe(true)
+    expect(tableRows(md).some(line => line.includes('PASS(의미 차이)'))).toBe(true)
     expect(md).toContain('같은 턴 미반영·다음 턴 반영')
-    const adr5 = md.split('\n').find((line) => line.includes('ADR-5:'))
+    const adr5 = md.split('\n').find(line => line.includes('ADR-5:'))
     expect(adr5).toContain('대체안 채택(steer)')
   })
 })

@@ -18,8 +18,18 @@ import { item as settingSources } from './items/r18-setting-sources.ts'
 import { item as sandboxSecrets } from './items/r19-sandbox-secrets.ts'
 
 export const ITEMS: SpikeItem[] = [
-  version, result, steer, inputsRead, laterInject, interrupt,
-  backgroundBash, resume, pretooluseGuard, disallowedTools, settingSources, sandboxSecrets,
+  version,
+  result,
+  steer,
+  inputsRead,
+  laterInject,
+  interrupt,
+  backgroundBash,
+  resume,
+  pretooluseGuard,
+  disallowedTools,
+  settingSources,
+  sandboxSecrets,
 ]
 
 const ROOT_URL = new URL('../../', import.meta.url)
@@ -32,8 +42,8 @@ export function runStandalone(item: SpikeItem): Promise<number> {
   return execute({
     items: [item],
     env: process.env,
-    stdout: (s) => process.stdout.write(s),
-    stderr: (s) => process.stderr.write(s),
+    stdout: s => process.stdout.write(s),
+    stderr: s => process.stderr.write(s),
   })
 }
 
@@ -65,18 +75,21 @@ export async function main(argv: readonly string[]): Promise<number> {
   const only = valueAfter(argv, '--only')
   let items: SpikeItem[] = ITEMS
   if (only !== undefined) {
-    const ids = only.split(',').map((id) => id.trim()).filter((id) => id !== '')
+    const ids = only
+      .split(',')
+      .map(id => id.trim())
+      .filter(id => id !== '')
     if (ids.length === 0) {
       stderr('--only requires at least one item id\n')
       return EXIT_INTERNAL
     }
-    const known = new Set(ITEMS.map((item) => item.id))
-    const unknown = ids.filter((id) => !known.has(id))
+    const known = new Set(ITEMS.map(item => item.id))
+    const unknown = ids.filter(id => !known.has(id))
     if (unknown.length > 0) {
       stderr(`unknown item id: ${unknown.join(', ')}\n`)
       return EXIT_INTERNAL
     }
-    items = ITEMS.filter((item) => ids.includes(item.id))
+    items = ITEMS.filter(item => ids.includes(item.id))
   }
 
   const explicitOut = valueAfter(argv, '--out')

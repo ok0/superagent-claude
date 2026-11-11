@@ -27,7 +27,10 @@ it('keeps only the latest notice while the Router session cannot take one', asyn
   writeFileSync(join(dir, 'prompts', 'team', 'communication.md'), 'Team rule B')
   h.runtime.refreshPrompts()
   await h.idle()
-  const notices = h.runtime.store.db.prepare("SELECT key, value FROM effect WHERE kind = 'notice'").all() as { key: string; value: string }[]
+  const notices = h.runtime.store.db.prepare("SELECT key, value FROM effect WHERE kind = 'notice'").all() as {
+    key: string
+    value: string
+  }[]
   expect(notices).toHaveLength(1)
   expect(notices[0]!.key).toBe('router-prompts')
   expect(notices[0]!.value).toContain('Team rule B')
@@ -36,7 +39,11 @@ it('keeps only the latest notice while the Router session cannot take one', asyn
   h.advance(70_000)
   h.runtime.effects.kick()
   await h.idle()
-  const sent = h.routerSessions().at(-1)!.sent.filter(input => input.mode === 'inject').map(input => input.text)
+  const sent = h
+    .routerSessions()
+    .at(-1)!
+    .sent.filter(input => input.mode === 'inject')
+    .map(input => input.text)
   expect(sent.some(text => text.includes('Team rule B'))).toBe(true)
   expect(sent.some(text => text.includes('Team rule A'))).toBe(false)
   expect(h.runtime.effects.pending('notice')).toBe(false)

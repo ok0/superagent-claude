@@ -32,11 +32,7 @@ function sandbox(name: string): { tmp: string; home: string; tmpT: string } {
   return { tmp, home, tmpT }
 }
 
-function run(
-  args: string[],
-  env: Record<string, string | undefined>,
-  paths: { home: string; tmpT: string },
-) {
+function run(args: string[], env: Record<string, string | undefined>, paths: { home: string; tmpT: string }) {
   return spawnSync(process.execPath, [RUN, ...args], {
     cwd: ROOT,
     env: { PATH: process.env.PATH, HOME: paths.home, TMPDIR: paths.tmpT, ...env },
@@ -55,11 +51,11 @@ describe('spike:sdk runner', () => {
     expect(result.stderr).toContain('claude setup-token')
     expect(existsSync(doc)).toBe(true)
     const text = readFileSync(doc, 'utf8')
-    const blocked = text.split('\n').filter((line) => line.includes('| BLOCKED(no-credential) |'))
+    const blocked = text.split('\n').filter(line => line.includes('| BLOCKED(no-credential) |'))
     expect(blocked).toHaveLength(11)
-    const versionRow = text.split('\n').find((line) => line.startsWith('| version |'))
+    const versionRow = text.split('\n').find(line => line.startsWith('| version |'))
     expect(versionRow).toContain('| PASS |')
-    expect(readdirSync(tmpT).some((name) => name.startsWith('sac-spike-'))).toBe(false)
+    expect(readdirSync(tmpT).some(name => name.startsWith('sac-spike-'))).toBe(false)
     expect(checkText('doc.md', text)).toEqual([])
   })
 
@@ -96,11 +92,7 @@ describe('spike:sdk runner', () => {
   it('refuses invalid SPIKE_AUTH_MODE', TEST_TIMEOUT, () => {
     const { tmp, home, tmpT } = sandbox('bogus-mode')
     const doc = join(tmp, 'doc.md')
-    const result = run(
-      ['--out', doc],
-      { SUPERAGENT_CLAUDE_LIVE: '1', SPIKE_AUTH_MODE: 'bogus' },
-      { home, tmpT },
-    )
+    const result = run(['--out', doc], { SUPERAGENT_CLAUDE_LIVE: '1', SPIKE_AUTH_MODE: 'bogus' }, { home, tmpT })
     expect(result.status).toBe(4)
     expect(existsSync(doc)).toBe(false)
   })

@@ -49,7 +49,7 @@ function git(args: string[], cwd: string): string {
 }
 
 function headerOf(message: string): string | undefined {
-  const line = message.split(/\r?\n/).find((l) => l.trim() !== '')
+  const line = message.split(/\r?\n/).find(l => l.trim() !== '')
   return line?.trimEnd()
 }
 
@@ -77,11 +77,11 @@ export function renderSection(version: string, date: string, commits: readonly C
     if (MILESTONE_WORD.test(entry)) reasons.push(`${sha7}: mentions "milestone": "${header}"`)
     const attribution = message
       .split(/\r?\n/)
-      .find((line) => isAiAttributionLine(line) || ATTRIBUTION_PATTERNS.some((pattern) => pattern.test(line)))
+      .find(line => isAiAttributionLine(line) || ATTRIBUTION_PATTERNS.some(pattern => pattern.test(line)))
     if (attribution !== undefined) reasons.push(`${sha7}: contains AI authorship attribution: "${attribution.trim()}"`)
   }
   if (reasons.length > 0) {
-    throw new Error('changelog blocked:\n' + reasons.map((r) => '  - ' + r).join('\n'))
+    throw new Error('changelog blocked:\n' + reasons.map(r => '  - ' + r).join('\n'))
   }
   let out = `## [${version}] - ${date}\n`
   for (const [key, title] of CATEGORIES) {
@@ -112,9 +112,9 @@ export function collectCommits(version: string, cwd: string): ChangelogCommit[] 
   const output = git(['log', '--format=%H%x1f%B%x1e', base === undefined ? 'HEAD' : `${base}..HEAD`], cwd)
   return output
     .split('\x1e')
-    .map((entry) => entry.trim())
-    .filter((entry) => entry !== '')
-    .map((entry) => {
+    .map(entry => entry.trim())
+    .filter(entry => entry !== '')
+    .map(entry => {
       const sep = entry.indexOf('\x1f')
       return { sha: entry.slice(0, sep), message: entry.slice(sep + 1) }
     })
@@ -122,10 +122,10 @@ export function collectCommits(version: string, cwd: string): ChangelogCommit[] 
 
 export function insertSection(changelog: string, version: string, section: string): string {
   const lines = changelog.split('\n')
-  if (lines.some((line) => line.startsWith(`## [${version}]`))) {
+  if (lines.some(line => line.startsWith(`## [${version}]`))) {
     throw new Error(`CHANGELOG.md already has a section for ${version}`)
   }
-  const idx = lines.findIndex((line) => line.startsWith('## ['))
+  const idx = lines.findIndex(line => line.startsWith('## ['))
   let result: string
   if (idx === -1) {
     const head = changelog.trimEnd()
@@ -140,7 +140,7 @@ export function insertSection(changelog: string, version: string, section: strin
 
 export function extractNotes(changelog: string, version: string): string {
   const lines = changelog.split('\n')
-  const start = lines.findIndex((line) => line.startsWith(`## [${version}]`))
+  const start = lines.findIndex(line => line.startsWith(`## [${version}]`))
   if (start === -1) throw new Error(`no CHANGELOG.md section for ${version}`)
   let end = lines.findIndex((line, i) => i > start && line.startsWith('## ['))
   if (end === -1) end = lines.length

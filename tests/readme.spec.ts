@@ -1,4 +1,3 @@
-
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,9 +17,17 @@ const authentication = read('docs/authentication.md')
 const security = read('docs/security.md')
 const svg = read('docs/assets/flow.svg')
 
-const DOCS = ['docs/getting-started.md', 'docs/configuration.md', 'docs/authentication.md', 'docs/runtime-contract.md', 'docs/deploy.md', 'docs/security.md']
+const DOCS = [
+  'docs/getting-started.md',
+  'docs/configuration.md',
+  'docs/authentication.md',
+  'docs/runtime-contract.md',
+  'docs/deploy.md',
+  'docs/security.md',
+]
 
-const HYPE = /\b(blazing|revolutionary|seamless|cutting-edge|world-class|supercharg|effortless|game-chang|best-in-class)/i
+const HYPE =
+  /\b(blazing|revolutionary|seamless|cutting-edge|world-class|supercharg|effortless|game-chang|best-in-class)/i
 const PRODUCT_NAME = /claude[ \t]+code/i
 
 export function readmeProblems(text: string): string[] {
@@ -104,11 +111,13 @@ describe('README and public docs', () => {
       'superagent-claude status',
       'superagent-claude needs',
       'superagent-claude prompts diff',
-    ]) expect(gettingStarted).toContain(text)
+    ])
+      expect(gettingStarted).toContain(text)
   })
 
   it('getting-started says new work needs a mention of the agent account and an unmentioned issue is ignored silently', () => {
-    for (const text of ['`@<login>`', 'ignored silently', 'mentions the agent account']) expect(gettingStarted).toContain(text)
+    for (const text of ['`@<login>`', 'ignored silently', 'mentions the agent account'])
+      expect(gettingStarted).toContain(text)
   })
 
   it('configuration names the required settings', () => {
@@ -119,7 +128,8 @@ describe('README and public docs', () => {
       '`repositories`',
       '`policy.allowed`',
       'Everything else has a default.',
-    ]) expect(configuration).toContain(text)
+    ])
+      expect(configuration).toContain(text)
   })
 
   it('has a section per auth mode with its environment', () => {
@@ -128,7 +138,8 @@ describe('README and public docs', () => {
       for (const name of REQUIRED_ENV[mode as keyof typeof REQUIRED_ENV].flat(2)) expect(body).toContain(name)
     }
     const subscription = section(authentication, '## subscription\n')
-    for (const text of ['auth.acceptSubscriptionSharedUseRisk', 'auth.owner', 'ToS', 'refuses to start']) expect(subscription).toContain(text)
+    for (const text of ['auth.acceptSubscriptionSharedUseRisk', 'auth.owner', 'ToS', 'refuses to start'])
+      expect(subscription).toContain(text)
   })
 
   it('states the agent account rules and the observe default', () => {
@@ -137,7 +148,8 @@ describe('README and public docs', () => {
       "Do not put the agent account's login in `policy.allowed`",
       'The default `policy.acceptMode` is `observe`',
       '`auto` must be set explicitly',
-    ]) expect(gettingStarted).toContain(text)
+    ])
+      expect(gettingStarted).toContain(text)
   })
 
   it('links docs/deploy.md on exactly one line', () => {
@@ -163,18 +175,26 @@ describe('README and public docs', () => {
       '](docs/authentication.md)',
       '](docs/getting-started.md)',
       'SUPERAGENT_CLAUDE_GITHUB_TOKEN',
-    ]) expect(quick).toContain(text)
+    ])
+      expect(quick).toContain(text)
     expect(quick).not.toMatch(/pnpm install|pnpm build|node lib\/cli\.js/)
   })
 
   it('getting-started installs from npm first and keeps the source build', () => {
-    const install = gettingStarted.slice(gettingStarted.indexOf('## Install'), gettingStarted.indexOf('\n## Agent account'))
-    for (const text of ['npm i -g superagent-claude', 'pnpm install', 'pnpm build', 'lib/cli.js', 'pnpm link --global']) expect(install).toContain(text)
+    const install = gettingStarted.slice(
+      gettingStarted.indexOf('## Install'),
+      gettingStarted.indexOf('\n## Agent account'),
+    )
+    for (const text of ['npm i -g superagent-claude', 'pnpm install', 'pnpm build', 'lib/cli.js', 'pnpm link --global'])
+      expect(install).toContain(text)
     expect(install.indexOf('npm i -g superagent-claude')).toBeLessThan(install.indexOf('pnpm install'))
   })
 
   it('every relative link in the README and docs resolves', () => {
-    const files: [string, string][] = [['README.md', readme], ...DOCS.map((path): [string, string] => [path, read(path)])]
+    const files: [string, string][] = [
+      ['README.md', readme],
+      ...DOCS.map((path): [string, string] => [path, read(path)]),
+    ]
     expect(files.flatMap(([file, text]) => linkProblems(file, text))).toEqual([])
   })
 
@@ -214,7 +234,8 @@ describe('README and public docs', () => {
       'prompt injection',
       'acceptSubscriptionSharedUseRisk',
       'trustRepoConfig',
-    ]) expect(security).toContain(term)
+    ])
+      expect(security).toContain(term)
   })
 
   it('the flow diagram is a self-contained SVG with the five steps', () => {
@@ -224,7 +245,17 @@ describe('README and public docs', () => {
     expect(svg.match(/url\((?!#)/g)).toBeNull()
     expect(svg).toMatch(/<rect[^>]*width="100%"[^>]*height="100%"[^>]*fill="#[0-9a-fA-F]{6}"/)
     const text = svg.replace(/<[^>]+>/g, ' ')
-    for (const label of ['mentions the agent', 'Allowlist', 'admission', 'Ticket', 'session', 'git worktree', 'comment', 'pull request']) expect(text).toContain(label)
+    for (const label of [
+      'mentions the agent',
+      'Allowlist',
+      'admission',
+      'Ticket',
+      'session',
+      'git worktree',
+      'comment',
+      'pull request',
+    ])
+      expect(text).toContain(label)
     expect(svg).not.toMatch(/\bgh[pousr]_[A-Za-z0-9]{8,}|_pat_[A-Za-z0-9]|sk-ant-/)
     expect(svg).not.toMatch(/\bM\d{1,2}\b|milestone/i)
     expect(checkText('docs/assets/flow.svg', svg)).toEqual([])

@@ -9,11 +9,26 @@ import { fakeGh, type FakeGhScript, type Posted } from './fake-gh.ts'
 /** A string field with this value is answered as the current time. */
 export const NOW = '<now>'
 
-export interface KillRule { when: 'beforePost' | 'afterPost'; path: string }
-export interface FileGhState { script: FakeGhScript; posted: Posted[]; kill?: KillRule; killed?: KillRule & { at: string } }
-export interface FileGh { bin: string; file: string; read(): FileGhState; kill(rule: KillRule): void }
+export interface KillRule {
+  when: 'beforePost' | 'afterPost'
+  path: string
+}
+export interface FileGhState {
+  script: FakeGhScript
+  posted: Posted[]
+  kill?: KillRule
+  killed?: KillRule & { at: string }
+}
+export interface FileGh {
+  bin: string
+  file: string
+  read(): FileGhState
+  kill(rule: KillRule): void
+}
 
-const sleepSync = (ms: number): void => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms) }
+const sleepSync = (ms: number): void => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
 
 function acquire(file: string): void {
   const lock = file + '.lock'
@@ -36,7 +51,10 @@ function release(file: string): void {
 
 function write(file: string, state: FileGhState): void {
   const tmp = file + '.tmp'
-  writeFileSync(tmp, JSON.stringify(state, (_key, value: unknown) => value instanceof Set ? undefined : value))
+  writeFileSync(
+    tmp,
+    JSON.stringify(state, (_key, value: unknown) => (value instanceof Set ? undefined : value)),
+  )
   renameSync(tmp, file)
 }
 
@@ -71,7 +89,10 @@ export function fileGh(dir: string, script: FakeGhScript): FileGh {
   }
 }
 
-export async function runFileGh(file: string, argv: string[]): Promise<{ code: number; stdout: string; stderr: string; killParent: boolean }> {
+export async function runFileGh(
+  file: string,
+  argv: string[],
+): Promise<{ code: number; stdout: string; stderr: string; killParent: boolean }> {
   acquire(file)
   try {
     const state = read(file)

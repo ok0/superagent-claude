@@ -14,18 +14,26 @@ const model = process.env.SUPERAGENT_CLAUDE_LIVE_MODEL ?? 'haiku'
 
 describe.skipIf(!LIVE)('claude live auth', () => {
   for (const mode of ['api-key', 'subscription'] as const) {
-    it.skipIf(!process.env[AUTH_ENV[mode][0]!])(`${mode} completes a turn`, async () => {
-      const rt = new ClaudeRuntime({ mode, configDir: mkdtempSync(join(tmpdir(), 'sac-auth-')), env: process.env })
-      const { spec } = contractSpec('followup starts a new turn', { model })
-      const session = await rt.open(spec)
-      const events: RuntimeEvent[] = []
-      void (async () => { for await (const event of session.events()) events.push(event) })()
-      session.send({ id: 'A', text: 'Reply with exactly OK.', mode: 'followup' })
-      await waitUntil(() => events.some(event => event.type === 'turnEnded'), 180_000)
-      const ended = events.find(event => event.type === 'turnEnded')
-      expect(ended?.type === 'turnEnded' && ended.outcome).toBe('success')
-      console.log(`[PAC13] mode=${mode} session=${session.sessionId} outcome=${ended?.type === 'turnEnded' ? ended.outcome : 'none'} costUsd=${ended?.type === 'turnEnded' ? ended.costUsd : 'none'}`)
-      await session.close()
-    }, 180_000)
+    it.skipIf(!process.env[AUTH_ENV[mode][0]!])(
+      `${mode} completes a turn`,
+      async () => {
+        const rt = new ClaudeRuntime({ mode, configDir: mkdtempSync(join(tmpdir(), 'sac-auth-')), env: process.env })
+        const { spec } = contractSpec('followup starts a new turn', { model })
+        const session = await rt.open(spec)
+        const events: RuntimeEvent[] = []
+        void (async () => {
+          for await (const event of session.events()) events.push(event)
+        })()
+        session.send({ id: 'A', text: 'Reply with exactly OK.', mode: 'followup' })
+        await waitUntil(() => events.some(event => event.type === 'turnEnded'), 180_000)
+        const ended = events.find(event => event.type === 'turnEnded')
+        expect(ended?.type === 'turnEnded' && ended.outcome).toBe('success')
+        console.log(
+          `[PAC13] mode=${mode} session=${session.sessionId} outcome=${ended?.type === 'turnEnded' ? ended.outcome : 'none'} costUsd=${ended?.type === 'turnEnded' ? ended.costUsd : 'none'}`,
+        )
+        await session.close()
+      },
+      180_000,
+    )
   }
 })

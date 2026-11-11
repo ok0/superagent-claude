@@ -8,14 +8,14 @@ import { baseOptions, compact, field, runScenario } from '../lib/session.ts'
 const META = { id: 'setting-sources', req: 'R18', title: 'settingSources 격리 (저장소 hook·.mcp.json)' }
 
 interface CaseSpec {
-  name: string;
-  sources: SettingSource[];
+  name: string
+  sources: SettingSource[]
 }
 
 interface Markers {
-  sessionstart: boolean;
-  prompt: boolean;
-  mcp: boolean;
+  sessionstart: boolean
+  prompt: boolean
+  mcp: boolean
 }
 
 const CASES: CaseSpec[] = [

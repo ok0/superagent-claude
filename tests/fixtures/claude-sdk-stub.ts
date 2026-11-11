@@ -1,5 +1,11 @@
 /** Scripted stand-in for the SDK query: records the user messages the adapter sends and lets a test stream back the messages the SDK would emit. */
-import type { HookInput, Options, SDKControlInterruptResponse, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import type {
+  HookInput,
+  Options,
+  SDKControlInterruptResponse,
+  SDKMessage,
+  SDKUserMessage,
+} from '@anthropic-ai/claude-agent-sdk'
 import type { QueryFn, QueryHandle } from '../../src/runtimes/claude/runtime.ts'
 
 export class StubQuery implements QueryHandle {
@@ -50,7 +56,9 @@ export class StubQuery implements QueryHandle {
       while (this.messages.length > 0) yield this.messages.shift()!
       if (this.failure) throw this.failure
       if (this.done) return
-      await new Promise<void>(resolve => { this.wake = () => resolve() })
+      await new Promise<void>(resolve => {
+        this.wake = () => resolve()
+      })
       this.wake = undefined
     }
   }
@@ -74,5 +82,12 @@ export function stubSdk(): { query: QueryFn; queries: StubQuery[] } {
 }
 
 export function result(uuid: string | undefined, total: number, subtype = 'success'): object {
-  return { type: 'result', subtype, user_message_uuid: uuid, total_cost_usd: total, num_turns: 1, is_error: subtype !== 'success' }
+  return {
+    type: 'result',
+    subtype,
+    user_message_uuid: uuid,
+    total_cost_usd: total,
+    num_turns: 1,
+    is_error: subtype !== 'success',
+  }
 }

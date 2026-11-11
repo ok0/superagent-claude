@@ -8,9 +8,9 @@ import { baseOptions, compact, runScenario } from '../lib/session.ts'
 const META = { id: 'pretooluse-guard', req: 'R16', title: 'PreToolUse 가드 deny·예외 fail-closed' }
 
 interface CaseSpec {
-  name: string;
-  mode: 'deny' | 'throw';
-  block: boolean;
+  name: string
+  mode: 'deny' | 'throw'
+  block: boolean
 }
 
 const A: CaseSpec = { name: 'a-deny', mode: 'deny', block: true }
@@ -166,10 +166,10 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
     ...(reason !== undefined ? { reason } : {}),
     deviation: c.deviation,
     summary: `${summary} — a=${a.status}, b=${b.status}, c=${c.status}`,
-    observations: subs.map((s) => `${s.id}: ${s.status}${s.deviation ? ' (deviation)' : ''} — ${s.summary}`),
-    evidence: subs.flatMap((s) => s.evidence),
+    observations: subs.map(s => `${s.id}: ${s.status}${s.deviation ? ' (deviation)' : ''} — ${s.summary}`),
+    evidence: subs.flatMap(s => s.evidence),
     attempts: subs.reduce((n, s) => n + s.attempts, 0),
-    costs: subs.flatMap((s) => s.costs),
+    costs: subs.flatMap(s => s.costs),
     sub: subs,
   }
 }

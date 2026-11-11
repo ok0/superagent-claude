@@ -1,11 +1,30 @@
 /** WorkerExecutor: the core Executor over an AgentRuntime. start, deliver and stop only queue work; launch and delivery effect handlers take a slot, prepare the workspace, open or resume the worker session, and report its events to the Engine; limits, retries and background work are enforced here (ADR-3, ADR-6, ADR-17). */
 import { Later, type Effects } from '../app/effects.ts'
 import type { Store } from '../app/store.ts'
-import { key, latestAssignment, runningAssignment, UserError, type Assignment, type EngineForExecutor, type Executor, type Ticket,
-  type TicketInput, type Trigger, type WorkerReport } from '../core/index.ts'
+import {
+  key,
+  latestAssignment,
+  runningAssignment,
+  UserError,
+  type Assignment,
+  type EngineForExecutor,
+  type Executor,
+  type Ticket,
+  type TicketInput,
+  type Trigger,
+  type WorkerReport,
+} from '../core/index.ts'
 import type { HealthEntry } from '../infra/health.ts'
-import { ReadLedger, type AgentRuntime, type AgentSession, type InputMode, type RuntimeEvent, type RuntimeInput, type SessionSpec,
-  type ToolSpec } from './contract.ts'
+import {
+  ReadLedger,
+  type AgentRuntime,
+  type AgentSession,
+  type InputMode,
+  type RuntimeEvent,
+  type RuntimeInput,
+  type SessionSpec,
+  type ToolSpec,
+} from './contract.ts'
 import type { Slots } from './slots.ts'
 import type { WorkerRecord, WorkerStore } from './worker-store.ts'
 
@@ -14,7 +33,11 @@ export const RETRY_BACKOFF_MS = 15_000
 export const BACKGROUND_LIMIT_MS = 30 * 60_000
 const DRAIN_MS = 2_000
 export const workerKey = (ticketId: string): string => `worker-${ticketId}`
-export interface Workspace { repository: string; cwd: string; branch: string }
+export interface Workspace {
+  repository: string
+  cwd: string
+  branch: string
+}
 export type PromptChange = { kind: 'same' } | { kind: 'team'; notice: string } | { kind: 'fixed' }
 /** Injected collaborators: the workspace, the instructions and the worker tools (M8/M11, M12); the prompt-version change and the git history for resumed sessions (M12, ADR-18). */
 export interface WorkerDeps {
@@ -29,51 +52,92 @@ export interface WorkerDeps {
   /** A host note for a fresh launch, such as missing write access (ADR-26). */
   launchNote?(ticket: Ticket, workspace: Workspace): string | undefined
 }
-export interface WorkerTimers { setTimeout(run: () => void, ms: number): unknown; clearTimeout(handle: unknown): void }
+export interface WorkerTimers {
+  setTimeout(run: () => void, ms: number): unknown
+  clearTimeout(handle: unknown): void
+}
 export interface WorkerExecutorOptions {
   store: Pick<Store, 'tickets' | 'triggers' | 'afterCommit'>
   effects: Pick<Effects, 'enqueue' | 'handle' | 'cancel' | 'kick'>
   engine: () => EngineForExecutor
-  runtime: AgentRuntime; slots: Slots; workers: WorkerStore; deps: WorkerDeps
+  runtime: AgentRuntime
+  slots: Slots
+  workers: WorkerStore
+  deps: WorkerDeps
   limits: { maxTurns: number; maxBudgetUsd: number }
   /** Read when a session opens, so a reload applies to new sessions. */
-  network?: () => readonly string[]; model?: () => string | undefined
-  retries?: number; retryBackoffMs?: number; backgroundLimitMs?: number
-  timers?: WorkerTimers; now?: () => number; paused?: () => boolean
+  network?: () => readonly string[]
+  model?: () => string | undefined
+  retries?: number
+  retryBackoffMs?: number
+  backgroundLimitMs?: number
+  timers?: WorkerTimers
+  now?: () => number
+  paused?: () => boolean
   health?: Pick<HealthEntry, 'set'>
 }
 /** Mode of a ticket Input (see docs/runtime-contract.md): a person's message steers; notes, legacy reopen markers and a message no person wrote that waited on a ready ticket (`quiet`) are injected; everything else is a followup. */
 export function inputMode(input: TicketInput): InputMode {
   switch (input.kind) {
-    case 'trigger': return input.human ? 'steer' : input.quiet ? 'inject' : 'followup'
-    case 'note': case 'reopen': return 'inject'
-    case 'text': case 'policy-changed': case 'resumed': return 'followup'
+    case 'trigger':
+      return input.human ? 'steer' : input.quiet ? 'inject' : 'followup'
+    case 'note':
+    case 'reopen':
+      return 'inject'
+    case 'text':
+    case 'policy-changed':
+    case 'resumed':
+      return 'followup'
   }
 }
 /** What is left of the limits for an Assignment that used `used` already: the SDK caps of a launch or resume, at least 1 turn and $0.01 (ADR-24). The host still checks the totals (ADR-6). */
-export function remainingLimits(limits: { maxTurns: number; maxBudgetUsd: number }, used?: { turns: number; costUsd: number }): { maxTurns: number; maxBudgetUsd: number } {
+export function remainingLimits(
+  limits: { maxTurns: number; maxBudgetUsd: number },
+  used?: { turns: number; costUsd: number },
+): { maxTurns: number; maxBudgetUsd: number } {
   if (!used) return { ...limits }
-  return { maxTurns: Math.max(1, limits.maxTurns - used.turns), maxBudgetUsd: Math.max(0.01, Math.round((limits.maxBudgetUsd - used.costUsd) * 1e6) / 1e6) }
+  return {
+    maxTurns: Math.max(1, limits.maxTurns - used.turns),
+    maxBudgetUsd: Math.max(0.01, Math.round((limits.maxBudgetUsd - used.costUsd) * 1e6) / 1e6),
+  }
 }
 /** Worker-facing text of an Input; undefined for a legacy reopen marker, which is marked delivered without being sent. */
 export function renderInput(input: TicketInput, trigger?: Trigger): string | undefined {
   switch (input.kind) {
     case 'trigger':
       return trigger
-        ? JSON.stringify({ trigger_id: input.triggerId, from: trigger.actor.id, at: trigger.at, text: trigger.text, ...(input.context ? { context: true } : {}),
-          ...(input.note ? { routing_note: input.note } : {}) })
+        ? JSON.stringify({
+            trigger_id: input.triggerId,
+            from: trigger.actor.id,
+            at: trigger.at,
+            text: trigger.text,
+            ...(input.context ? { context: true } : {}),
+            ...(input.note ? { routing_note: input.note } : {}),
+          })
         : JSON.stringify({ trigger_id: input.triggerId })
-    case 'text': return input.text
-    case 'note': return `Note for context only: ${input.text}`
-    case 'policy-changed': return 'Policy change: the access or admission rules changed. Check that the remaining work stays within the assignment.'
-    case 'resumed': return 'This ticket ended earlier and the message that follows resumed it under the same mandate. If it asks for more within the original scope, continue and report when done; if it asks for work beyond this ticket or for another one, hand it back with orchestrator_trigger_handback and report dropped.'
-    case 'reopen': return undefined
+    case 'text':
+      return input.text
+    case 'note':
+      return `Note for context only: ${input.text}`
+    case 'policy-changed':
+      return 'Policy change: the access or admission rules changed. Check that the remaining work stays within the assignment.'
+    case 'resumed':
+      return 'This ticket ended earlier and the message that follows resumed it under the same mandate. If it asks for more within the original scope, continue and report when done; if it asks for work beyond this ticket or for another one, hand it back with orchestrator_trigger_handback and report dropped.'
+    case 'reopen':
+      return undefined
   }
 }
 
 interface Live {
-  ticketId: string; assignmentId: string; session: AgentSession; reads: ReadLedger; outstanding: Map<string, InputMode>
-  lastActivity: number; background?: unknown; timers: Set<unknown>; drained?: () => void
+  ticketId: string
+  assignmentId: string
+  session: AgentSession
+  reads: ReadLedger
+  outstanding: Map<string, InputMode>
+  lastActivity: number
+  background?: unknown
+  timers: Set<unknown>
+  drained?: () => void
 }
 
 export class WorkerExecutor implements Executor {
@@ -112,12 +176,21 @@ export class WorkerExecutor implements Executor {
     this.retries = options.retries ?? RUNTIME_RETRIES
     this.retryBackoffMs = options.retryBackoffMs ?? RETRY_BACKOFF_MS
     this.backgroundLimitMs = options.backgroundLimitMs ?? BACKGROUND_LIMIT_MS
-    this.timers = options.timers ?? { setTimeout: (run, ms) => setTimeout(run, ms), clearTimeout: handle => clearTimeout(handle as NodeJS.Timeout) }
+    this.timers = options.timers ?? {
+      setTimeout: (run, ms) => setTimeout(run, ms),
+      clearTimeout: handle => clearTimeout(handle as NodeJS.Timeout),
+    }
     this.now = options.now ?? Date.now
     this.paused = options.paused ?? (() => false)
     this.health = options.health
-    this.effects.handle('launch', payload => this.launch(payload), { limit: () => this.paused() ? 0 : this.slots.launchRoom() + this.launching.size, retry: [5000, 300_000] })
-    this.effects.handle('delivery', payload => this.delivery(payload), { limit: () => this.paused() ? 0 : 4, quiet: true })
+    this.effects.handle('launch', payload => this.launch(payload), {
+      limit: () => (this.paused() ? 0 : this.slots.launchRoom() + this.launching.size),
+      retry: [5000, 300_000],
+    })
+    this.effects.handle('delivery', payload => this.delivery(payload), {
+      limit: () => (this.paused() ? 0 : 4),
+      quiet: true,
+    })
   }
 
   start(ticket: Ticket, assignment: Assignment): void {
@@ -128,10 +201,14 @@ export class WorkerExecutor implements Executor {
   }
   stop(ticket: Ticket, assignment: Assignment, _reason: string): void {
     this.effects.cancel('launch', assignment.id)
-    this.store.afterCommit(() => { void this.halt(ticket.id, assignment.id) })
+    this.store.afterCommit(() => {
+      void this.halt(ticket.id, assignment.id)
+    })
   }
   /** Ticket IDs whose worker session is open now. */
-  liveTickets(): string[] { return [...this.live.keys()] }
+  liveTickets(): string[] {
+    return [...this.live.keys()]
+  }
   /** Injects a host notice into the ticket's open worker session; it is read with the next input (inject never starts a turn). False when no session is open. */
   notify(ticketId: string, notice: { id: string; text: string }): boolean {
     const live = this.live.get(ticketId)
@@ -150,7 +227,11 @@ export class WorkerExecutor implements Executor {
     return !!ticket && !ticket.ended && runningAssignment(ticket)?.id === assignmentId
   }
   private report(ticketId: string, r: WorkerReport): void {
-    try { this.engine().report(ticketId, { ...r, summary: r.summary.slice(0, 500) }) } catch (e) { if (!(e instanceof UserError)) this.problem(e) }
+    try {
+      this.engine().report(ticketId, { ...r, summary: r.summary.slice(0, 500) })
+    } catch (e) {
+      if (!(e instanceof UserError)) this.problem(e)
+    }
   }
   private problem(e: unknown): void {
     this.health?.set({ state: 'error', detail: String(e), at: new Date(this.now()).toISOString() })
@@ -170,25 +251,46 @@ export class WorkerExecutor implements Executor {
     this.effects.kick()
   }
   private attach(ticketId: string, assignmentId: string, session: AgentSession): Live {
-    const live: Live = { ticketId, assignmentId, session, reads: new ReadLedger(), outstanding: new Map(), lastActivity: this.now(), timers: new Set() }
+    const live: Live = {
+      ticketId,
+      assignmentId,
+      session,
+      reads: new ReadLedger(),
+      outstanding: new Map(),
+      lastActivity: this.now(),
+      timers: new Set(),
+    }
     this.live.set(ticketId, live)
     void this.loop(live)
     return live
   }
-  private async spec(ticket: Ticket, assignment: Assignment, cwd: string, resume?: string, record?: WorkerRecord): Promise<SessionSpec> {
+  private async spec(
+    ticket: Ticket,
+    assignment: Assignment,
+    cwd: string,
+    resume?: string,
+    record?: WorkerRecord,
+  ): Promise<SessionSpec> {
     const model = this.model()
     return {
-      key: workerKey(ticket.id), role: 'worker', cwd, instructions: await this.deps.instructions(ticket), tools: this.deps.tools(ticket, assignment),
-      builtins: { fs: 'write', shell: true, web: false }, network: { allow: [...this.network()] },
+      key: workerKey(ticket.id),
+      role: 'worker',
+      cwd,
+      instructions: await this.deps.instructions(ticket),
+      tools: this.deps.tools(ticket, assignment),
+      builtins: { fs: 'write', shell: true, web: false },
+      network: { allow: [...this.network()] },
       limits: remainingLimits(this.limits, record?.assignmentId === assignment.id ? record : undefined),
-      env: this.deps.env?.(ticket) ?? {}, ...(resume ? { resume } : {}), ...(model ? { model } : {}),
+      env: this.deps.env?.(ticket) ?? {},
+      ...(resume ? { resume } : {}),
+      ...(model ? { model } : {}),
     }
   }
   private async contextNote(ticket: Ticket, cwd: string, branch: string): Promise<string> {
     const history = await (this.deps.history?.(cwd) ?? Promise.resolve('')).catch(() => '')
     const last = [...ticket.assignments].reverse().find(a => a.report)?.report
     return [
-      'The host instructions changed since this ticket\'s earlier session, so this is a new session with the current instructions.',
+      "The host instructions changed since this ticket's earlier session, so this is a new session with the current instructions.",
       `Ticket ${ticket.id}: ${JSON.stringify(ticket.title)}`,
       ...(last ? [`Last report: ${last.state}: ${last.summary}`] : []),
       `Worktree: ${cwd} (branch ${branch})`,
@@ -196,8 +298,13 @@ export class WorkerExecutor implements Executor {
       'Inspect the worktree, git history and remote state before continuing; do not repeat completed external operations.',
     ].join('\n')
   }
-  private async opening(ticket: Ticket, assignment: Assignment, record: WorkerRecord | undefined, cwd: string, branch: string):
-    Promise<{ session: AgentSession; resume?: string; lead: RuntimeInput[] }> {
+  private async opening(
+    ticket: Ticket,
+    assignment: Assignment,
+    record: WorkerRecord | undefined,
+    cwd: string,
+    branch: string,
+  ): Promise<{ session: AgentSession; resume?: string; lead: RuntimeInput[] }> {
     let resume = record?.sessionId ?? undefined
     const lead: RuntimeInput[] = []
     if (resume && record?.promptVersion && this.deps.promptChange) {
@@ -222,9 +329,13 @@ export class WorkerExecutor implements Executor {
     if (resumed) return JSON.stringify({ ticket_id: ticket.id, assignment: ticket.assignments.length })
     const origin = this.store.triggers.get(ticket.origin.triggerId)
     return JSON.stringify({
-      ticket_id: ticket.id, title: ticket.title, ...(ticket.execution?.assignment ? { assignment: ticket.execution.assignment } : {}),
+      ticket_id: ticket.id,
+      title: ticket.title,
+      ...(ticket.execution?.assignment ? { assignment: ticket.execution.assignment } : {}),
       ...(note ? { host_note: note } : {}),
-      ...(origin ? { trigger: { trigger_id: origin.id, from: origin.actor.id, at: origin.at, text: origin.text } } : {}),
+      ...(origin
+        ? { trigger: { trigger_id: origin.id, from: origin.actor.id, at: origin.at, text: origin.text } }
+        : {}),
     })
   }
   private retryText(message: string): string {
@@ -244,10 +355,15 @@ export class WorkerExecutor implements Executor {
     let session: AgentSession | undefined
     try {
       const previous = this.live.get(ticketId)
-      if (previous) { this.detach(previous); await previous.session.close().catch(() => {}) }
+      if (previous) {
+        this.detach(previous)
+        await previous.session.close().catch(() => {})
+      }
       const record = this.workers.get(ticketId)
       let workspace: Workspace
-      try { workspace = await this.deps.prepare(ticket) } catch (e) {
+      try {
+        workspace = await this.deps.prepare(ticket)
+      } catch (e) {
         this.report(ticketId, { state: 'failed', summary: `The workspace could not be prepared: ${this.message(e)}` })
         return
       }
@@ -258,9 +374,16 @@ export class WorkerExecutor implements Executor {
       if (!this.current(ticketId, assignmentId)) return
       const same = record?.assignmentId === assignmentId
       this.workers.put({
-        ticketId, assignmentId, runtime: this.runtime.id, sessionId: session.sessionId ?? opened.resume ?? null, repository: workspace.repository,
-        cwd, branch: workspace.branch, turns: same ? record.turns : 0,
-        costUsd: same ? record.costUsd : 0, promptVersion: this.deps.promptVersion?.() ?? null,
+        ticketId,
+        assignmentId,
+        runtime: this.runtime.id,
+        sessionId: session.sessionId ?? opened.resume ?? null,
+        repository: workspace.repository,
+        cwd,
+        branch: workspace.branch,
+        turns: same ? record.turns : 0,
+        costUsd: same ? record.costUsd : 0,
+        promptVersion: this.deps.promptVersion?.() ?? null,
       })
       const live = this.attach(ticketId, assignmentId, session)
       attached = true
@@ -271,7 +394,11 @@ export class WorkerExecutor implements Executor {
       const note = fresh.undelivered.includes(noteId) ? fresh.inputs.find(input => input.id === noteId) : undefined
       const noteSent = note?.kind === 'text'
       if (note?.kind === 'text') this.send(live, { id: noteId, text: note.text, mode: 'followup' })
-      this.send(live, { id: `assignment:${assignmentId}`, text: this.assignmentMessage(fresh, !!opened.resume, hostNote), mode: 'followup' })
+      this.send(live, {
+        id: `assignment:${assignmentId}`,
+        text: this.assignmentMessage(fresh, !!opened.resume, hostNote),
+        mode: 'followup',
+      })
       this.engine().assignmentStarted(ticketId, assignmentId)
       if (noteSent) this.engine().inputsDelivered(ticketId, assignmentId, [noteId])
     } catch (e) {
@@ -329,7 +456,8 @@ export class WorkerExecutor implements Executor {
       live = this.attach(ticketId, target.id, session)
       woken = true
       for (const input of lead) this.send(live, input)
-      if (!resume) this.send(live, { id: `assignment:${target.id}`, text: this.assignmentMessage(first, false), mode: 'followup' })
+      if (!resume)
+        this.send(live, { id: `assignment:${target.id}`, text: this.assignmentMessage(first, false), mode: 'followup' })
     }
     const ticket = this.store.tickets.get(ticketId)
     if (!ticket || !this.running(ticketId, target.id)) return
@@ -350,7 +478,11 @@ export class WorkerExecutor implements Executor {
       this.engine().deliveryFailed(ticketId, target.id, this.message(e))
       throw e
     }
-    this.engine().inputsDelivered(ticketId, target.id, inputs.map(input => input.id))
+    this.engine().inputsDelivered(
+      ticketId,
+      target.id,
+      inputs.map(input => input.id),
+    )
   }
 
   private async loop(live: Live): Promise<void> {
@@ -361,10 +493,15 @@ export class WorkerExecutor implements Executor {
           if (event.type === 'turnEnded') this.discard(live, event)
           continue
         }
-        try { await this.on(live, event) } catch (e) { this.problem(e) }
+        try {
+          await this.on(live, event)
+        } catch (e) {
+          this.problem(e)
+        }
       }
-    } catch (e) { this.problem(e) }
-    finally {
+    } catch (e) {
+      this.problem(e)
+    } finally {
       if (this.live.get(live.ticketId) === live) {
         this.detach(live)
         this.slots.release(live.ticketId)
@@ -392,15 +529,28 @@ export class WorkerExecutor implements Executor {
         }
         const usage = this.workers.addUsage(ticketId, assignmentId, event.turns, event.costUsd)
         this.engine().turnEnded(ticketId, assignmentId)
-        const limit = event.outcome === 'max_turns' || usage.turns > this.limits.maxTurns ? 'turn limit'
-          : event.outcome === 'budget' || usage.costUsd > this.limits.maxBudgetUsd ? 'budget limit' : undefined
+        const limit =
+          event.outcome === 'max_turns' || usage.turns > this.limits.maxTurns
+            ? 'turn limit'
+            : event.outcome === 'budget' || usage.costUsd > this.limits.maxBudgetUsd
+              ? 'budget limit'
+              : undefined
         if (limit) {
           this.detach(live)
           await live.session.interrupt().catch(() => ({ stillQueued: [] }))
           let kept = false
-          try { kept = this.engine().limitReached(ticketId, assignmentId, limit) } catch (e) { this.problem(e) }
+          try {
+            kept = this.engine().limitReached(ticketId, assignmentId, limit)
+          } catch (e) {
+            this.problem(e)
+          }
           // A ticket that kept its ready report is done; only one with work under way is blocked (ADR-24).
-          if (!kept) this.report(ticketId, { state: 'blocked', summary: limit, limit: limit === 'turn limit' ? 'turn' : 'budget' })
+          if (!kept)
+            this.report(ticketId, {
+              state: 'blocked',
+              summary: limit,
+              limit: limit === 'turn limit' ? 'turn' : 'budget',
+            })
           await this.release(live)
           return
         }
@@ -429,11 +579,22 @@ export class WorkerExecutor implements Executor {
         const tries = this.failures.get(assignmentId) ?? 0
         if (event.retryable && tries < this.retries) {
           this.failures.set(assignmentId, tries + 1)
-          const h = this.timers.setTimeout(() => {
-            live.timers.delete(h)
-            if (this.live.get(ticketId) !== live) return
-            try { this.send(live, { id: `retry:${assignmentId}:${tries + 1}`, text: this.retryText(event.message), mode: 'followup' }) } catch (e) { this.problem(e) }
-          }, this.retryBackoffMs * 2 ** tries)
+          const h = this.timers.setTimeout(
+            () => {
+              live.timers.delete(h)
+              if (this.live.get(ticketId) !== live) return
+              try {
+                this.send(live, {
+                  id: `retry:${assignmentId}:${tries + 1}`,
+                  text: this.retryText(event.message),
+                  mode: 'followup',
+                })
+              } catch (e) {
+                this.problem(e)
+              }
+            },
+            this.retryBackoffMs * 2 ** tries,
+          )
           live.timers.add(h)
         } else {
           this.failures.delete(assignmentId)
@@ -460,7 +621,10 @@ export class WorkerExecutor implements Executor {
       live.background = undefined
       if (this.live.get(live.ticketId) !== live) return
       const left = live.lastActivity + this.backgroundLimitMs - this.now()
-      if (left > 0) { this.watch(live, left); return }
+      if (left > 0) {
+        this.watch(live, left)
+        return
+      }
       void (async () => {
         this.detach(live)
         await live.session.interrupt().catch(() => {})
@@ -475,7 +639,9 @@ export class WorkerExecutor implements Executor {
       if (l?.assignmentId === assignmentId) {
         this.detach(l)
         let settle!: () => void
-        const drained = new Promise<void>(resolve => { settle = resolve })
+        const drained = new Promise<void>(resolve => {
+          settle = resolve
+        })
         l.drained = settle
         const bound = this.timers.setTimeout(() => settle(), DRAIN_MS)
         await l.session.interrupt().catch(() => {})
@@ -486,7 +652,9 @@ export class WorkerExecutor implements Executor {
         this.slots.release(ticketId)
         this.effects.kick()
       }
-    } catch (e) { this.problem(e) }
+    } catch (e) {
+      this.problem(e)
+    }
   }
 
   async dispose(): Promise<void> {

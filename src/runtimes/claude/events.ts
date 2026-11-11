@@ -9,9 +9,17 @@ export function outcomeOf(subtype: string): TurnOutcome {
   return 'error'
 }
 
-export const RETRYABLE_API_ERRORS: ReadonlySet<string> = new Set(['rate_limit', 'overloaded', 'server_error', 'unknown'])
+export const RETRYABLE_API_ERRORS: ReadonlySet<string> = new Set([
+  'rate_limit',
+  'overloaded',
+  'server_error',
+  'unknown',
+])
 
-interface Group { uuid: string; ids: string[] }
+interface Group {
+  uuid: string
+  ids: string[]
+}
 
 export function subagentMessage(msg: unknown): boolean {
   if (typeof msg !== 'object' || msg === null) return false
@@ -97,7 +105,16 @@ export class EventMapper {
       const discarded = total >= this.lastTotal ? total - this.lastTotal : total
       this.lastTotal = total
       this.lastError = undefined
-      return [{ type: 'turnEnded', outcome: 'success', turns: typeof m.num_turns === 'number' ? m.num_turns : 1, costUsd: discarded, background: 0, discarded: true }]
+      return [
+        {
+          type: 'turnEnded',
+          outcome: 'success',
+          turns: typeof m.num_turns === 'number' ? m.num_turns : 1,
+          costUsd: discarded,
+          background: 0,
+          discarded: true,
+        },
+      ]
     }
     const out: RuntimeEvent[] = []
     if (typeof m.user_message_uuid === 'string') {
@@ -111,7 +128,11 @@ export class EventMapper {
     }
     const subtype = String(m.subtype)
     if (this.lastError !== undefined && (m.is_error === true || subtype !== 'success')) {
-      out.push({ type: 'error', message: `The model API failed: ${this.lastError}`, retryable: RETRYABLE_API_ERRORS.has(this.lastError) })
+      out.push({
+        type: 'error',
+        message: `The model API failed: ${this.lastError}`,
+        retryable: RETRYABLE_API_ERRORS.has(this.lastError),
+      })
       this.lastError = undefined
       return out
     }

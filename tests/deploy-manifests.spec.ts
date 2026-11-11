@@ -181,10 +181,11 @@ describe('docs/deploy.md Kubernetes section', () => {
     const start = deploy.indexOf('## Kubernetes')
     const rest = deploy.slice(start + '## Kubernetes'.length)
     const next = rest.search(/^## /m)
-    const section = `## Kubernetes${next === -1 ? rest : rest.slice(0, next)}`
-      .replace(/^```yaml\n[\s\S]*?^```$/gm, '')
+    const section = `## Kubernetes${next === -1 ? rest : rest.slice(0, next)}`.replace(/^```yaml\n[\s\S]*?^```$/gm, '')
 
-    expect(section).not.toMatch(/--privileged|privileged:\s*true|type:\s*Unconfined|seccomp=unconfined|apparmor=unconfined|enforce:\s*privileged/i)
+    expect(section).not.toMatch(
+      /--privileged|privileged:\s*true|type:\s*Unconfined|seccomp=unconfined|apparmor=unconfined|enforce:\s*privileged/i,
+    )
     for (const line of section.split('\n')) {
       if (/unconfined/i.test(line)) {
         expect(/rejected|not recommended/.test(line), line).toBe(true)

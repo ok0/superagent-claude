@@ -16,9 +16,10 @@ import { trigger } from './fixtures/engine.ts'
 import { testSource } from './fixtures/source.ts'
 
 const hold: FakeScript = () => ({ hold: new Promise(() => {}) })
-const ready: FakeScript = ({ index }) => index === 0
-  ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'Done: the fake worker finished' } }] }
-  : {}
+const ready: FakeScript = ({ index }) =>
+  index === 0
+    ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'Done: the fake worker finished' } }] }
+    : {}
 const mention = trigger('1', { addressed: 'mention', meta: { repository: 'owner/repo' } })
 
 const dirs: string[] = []
@@ -36,14 +37,26 @@ function directory(): string {
 }
 
 function config(stateDir: string, mode: 'off' | 'observe' | 'auto' = 'auto') {
-  return ConfigSchema.parse({ repositories: ['owner/repo'], policy: { allowed: ['alice'], acceptMode: mode }, stateDir })
+  return ConfigSchema.parse({
+    repositories: ['owner/repo'],
+    policy: { allowed: ['alice'], acceptMode: mode },
+    stateDir,
+  })
 }
 
 async function boot(stateDir: string, script: FakeScript) {
   const chat = testSource()
   const fake = new FakeRuntime(script)
   const records: LogRecord[] = []
-  const runtime = new Runtime({ config: config(stateDir), runtime: fake, kinds: [chat.kind], services: [chat.service], log: record => { records.push(record) } })
+  const runtime = new Runtime({
+    config: config(stateDir),
+    runtime: fake,
+    kinds: [chat.kind],
+    services: [chat.service],
+    log: record => {
+      records.push(record)
+    },
+  })
   runtimes.push(runtime)
   await runtime.start()
   return { runtime, chat, fake, records }
@@ -71,9 +84,13 @@ it('stop finishes within the timeout and leaves no session open', async () => {
 it('stop gives up waiting after the stop timeout', async () => {
   const records: LogRecord[] = []
   const runtime = new Runtime({
-    config: config(directory()), runtime: new FakeRuntime(() => ({})),
+    config: config(directory()),
+    runtime: new FakeRuntime(() => ({})),
     services: [{ kind: 'stuck', start: async () => {}, stop: () => new Promise(() => {}) }],
-    stopTimeoutMs: 200, log: record => { records.push(record) },
+    stopTimeoutMs: 200,
+    log: record => {
+      records.push(record)
+    },
   })
   runtimes.push(runtime)
   await runtime.start()
@@ -93,7 +110,12 @@ it('a new Runtime on the same state directory restarts the running Assignment wi
 
   const chat2 = testSource()
   const fake2 = new FakeRuntime(ready)
-  const second = new Runtime({ config: config(stateDir), runtime: fake2, kinds: [chat2.kind], services: [chat2.service] })
+  const second = new Runtime({
+    config: config(stateDir),
+    runtime: fake2,
+    kinds: [chat2.kind],
+    services: [chat2.service],
+  })
   runtimes.push(second)
   await second.start()
   await waitUntil(() => chat2.sent.some(message => message.kind === 'reply'))
@@ -107,19 +129,39 @@ it('a new Runtime on the same state directory restarts the running Assignment wi
 it('a second Runtime on a running state directory is refused', async () => {
   const stateDir = directory()
   const { runtime } = await boot(stateDir, hold)
-  expect(() => new Runtime({ config: config(stateDir), runtime: new FakeRuntime(() => ({})) })).toThrow(/Another superagent-claude process/)
+  expect(() => new Runtime({ config: config(stateDir), runtime: new FakeRuntime(() => ({})) })).toThrow(
+    /Another superagent-claude process/,
+  )
   await runtime.stop()
 })
 
 it('a ready report ends the ticket and queues its result in one transaction', async () => {
   let depth = 0
-  const atomic = <T>(op: () => T): T => { depth++; try { return op() } finally { depth-- } }
+  const atomic = <T>(op: () => T): T => {
+    depth++
+    try {
+      return op()
+    } finally {
+      depth--
+    }
+  }
   const calls: string[] = []
-  const unused = (): never => { throw new Error('unexpected call') }
+  const unused = (): never => {
+    throw new Error('unexpected call')
+  }
   const engine = {
-    report: () => { calls.push(`report:${depth}`); return {} },
-    reply: (request: { purpose: string }) => { calls.push(`reply:${depth}:${request.purpose}`); return { id: 'r', status: 'pending', reused: false } },
-    markUnrelated: unused, handback: unused, followForContext: unused, bindThread: unused,
+    report: () => {
+      calls.push(`report:${depth}`)
+      return {}
+    },
+    reply: (request: { purpose: string }) => {
+      calls.push(`reply:${depth}:${request.purpose}`)
+      return { id: 'r', status: 'pending', reused: false }
+    },
+    markUnrelated: unused,
+    handback: unused,
+    followForContext: unused,
+    bindThread: unused,
   }
   const host = { engine: () => engine, ticket: () => ({}) } as unknown as ExecutorToolsHost
   const tool = workerTools(host, { id: 't1' }, atomic).find(t => t.name === 'orchestrator_report')!
@@ -129,7 +171,10 @@ it('a ready report ends the ticket and queues its result in one transaction', as
   expect(calls).toEqual(['report:1', 'reply:1:result'])
 
   calls.length = 0
-  engine.reply = request => { calls.push(`reply:${depth}:${request.purpose}`); throw new UserError('ticketEnded') }
+  engine.reply = request => {
+    calls.push(`reply:${depth}:${request.purpose}`)
+    throw new UserError('ticketEnded')
+  }
   await expect(tool.execute({ state: 'ready', summary: 'Done' }, signal)).resolves.toBeDefined()
   expect(calls).toEqual(['report:1', 'reply:1:result'])
 
@@ -140,7 +185,13 @@ it('a ready report ends the ticket and queues its result in one transaction', as
 
 it('starts with no Source registered', async () => {
   const records: LogRecord[] = []
-  const runtime = new Runtime({ config: config(directory()), runtime: new FakeRuntime(() => ({})), log: record => { records.push(record) } })
+  const runtime = new Runtime({
+    config: config(directory()),
+    runtime: new FakeRuntime(() => ({})),
+    log: record => {
+      records.push(record)
+    },
+  })
   runtimes.push(runtime)
   await runtime.start()
   expect(records).toContainEqual(expect.objectContaining({ event: 'runtime.started', sources: [] }))

@@ -33,13 +33,26 @@ async function boot(given?: FakeScript) {
   directory = mkdtempSync(join(tmpdir(), 'prompt-notice-'))
   teamFile('communication', 'Team communication A')
   gate = deferred()
-  const script: FakeScript = given ?? (({ index }) => index === 0
-    ? { hold: gate.promise }
-    : { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'done' } }] })
-  const config = ConfigSchema.parse({ repositories: ['owner/repo'], policy: { allowed: ['alice'], acceptMode: 'auto' }, stateDir: join(directory, 'state') })
+  const script: FakeScript =
+    given ??
+    (({ index }) =>
+      index === 0
+        ? { hold: gate.promise }
+        : { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'done' } }] })
+  const config = ConfigSchema.parse({
+    repositories: ['owner/repo'],
+    policy: { allowed: ['alice'], acceptMode: 'auto' },
+    stateDir: join(directory, 'state'),
+  })
   const chat = testSource()
   const fake = new FakeRuntime(script)
-  runtime = new Runtime({ config, configDir: join(directory, 'config'), runtime: fake, kinds: [chat.kind], services: [chat.service] })
+  runtime = new Runtime({
+    config,
+    configDir: join(directory, 'config'),
+    runtime: fake,
+    kinds: [chat.kind],
+    services: [chat.service],
+  })
   await runtime.start()
   return { r: runtime, chat, fake }
 }
@@ -51,7 +64,10 @@ async function openSession(chat: ReturnType<typeof testSource>, fake: FakeRuntim
 }
 
 function promptRows(r: Runtime): { hash: string; parts_json: string }[] {
-  return r.store.db.prepare('SELECT hash, parts_json FROM prompt_version ORDER BY rowid').all() as { hash: string; parts_json: string }[]
+  return r.store.db.prepare('SELECT hash, parts_json FROM prompt_version ORDER BY rowid').all() as {
+    hash: string
+    parts_json: string
+  }[]
 }
 
 it('records the latest prompt version when a worker session opens', async () => {
@@ -60,7 +76,9 @@ it('records the latest prompt version when a worker session opens', async () => 
   const session = await openSession(chat, fake)
   expect(session.spec.instructions).toContain('## Communication\nTeam communication A')
   const [ticket] = r.store.tickets.list()
-  expect(r.store.db.prepare('SELECT prompt_version FROM worker WHERE ticket_id = ?').get(ticket!.id)?.prompt_version).toBe(hashA)
+  expect(
+    r.store.db.prepare('SELECT prompt_version FROM worker WHERE ticket_id = ?').get(ticket!.id)?.prompt_version,
+  ).toBe(hashA)
   expect(promptRows(r).some(row => row.hash === hashA)).toBe(true)
 })
 
@@ -70,7 +88,9 @@ it('injects changed team sections into a running worker session with its next in
   const hashA = r.prompts.version('worker')
   const rowsBefore = promptRows(r)
   const [ticket] = r.store.tickets.list()
-  const workerBefore = r.store.db.prepare('SELECT prompt_version FROM worker WHERE ticket_id = ?').get(ticket!.id)?.prompt_version
+  const workerBefore = r.store.db
+    .prepare('SELECT prompt_version FROM worker WHERE ticket_id = ?')
+    .get(ticket!.id)?.prompt_version
 
   teamFile('communication', 'Team communication B')
   expect(r.refreshPrompts()).toBe(1)
@@ -82,7 +102,9 @@ it('injects changed team sections into a running worker session with its next in
   expect(notice.text).toContain('## Communication\nTeam communication B')
   expect(session.turns).toHaveLength(1)
   expect(promptRows(r).filter(row => row.hash === hashA)).toEqual(rowsBefore.filter(row => row.hash === hashA))
-  expect(r.store.db.prepare('SELECT prompt_version FROM worker WHERE ticket_id = ?').get(ticket!.id)?.prompt_version).toBe(workerBefore)
+  expect(
+    r.store.db.prepare('SELECT prompt_version FROM worker WHERE ticket_id = ?').get(ticket!.id)?.prompt_version,
+  ).toBe(workerBefore)
 
   const sentBefore = session.sent.length
   chat.emit(trigger('2', { addressed: 'mention', meta: { repository: 'owner/repo' } }))
@@ -111,7 +133,9 @@ it('keeps only the latest notice of a key while delivery waits', async () => {
   r.refreshPrompts()
   teamFile('communication', 'Team communication C')
   r.refreshPrompts()
-  expect((r.store.db.prepare("SELECT COUNT(*) AS n FROM effect WHERE kind = 'notice'").get() as { n: number }).n).toBe(1)
+  expect((r.store.db.prepare("SELECT COUNT(*) AS n FROM effect WHERE kind = 'notice'").get() as { n: number }).n).toBe(
+    1,
+  )
   await r.effects.idle('notice')
   const injects = session.sent.filter(input => input.mode === 'inject')
   expect(injects).toHaveLength(1)
@@ -120,7 +144,9 @@ it('keeps only the latest notice of a key while delivery waits', async () => {
 })
 
 it('a ticket resumed after it ended gets the changed team sections merged into its first input', async () => {
-  const { r, chat, fake } = await boot(({ index }) => index === 0 ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'done' } }] } : {})
+  const { r, chat, fake } = await boot(({ index }) =>
+    index === 0 ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'done' } }] } : {},
+  )
   chat.emit(trigger('1', { addressed: 'mention', meta: { repository: 'owner/repo' } }))
   await waitUntil(() => fake.sessions.length === 1 && fake.sessions[0]!.closed)
   await waitUntil(() => r.store.tickets.list().some(ticket => ticket.ended !== undefined))
@@ -135,5 +161,7 @@ it('a ticket resumed after it ended gets the changed team sections merged into i
   expect(first).toMatchObject({ id: `notice:prompts:${hashB}`, mode: 'inject' })
   expect(first.text).toContain('## Communication\nTeam communication B')
   const [ticket] = r.store.tickets.list()
-  expect(r.store.db.prepare('SELECT prompt_version FROM worker WHERE ticket_id = ?').get(ticket!.id)?.prompt_version).toBe(hashB)
+  expect(
+    r.store.db.prepare('SELECT prompt_version FROM worker WHERE ticket_id = ?').get(ticket!.id)?.prompt_version,
+  ).toBe(hashB)
 })

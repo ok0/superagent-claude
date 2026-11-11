@@ -41,22 +41,22 @@ type Source = 'canUseTool' | 'cli-permission' | 'sandbox' | 'none'
 type Outcome = 'A' | 'B' | 'C' | 'D'
 
 interface VariantSpec {
-  id: string;
-  cwd: string;
-  sandbox: boolean;
-  rules: boolean;
+  id: string
+  cwd: string
+  sandbox: boolean
+  rules: boolean
 }
 
 interface Probe {
-  id: string;
-  n: number;
-  command: string;
-  toolUse: boolean;
-  error: boolean;
-  recorded: boolean;
-  guarded: boolean;
-  text: string;
-  source: Source;
+  id: string
+  n: number
+  command: string
+  toolUse: boolean
+  error: boolean
+  recorded: boolean
+  guarded: boolean
+  text: string
+  source: Source
 }
 
 function git(cwd: string, args: string[]): string {
@@ -105,7 +105,10 @@ function fixture(ctx: SpikeContext): { origin: string; worktree: string } {
   return { origin, worktree }
 }
 
-function buildOptions(ctx: SpikeContext, variant: VariantSpec): { options: Options; canUseCalls: { name: string; command: string }[]; guardHits: string[] } {
+function buildOptions(
+  ctx: SpikeContext,
+  variant: VariantSpec,
+): { options: Options; canUseCalls: { name: string; command: string }[]; guardHits: string[] } {
   const spec: SessionSpec = {
     key: 'worker-spike',
     role: 'worker',
@@ -141,7 +144,8 @@ function buildOptions(ctx: SpikeContext, variant: VariantSpec): { options: Optio
   matcher.hooks = [
     async (input, toolUseId, hookOptions) => {
       const out = await original(input, toolUseId, hookOptions)
-      const decision = (out as { hookSpecificOutput?: { permissionDecision?: string } }).hookSpecificOutput?.permissionDecision
+      const decision = (out as { hookSpecificOutput?: { permissionDecision?: string } }).hookSpecificOutput
+        ?.permissionDecision
       if (decision === 'deny') {
         guardHits.push(String((input as { tool_input?: { command?: unknown } }).tool_input?.command ?? ''))
       }
@@ -192,16 +196,16 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
       },
     })
     costs.push(outcome.costs)
-    evidence.push(...outcome.timeline.map((e) => `[${variant.id}] ${compact(e)}`))
+    evidence.push(...outcome.timeline.map(e => `[${variant.id}] ${compact(e)}`))
     const version = field(outcome.init, 'claude_code_version')
     if (typeof version === 'string') cliVersion = version
 
-    const uses = outcome.timeline.flatMap((e) => (e.toolUses ?? []).map((u) => ({ id: u.id, command: commandOf(u.input) })))
-    const results = outcome.timeline.flatMap((e) => e.toolResults ?? [])
+    const uses = outcome.timeline.flatMap(e => (e.toolUses ?? []).map(u => ({ id: u.id, command: commandOf(u.input) })))
+    const results = outcome.timeline.flatMap(e => e.toolResults ?? [])
     const variantProbes: Probe[] = COMMANDS.map((command, index) => {
-      const use = uses.find((u) => u.command === command)
-      const result = use === undefined ? undefined : results.find((r) => r.toolUseId === use.id)
-      const recorded = built.canUseCalls.some((c) => c.command === command)
+      const use = uses.find(u => u.command === command)
+      const result = use === undefined ? undefined : results.find(r => r.toolUseId === use.id)
+      const recorded = built.canUseCalls.some(c => c.command === command)
       const guarded = built.guardHits.includes(command)
       const error = result?.isError === true
       const text = result?.content ?? ''
@@ -228,13 +232,13 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   const v0 = probes.get('V0') ?? []
   const v1 = probes.get('V1') ?? []
   const v0Reproduces = v0[0] !== undefined && v0[0].source !== 'none'
-  const v1Denials = v1.filter((p) => p.source !== 'none')
+  const v1Denials = v1.filter(p => p.source !== 'none')
 
   let outcome: Outcome
   let status: 'PASS' | 'FAIL'
   let deviation: boolean
   if (v1Denials.length > 0) {
-    outcome = v1Denials.some((p) => p.source === 'canUseTool') ? 'C' : 'D'
+    outcome = v1Denials.some(p => p.source === 'canUseTool') ? 'C' : 'D'
     status = 'FAIL'
     deviation = false
   } else if (v0Reproduces) {
@@ -256,7 +260,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
     `outcome=${outcome}`,
   )
 
-  const summary = `outcome ${outcome}: V0 reproduces=${v0Reproduces}, V1 denials=${v1Denials.length} (${v1Denials.map((p) => p.source).join(',') || 'none'})`
+  const summary = `outcome ${outcome}: V0 reproduces=${v0Reproduces}, V1 denials=${v1Denials.length} (${v1Denials.map(p => p.source).join(',') || 'none'})`
 
   return {
     ...META,

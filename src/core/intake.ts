@@ -17,7 +17,10 @@ export type ReceiveResult = 'stored' | 'duplicate' | 'filtered'
 export class Intake extends EnginePart {
   private readonly tickets: Tickets
   // Port note: parameter property expanded to an explicit field (erasableSyntaxOnly); behavior unchanged.
-  constructor(options: EngineOptions, tickets: Tickets) { super(options); this.tickets = tickets }
+  constructor(options: EngineOptions, tickets: Tickets) {
+    super(options)
+    this.tickets = tickets
+  }
 
   receive(received: Trigger): ReceiveResult {
     // Port note: example in comment neutralised to a generic source (charter R11); behavior unchanged.
@@ -28,7 +31,8 @@ export class Intake extends EnginePart {
     const at = this.now()
     const filter = this.options.scope.scope(trigger)
     if (!filter.listened) {
-      this.repo.triggers.save(trigger); this.repo.triggers.saveDisposition(trigger.id, { filtered: { code: filter.reason }, fanout: [], at })
+      this.repo.triggers.save(trigger)
+      this.repo.triggers.saveDisposition(trigger.id, { filtered: { code: filter.reason }, fanout: [], at })
       return 'filtered'
     }
     this.repo.triggers.save(trigger)
@@ -51,11 +55,18 @@ export class Intake extends EnginePart {
       this.repo.threads.save(thread)
     }
     for (const [ticketId, { ticket, context: followed }] of reached) {
-      this.tickets.addInput(ticket, { id: key('input', ticketId, 'trigger', trigger.id), kind: 'trigger', triggerId: trigger.id, at,
-        ...trigger.human ? { human: true } : {}, ...followed ? { context: true } : {} })
+      this.tickets.addInput(ticket, {
+        id: key('input', ticketId, 'trigger', trigger.id),
+        kind: 'trigger',
+        triggerId: trigger.id,
+        at,
+        ...(trigger.human ? { human: true } : {}),
+        ...(followed ? { context: true } : {}),
+      })
     }
-    const fanout = [...reached.keys()], context = fanout.filter(id => reached.get(id)!.context)
-    const disposition = { fanout, ...context.length ? { context } : {}, at }
+    const fanout = [...reached.keys()],
+      context = fanout.filter(id => reached.get(id)!.context)
+    const disposition = { fanout, ...(context.length ? { context } : {}), at }
     this.repo.triggers.saveDisposition(trigger.id, disposition)
     // A person's message that no ticket decides, such as one that reached only tickets a person stopped or that follow the
     // Thread for context, and every bot's, goes to Eval.

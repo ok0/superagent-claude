@@ -50,7 +50,12 @@ afterEach(async () => {
 })
 
 function cfg(mode: AuthMode) {
-  return ConfigSchema.parse({ repositories: ['owner/repo'], policy: { allowed: ['alice'], acceptMode: 'auto' }, auth: { mode }, stateDir: join(dir!, 'state') })
+  return ConfigSchema.parse({
+    repositories: ['owner/repo'],
+    policy: { allowed: ['alice'], acceptMode: 'auto' },
+    auth: { mode },
+    stateDir: join(dir!, 'state'),
+  })
 }
 
 describe('agent wiring', () => {
@@ -70,11 +75,13 @@ describe('agent wiring', () => {
     expect(fake.router).toBe('deterministic')
   })
 
-  it.each(MODES)('the %s adapter env carries only that mode\'s variables', async mode => {
+  it.each(MODES)("the %s adapter env carries only that mode's variables", async mode => {
     dir = mkdtempSync(join(tmpdir(), 'agent-wiring-'))
     const credential = resolveCredential(mode, ALL)
     const env = agentEnv(credential, ALL)
-    const others = MODES.filter(other => other !== mode).flatMap(other => AUTH_ENV[other]).filter(key => !AUTH_ENV[mode].includes(key))
+    const others = MODES.filter(other => other !== mode)
+      .flatMap(other => AUTH_ENV[other])
+      .filter(key => !AUTH_ENV[mode].includes(key))
     expect(Object.keys(env).every(key => [...CLAUDE_INHERITED_ENV, ...AUTH_ENV[mode]].includes(key))).toBe(true)
     for (const key of AUTH_ENV[mode]) if (key in ALL) expect(env[key]).toBe(ALL[key])
     if (mode === 'bedrock') expect(env.CLAUDE_CODE_USE_BEDROCK).toBe('1')
@@ -98,7 +105,12 @@ describe('agent wiring', () => {
       const sdk = stubSdk()
       const base = cfg('subscription')
       const config = { ...base, security: { ...base.security, trustRepoConfig: trust } }
-      const agent = createAgent({ config, credential: resolveCredential('subscription', ALL), env: ALL, query: sdk.query })
+      const agent = createAgent({
+        config,
+        credential: resolveCredential('subscription', ALL),
+        env: ALL,
+        query: sdk.query,
+      })
       const session = await agent.runtime.open(contractSpec('followup starts a new turn').spec)
       expect(sdk.queries[0]!.options.settingSources).toEqual(trust ? ['project'] : [])
       await session.close()
@@ -111,7 +123,12 @@ describe('agent wiring', () => {
       const sdk = stubSdk()
       const base = cfg('subscription')
       const config = { ...base, security: { ...base.security, weakerNestedSandbox: weaker } }
-      const agent = createAgent({ config, credential: resolveCredential('subscription', ALL), env: ALL, query: sdk.query })
+      const agent = createAgent({
+        config,
+        credential: resolveCredential('subscription', ALL),
+        env: ALL,
+        query: sdk.query,
+      })
       const session = await agent.runtime.open(contractSpec('followup starts a new turn').spec)
       expect(sdk.queries[0]!.options.sandbox?.enableWeakerNestedSandbox).toBe(weaker ? true : undefined)
       expect(sdk.queries[0]!.options.sandbox?.filesystem?.denyRead).toEqual(weaker ? ['/proc'] : undefined)
@@ -123,9 +140,24 @@ describe('agent wiring', () => {
     dir = mkdtempSync(join(tmpdir(), 'agent-wiring-'))
     const sdk = stubSdk()
     const logs: LogRecord[] = []
-    const agent = createAgent({ config: cfg('api-key'), credential: resolveCredential('api-key', ALL), env: ALL, query: sdk.query, log: r => logs.push(r) })
-    const session = await agent.runtime.open(contractSpec('followup starts a new turn', { key: 'worker-t1', builtins: { fs: 'write', shell: true, web: false } }).spec)
-    await sdk.queries[0]!.hook('PreToolUse', { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git push origin HEAD:main' } })
+    const agent = createAgent({
+      config: cfg('api-key'),
+      credential: resolveCredential('api-key', ALL),
+      env: ALL,
+      query: sdk.query,
+      log: r => logs.push(r),
+    })
+    const session = await agent.runtime.open(
+      contractSpec('followup starts a new turn', {
+        key: 'worker-t1',
+        builtins: { fs: 'write', shell: true, web: false },
+      }).spec,
+    )
+    await sdk.queries[0]!.hook('PreToolUse', {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'git push origin HEAD:main' },
+    })
     const denials = logs.filter(r => r.event === 'worker.tool_denied')
     expect(logs).toHaveLength(1)
     expect(denials).toHaveLength(1)
@@ -141,9 +173,25 @@ describe('agent wiring', () => {
     dir = mkdtempSync(join(tmpdir(), 'agent-wiring-'))
     const sdk = stubSdk()
     const logs: LogRecord[] = []
-    const agent = createAgent({ config: cfg('api-key'), credential: resolveCredential('api-key', ALL), env: ALL, query: sdk.query, log: r => logs.push(r) })
-    const session = await agent.runtime.open(contractSpec('followup starts a new turn', { key: 'worker-t1', builtins: { fs: 'write', shell: true, web: false } }).spec)
-    await sdk.queries[0]!.hook('PreToolUse', { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git push origin HEAD:main' }, agent_id: 'a1' })
+    const agent = createAgent({
+      config: cfg('api-key'),
+      credential: resolveCredential('api-key', ALL),
+      env: ALL,
+      query: sdk.query,
+      log: r => logs.push(r),
+    })
+    const session = await agent.runtime.open(
+      contractSpec('followup starts a new turn', {
+        key: 'worker-t1',
+        builtins: { fs: 'write', shell: true, web: false },
+      }).spec,
+    )
+    await sdk.queries[0]!.hook('PreToolUse', {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'git push origin HEAD:main' },
+      agent_id: 'a1',
+    })
     const denials = logs.filter(r => r.event === 'worker.tool_denied')
     expect(logs).toHaveLength(1)
     expect(denials).toHaveLength(1)
@@ -154,8 +202,12 @@ describe('agent wiring', () => {
   })
 
   it('the tool_denied record carries agentId only for subagent denials', () => {
-    expect(toolDeniedRecord({ key: 'worker-t1', tool: 'Bash', reason: 'r', agentId: 'a1' }, '2026-01-01T00:00:00Z')).toMatchObject({ event: 'worker.tool_denied', ticketId: 't1', tool: 'Bash', reason: 'r', agentId: 'a1' })
-    expect('agentId' in toolDeniedRecord({ key: 'worker-t1', tool: 'Bash', reason: 'r' }, '2026-01-01T00:00:00Z')).toBe(false)
+    expect(
+      toolDeniedRecord({ key: 'worker-t1', tool: 'Bash', reason: 'r', agentId: 'a1' }, '2026-01-01T00:00:00Z'),
+    ).toMatchObject({ event: 'worker.tool_denied', ticketId: 't1', tool: 'Bash', reason: 'r', agentId: 'a1' })
+    expect('agentId' in toolDeniedRecord({ key: 'worker-t1', tool: 'Bash', reason: 'r' }, '2026-01-01T00:00:00Z')).toBe(
+      false,
+    )
   })
 
   it('worker sessions expose the executor tools through the superagent MCP server', async () => {
@@ -163,13 +215,21 @@ describe('agent wiring', () => {
     const sdk = stubSdk()
     const config = { ...cfg('api-key'), models: { worker: 'claude-test-model' } }
     const chat = testSource()
-    runtime = new Runtime({ config, runtime: createAgent({ config, credential: resolveCredential('api-key', ALL), env: ALL, query: sdk.query }).runtime, kinds: [chat.kind], services: [chat.service] })
+    runtime = new Runtime({
+      config,
+      runtime: createAgent({ config, credential: resolveCredential('api-key', ALL), env: ALL, query: sdk.query })
+        .runtime,
+      kinds: [chat.kind],
+      services: [chat.service],
+    })
     await runtime.start()
     chat.emit(trigger('1', { addressed: 'mention', meta: { repository: 'owner/repo' } }))
     await waitUntil(() => sdk.queries.length === 1)
     const options = sdk.queries[0]!.options
     expect(Object.keys(options.mcpServers!)).toEqual(['superagent'])
-    expect(options.allowedTools!.filter(t => t.startsWith(MCP_TOOL_PREFIX)).sort()).toEqual(WORKER_TOOLS.map(n => MCP_TOOL_PREFIX + n).sort())
+    expect(options.allowedTools!.filter(t => t.startsWith(MCP_TOOL_PREFIX)).sort()).toEqual(
+      WORKER_TOOLS.map(n => MCP_TOOL_PREFIX + n).sort(),
+    )
     expect(options.model).toBe('claude-test-model')
     expect((options.env as Record<string, string | undefined>).SUPERAGENT_CLAUDE_GITHUB_TOKEN).toBeUndefined()
   })
@@ -178,29 +238,56 @@ describe('agent wiring', () => {
     dir = mkdtempSync(join(tmpdir(), 'agent-wiring-'))
     const sdk = stubSdk()
     const config = cfg('subscription')
-    const agent = createAgent({ config, credential: resolveCredential('subscription', ALL), env: ALL, query: sdk.query })
+    const agent = createAgent({
+      config,
+      credential: resolveCredential('subscription', ALL),
+      env: ALL,
+      query: sdk.query,
+    })
     const specs: SessionSpec[] = []
-    const spy: AgentRuntime = { id: agent.runtime.id, probe: () => agent.runtime.probe(), open: spec => { specs.push(spec); return agent.runtime.open(spec) } }
+    const spy: AgentRuntime = {
+      id: agent.runtime.id,
+      probe: () => agent.runtime.probe(),
+      open: spec => {
+        specs.push(spec)
+        return agent.runtime.open(spec)
+      },
+    }
     const chat = testSource()
     runtime = new Runtime({ config, runtime: spy, router: agent.router, kinds: [chat.kind], services: [chat.service] })
     await runtime.start()
     const router = sdk.queries[0]!
     const options = router.options
     expect(options.cwd).toBe(join(config.stateDir, 'router'))
-    expect(options.allowedTools!.filter(t => t.startsWith(MCP_TOOL_PREFIX)).sort()).toEqual(ROUTER_TOOLS.map(n => MCP_TOOL_PREFIX + n).sort())
-    expect(options.disallowedTools).toEqual(expect.arrayContaining(['Bash', 'Write', 'Edit', 'NotebookEdit', 'WebFetch', 'WebSearch']))
+    expect(options.allowedTools!.filter(t => t.startsWith(MCP_TOOL_PREFIX)).sort()).toEqual(
+      ROUTER_TOOLS.map(n => MCP_TOOL_PREFIX + n).sort(),
+    )
+    expect(options.disallowedTools).toEqual(
+      expect.arrayContaining(['Bash', 'Write', 'Edit', 'NotebookEdit', 'WebFetch', 'WebSearch']),
+    )
     expect(typeof options.systemPrompt).toBe('string')
     expect((options.systemPrompt as string).startsWith('## Host rules')).toBe(true)
     const env = options.env as Record<string, string | undefined>
-    const others = (['api-key', 'bedrock', 'vertex'] as const).flatMap(mode => AUTH_ENV[mode]).filter(key => !AUTH_ENV.subscription.includes(key))
+    const others = (['api-key', 'bedrock', 'vertex'] as const)
+      .flatMap(mode => AUTH_ENV[mode])
+      .filter(key => !AUTH_ENV.subscription.includes(key))
     for (const key of AUTH_ENV.subscription) if (key in ALL) expect(env[key]).toBe(ALL[key])
     for (const key of others) expect(env[key]).toBeUndefined()
     expect(env.SUPERAGENT_CLAUDE_GITHUB_TOKEN).toBeUndefined()
 
     chat.emit(trigger('1', { addressed: 'mention', meta: { repository: 'owner/repo' } }))
     await waitUntil(() => router.received.length >= 1)
-    const routeTool = specs.find(spec => spec.role === 'router')!.tools.find(tool => tool.name === 'orchestrator_route')!
-    await routeTool.execute({ decisions: [{ kind: 'accept', trigger_id: '1', title: 'Fix', worktree_name: 'fix-it', acknowledgement: 'On it.' }] }, new AbortController().signal)
+    const routeTool = specs
+      .find(spec => spec.role === 'router')!
+      .tools.find(tool => tool.name === 'orchestrator_route')!
+    await routeTool.execute(
+      {
+        decisions: [
+          { kind: 'accept', trigger_id: '1', title: 'Fix', worktree_name: 'fix-it', acknowledgement: 'On it.' },
+        ],
+      },
+      new AbortController().signal,
+    )
     await waitUntil(() => specs.some(spec => spec.role === 'worker'))
     const worker = specs.find(spec => spec.role === 'worker')!
     expect(worker.tools.map(tool => tool.name).sort()).toEqual([...WORKER_TOOLS].sort())

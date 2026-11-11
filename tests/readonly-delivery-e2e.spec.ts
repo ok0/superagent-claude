@@ -48,7 +48,20 @@ const router: FakeScript = ({ inputs }) => {
   const tools: { name: string; args: unknown }[] = []
   for (const relay of relaysIn(inputs)) {
     if (relay.kind === 'candidate') {
-      tools.push({ name: 'orchestrator_route', args: { decisions: [{ kind: 'accept', trigger_id: relay.trigger_id, title: 'Fix the typo', worktree_name: 'fix-typo', acknowledgement: ACK }] } })
+      tools.push({
+        name: 'orchestrator_route',
+        args: {
+          decisions: [
+            {
+              kind: 'accept',
+              trigger_id: relay.trigger_id,
+              title: 'Fix the typo',
+              worktree_name: 'fix-typo',
+              acknowledgement: ACK,
+            },
+          ],
+        },
+      })
     }
   }
   return tools.length > 0 ? { tools } : undefined
@@ -66,17 +79,33 @@ function workerScript(env: Record<string, string>, beforePublish?: () => void): 
     if (turn.index === 0) {
       commit(turn, env, 'typo.txt')
       beforePublish?.()
-      return { tools: [publish, { name: 'orchestrator_report', args: { state: 'blocked', summary: 'The agent account cannot push to acme/widgets.', human_action: QUESTION } }] }
+      return {
+        tools: [
+          publish,
+          {
+            name: 'orchestrator_report',
+            args: {
+              state: 'blocked',
+              summary: 'The agent account cannot push to acme/widgets.',
+              human_action: QUESTION,
+            },
+          },
+        ],
+      }
     }
     return {}
   }
 }
 
-function start(access: FakeRepository['access'], worker: (env: Record<string, string>, gh: FakeGh) => FakeScript): { gh: FakeGh; clock: ManualClock; fake: FakeRuntime; origin: string; env: Record<string, string> } {
+function start(
+  access: FakeRepository['access'],
+  worker: (env: Record<string, string>, gh: FakeGh) => FakeScript,
+): { gh: FakeGh; clock: ManualClock; fake: FakeRuntime; origin: string; env: Record<string, string> } {
   directory = mkdtempSync(join(tmpdir(), 'readonly-delivery-e2e-'))
   const env = { PATH: process.env.PATH!, HOME: join(directory, 'home'), LANG: 'C' }
   mkdirSync(env.HOME, { recursive: true })
-  const sh = (args: string[], cwd: string): string => execFileSync('git', args, { cwd, env: { ...env, GIT_CONFIG_NOSYSTEM: '1' }, encoding: 'utf8' })
+  const sh = (args: string[], cwd: string): string =>
+    execFileSync('git', args, { cwd, env: { ...env, GIT_CONFIG_NOSYSTEM: '1' }, encoding: 'utf8' })
   const origin = join(directory, 'origin.git')
   sh(['init', '--bare', '-b', 'main', origin], directory)
   const seed = join(directory, 'seed')
@@ -86,25 +115,44 @@ function start(access: FakeRepository['access'], worker: (env: Record<string, st
   sh([...COMMIT, 'commit', '-m', 'init'], seed)
   sh(['push', origin, 'main'], seed)
 
-  const config = ConfigSchema.parse({ repositories: [A], policy: { allowed: ['alice'], acceptMode: 'auto' }, stateDir: join(directory, 'state') })
+  const config = ConfigSchema.parse({
+    repositories: [A],
+    policy: { allowed: ['alice'], acceptMode: 'auto' },
+    stateDir: join(directory, 'state'),
+  })
   const gh = fakeGh({
     repositories: {
-      [A]: { access, notifications: [notification(A, 1)], issues: { 1: issue(A, 1, { body: '@agent-bot please fix the typo' }) } },
+      [A]: {
+        access,
+        notifications: [notification(A, 1)],
+        issues: { 1: issue(A, 1, { body: '@agent-bot please fix the typo' }) },
+      },
     },
   })
   const clock = new ManualClock(START)
-  const sources = installedSources(config, { SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'test-token' }, { commands: gh.commands, timers: clock, now: clock.now })
+  const sources = installedSources(
+    config,
+    { SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'test-token' },
+    { commands: gh.commands, timers: clock, now: clock.now },
+  )
   const workerTurns = worker(env, gh)
-  const fake = new FakeRuntime(turn => turn.spec.role === 'router' ? router(turn) : workerTurns(turn))
+  const fake = new FakeRuntime(turn => (turn.spec.role === 'router' ? router(turn) : workerTurns(turn)))
   runtime = new Runtime({
-    config, runtime: fake, router: 'session', workspaces: 'git', env, ...sources,
+    config,
+    runtime: fake,
+    router: 'session',
+    workspaces: 'git',
+    env,
+    ...sources,
     access: { remote: () => origin, env: () => ({}), secrets: [] },
   })
   return { gh, clock, fake, origin, env }
 }
 
 const publishResults = (session: { toolCalls: { name: string; result?: unknown }[] }): Record<string, unknown>[] =>
-  session.toolCalls.filter(call => call.name === 'orchestrator_publish' && call.result !== undefined).map(call => call.result as Record<string, unknown>)
+  session.toolCalls
+    .filter(call => call.name === 'orchestrator_publish' && call.result !== undefined)
+    .map(call => call.result as Record<string, unknown>)
 
 const latestReport = () => {
   const ticket = runtime!.store.tickets.list()[0]
@@ -114,7 +162,11 @@ const latestReport = () => {
 it('without write access: ticket, acknowledgement and worktree work; publish returns published false; the worker reports blocked', async () => {
   const { gh, fake, origin, env } = start({ push: false }, env => workerScript(env))
   await runtime!.start()
-  await waitUntil(() => fake.sessions.some(session => session.spec.role === 'worker' && publishResults(session).length === 1) && latestReport()?.state === 'blocked')
+  await waitUntil(
+    () =>
+      fake.sessions.some(session => session.spec.role === 'worker' && publishResults(session).length === 1) &&
+      latestReport()?.state === 'blocked',
+  )
 
   const tickets = runtime!.store.tickets.list()
   expect(tickets).toHaveLength(1)
@@ -131,7 +183,9 @@ it('without write access: ticket, acknowledgement and worktree work; publish ret
   expect(String(result!.reason)).toContain('acme/widgets')
   expect(worker.sent.filter(input => input.text.includes(WRITE_ACCESS_NOTE_LEAD + ' ' + A))).toHaveLength(1)
   expect(gh.requests.filter(r => r.path.startsWith('repos/acme/widgets/pulls'))).toHaveLength(0)
-  expect(execFileSync('git', ['for-each-ref', 'refs/heads/agent'], { cwd: origin, env, encoding: 'utf8' }).trim()).toBe('')
+  expect(execFileSync('git', ['for-each-ref', 'refs/heads/agent'], { cwd: origin, env, encoding: 'utf8' }).trim()).toBe(
+    '',
+  )
   expect(runtime!.store.tickets.get(ticketId)?.follows?.some(item => item.own)).not.toBe(true)
 
   const report = latestReport()!
@@ -147,11 +201,17 @@ it('without write access: ticket, acknowledgement and worktree work; publish ret
 })
 
 it('a startup record of push is overridden when push is gone at publish time', async () => {
-  const { gh, fake, origin, env } = start({ push: true }, (env, gh) => workerScript(env, () => {
-    gh.script.repositories[A]!.access = { push: false }
-  }))
+  const { gh, fake, origin, env } = start({ push: true }, (env, gh) =>
+    workerScript(env, () => {
+      gh.script.repositories[A]!.access = { push: false }
+    }),
+  )
   await runtime!.start()
-  await waitUntil(() => fake.sessions.some(session => session.spec.role === 'worker' && publishResults(session).length === 1) && latestReport()?.state === 'blocked')
+  await waitUntil(
+    () =>
+      fake.sessions.some(session => session.spec.role === 'worker' && publishResults(session).length === 1) &&
+      latestReport()?.state === 'blocked',
+  )
 
   const worker = fake.sessions.find(session => session.spec.role === 'worker')!
   const [result] = publishResults(worker)
@@ -160,7 +220,9 @@ it('a startup record of push is overridden when push is gone at publish time', a
     expect(session.sent.filter(input => input.text.includes(WRITE_ACCESS_NOTE_LEAD)).length).toBe(0)
   }
   expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')).toHaveLength(0)
-  expect(execFileSync('git', ['for-each-ref', 'refs/heads/agent'], { cwd: origin, env, encoding: 'utf8' }).trim()).toBe('')
+  expect(execFileSync('git', ['for-each-ref', 'refs/heads/agent'], { cwd: origin, env, encoding: 'utf8' }).trim()).toBe(
+    '',
+  )
   expect(latestReport()!.state).toBe('blocked')
 })
 
@@ -173,8 +235,18 @@ it('an event from an unlisted repository is rejected without a ticket or launch'
   const ticketCount = runtime!.store.tickets.list().length
   await waitUntil(() => workerCount() === 1)
   const workersBefore = workerCount()
-  const trigger = issueTrigger({ number: 7, title: 'x', body: '@agent-bot fix it', user: { login: 'alice', type: 'User' }, created_at: new Date().toISOString(),
-    html_url: 'https://github.com/other/widgets/issues/7' } as never, 'other/widgets', AGENT)
+  const trigger = issueTrigger(
+    {
+      number: 7,
+      title: 'x',
+      body: '@agent-bot fix it',
+      user: { login: 'alice', type: 'User' },
+      created_at: new Date().toISOString(),
+      html_url: 'https://github.com/other/widgets/issues/7',
+    } as never,
+    'other/widgets',
+    AGENT,
+  )
   const result = runtime!.context('github').receive(trigger)
   await runtime!.passes.idle()
   expect(result).toBe('filtered')

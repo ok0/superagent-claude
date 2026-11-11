@@ -23,18 +23,30 @@ afterEach(async () => {
 
 const same = (): PromptChange => ({ kind: 'same' })
 
-function make(script?: FakeScript, options: { promptChange?: (stored: string) => PromptChange; record?: RouterRecord; runtime?: (fake: FakeRuntime) => AgentRuntime } = {}) {
+function make(
+  script?: FakeScript,
+  options: {
+    promptChange?: (stored: string) => PromptChange
+    record?: RouterRecord
+    runtime?: (fake: FakeRuntime) => AgentRuntime
+  } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), 'router-host-'))
   dirs.push(dir)
   const fake = new FakeRuntime(script ?? (() => undefined))
   const store: { value?: RouterRecord } = options.record ? { value: options.record } : {}
   const record = {
     get: () => store.value,
-    put: vi.fn((next: RouterRecord) => { store.value = next }),
+    put: vi.fn((next: RouterRecord) => {
+      store.value = next
+    }),
   }
   const deps: RouterDeps = {
     instructions: () => 'route',
-    tools: () => ROUTER_TOOLS.map(name => tool({ name, description: name, schema: z.object({}).strict(), execute: async () => ({}) })),
+    tools: () =>
+      ROUTER_TOOLS.map(name =>
+        tool({ name, description: name, schema: z.object({}).strict(), execute: async () => ({}) }),
+      ),
     promptVersion: () => 'v1',
     promptChange: options.promptChange ?? same,
     record,
@@ -65,7 +77,14 @@ describe('RouterHost', () => {
     expect(spec.network.allow).toEqual([])
     expect(spec.tools.map(t => t.name)).toEqual([...ROUTER_TOOLS])
 
-    const ctx: OptionsContext = { mode: 'api-key', env: {}, configDir: dir, sandbox: false, onRead: () => {}, abortController: new AbortController() }
+    const ctx: OptionsContext = {
+      mode: 'api-key',
+      env: {},
+      configDir: dir,
+      sandbox: false,
+      onRead: () => {},
+      abortController: new AbortController(),
+    }
     const options = sdkOptions(spec, ctx)
     for (const name of ['Bash', 'Write', 'Edit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Read', 'Glob', 'Grep']) {
       expect(options.disallowedTools).toContain(name)

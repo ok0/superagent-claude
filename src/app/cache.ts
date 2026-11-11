@@ -8,10 +8,15 @@ export class TextCache {
   private readonly texts = new Map<string, string>()
   private readonly limit: number
   private size = 0
-  constructor(limit: number) { this.limit = limit }
+  constructor(limit: number) {
+    this.limit = limit
+  }
   get(key: string): string | undefined {
     const text = this.texts.get(key)
-    if (text !== undefined) { this.texts.delete(key); this.texts.set(key, text) }
+    if (text !== undefined) {
+      this.texts.delete(key)
+      this.texts.set(key, text)
+    }
     return text
   }
   set(key: string, text: string): void {
@@ -26,5 +31,7 @@ export class TextCache {
     }
   }
   /** Entries ordered from least to most recently used. */
-  entries(): IterableIterator<[string, string]> { return this.texts.entries() }
+  entries(): IterableIterator<[string, string]> {
+    return this.texts.entries()
+  }
 }

@@ -3,7 +3,15 @@
 import { z } from 'zod'
 import type { ThreadFact } from '../../core/index.ts'
 import { validItems, type Commands, type Tally } from '../../infra/commands.ts'
-import { configured, CommentSchema, IssueSchema, isHumanLogin, reviewPlace, type GithubComment, type GithubConfig } from './trigger.ts'
+import {
+  configured,
+  CommentSchema,
+  IssueSchema,
+  isHumanLogin,
+  reviewPlace,
+  type GithubComment,
+  type GithubConfig,
+} from './trigger.ts'
 import type { ContextMessage, ThreadContext } from '../kind.ts'
 
 const CheckSchema = z.looseObject({ name: z.string(), status: z.string(), conclusion: z.string().nullable() })
@@ -11,33 +19,54 @@ const StatusSchema = z.looseObject({ context: z.string(), state: z.string() })
 type Check = Pick<z.infer<typeof CheckSchema>, 'name' | 'status' | 'conclusion'>
 type Status = Pick<z.infer<typeof StatusSchema>, 'context' | 'state'>
 
-export interface CiSnapshot { head: string; checks: Check[]; statuses: Status[] }
+export interface CiSnapshot {
+  head: string
+  checks: Check[]
+  statuses: Status[]
+}
 /** Check conclusions and status states that count as failures; `success`, `neutral`, `skipped`, and `stale` do not. */
 const FAILING = new Set(['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure', 'error'])
 export function ciCounts(snapshot: CiSnapshot): { failed: number; running: number } {
   const statuses = snapshot.statuses ?? []
   return {
-    failed: snapshot.checks.filter(check => FAILING.has(check.conclusion ?? '')).length + statuses.filter(status => FAILING.has(status.state)).length,
-    running: snapshot.checks.filter(check => check.status !== 'completed').length + statuses.filter(status => status.state === 'pending').length,
+    failed:
+      snapshot.checks.filter(check => FAILING.has(check.conclusion ?? '')).length +
+      statuses.filter(status => FAILING.has(status.state)).length,
+    running:
+      snapshot.checks.filter(check => check.status !== 'completed').length +
+      statuses.filter(status => status.state === 'pending').length,
   }
 }
 export function ciSummary(snapshot: CiSnapshot, where: string, read: string): string {
-  const checks = snapshot.checks.map(check => ({ name: check.name, failed: FAILING.has(check.conclusion ?? ''), running: check.status !== 'completed' }))
-  const statuses = (snapshot.statuses ?? []).map(status => ({ name: status.context, failed: FAILING.has(status.state), running: status.state === 'pending' }))
+  const checks = snapshot.checks.map(check => ({
+    name: check.name,
+    failed: FAILING.has(check.conclusion ?? ''),
+    running: check.status !== 'completed',
+  }))
+  const statuses = (snapshot.statuses ?? []).map(status => ({
+    name: status.context,
+    failed: FAILING.has(status.state),
+    running: status.state === 'pending',
+  }))
   const results = [...checks, ...statuses]
   const failed = results.filter(result => result.failed).map(result => result.name)
   const running = results.filter(result => result.running).map(result => result.name)
-  const names = (list: string[]) => list.slice(0, 5).join(', ') + (list.length > 5 ? `, and ${list.length - 5} more` : '')
+  const names = (list: string[]) =>
+    list.slice(0, 5).join(', ') + (list.length > 5 ? `, and ${list.length - 5} more` : '')
   const at = `on ${where} at ${snapshot.head.slice(0, 7)}`
   const still = running.length ? `; ${running.length} still running` : ''
-  const line = failed.length ? `CI failed ${failed.length}/${results.length} ${at}: ${names(failed)}${still}`
-    : running.length ? `CI running ${running.length}/${results.length} ${at}: ${names(running)}`
+  const line = failed.length
+    ? `CI failed ${failed.length}/${results.length} ${at}: ${names(failed)}${still}`
+    : running.length
+      ? `CI running ${running.length}/${results.length} ${at}: ${names(running)}`
       : `CI passed ${results.length}/${results.length} ${at}`
   return `${line}\nRead ${read} for every check.`
 }
 export function ciFailures(snapshot: CiSnapshot): string[] {
-  return [...snapshot.checks.filter(check => FAILING.has(check.conclusion ?? '')).map(check => check.name),
-    ...(snapshot.statuses ?? []).filter(status => FAILING.has(status.state)).map(status => status.context)].sort()
+  return [
+    ...snapshot.checks.filter(check => FAILING.has(check.conclusion ?? '')).map(check => check.name),
+    ...(snapshot.statuses ?? []).filter(status => FAILING.has(status.state)).map(status => status.context),
+  ].sort()
 }
 export function ciFact(counts: { failed: number; running: number }): ThreadFact {
   if (counts.failed) return { label: { zh: 'CI 失败', en: 'CI failed' }, value: String(counts.failed), problem: true }
@@ -49,42 +78,69 @@ export function ciFact(counts: { failed: number; running: number }): ThreadFact 
 export async function pullChecks(commands: Commands, head: string, tally?: Tally): Promise<CiSnapshot> {
   const page = z.looseObject({ check_runs: z.array(z.unknown()) })
   const pages = await commands.api(z.array(page), `commits/${head}/check-runs?per_page=100`, '--paginate', '--slurp')
-  const runs = validItems(CheckSchema, pages.flatMap(page => page.check_runs), tally)
+  const runs = validItems(
+    CheckSchema,
+    pages.flatMap(page => page.check_runs),
+    tally,
+  )
   const statuses = await commands.pages(StatusSchema, `commits/${head}/statuses?per_page=100`, tally)
   const latest = new Map<string, string>()
   for (const status of statuses) if (!latest.has(status.context)) latest.set(status.context, status.state)
   const checks = runs.map(({ name, status, conclusion }) => ({ name, status, conclusion }))
-  return { head, checks: checks.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
-    statuses: [...latest].map(([context, state]) => ({ context, state })).sort((a, b) => a.context.localeCompare(b.context)) }
+  return {
+    head,
+    checks: checks.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+    statuses: [...latest]
+      .map(([context, state]) => ({ context, state }))
+      .sort((a, b) => a.context.localeCompare(b.context)),
+  }
 }
 
 /** Formats a GitHub comment, review, or issue as a model-facing ContextMessage, marking bots and GitHub Apps because bot messages never authorize work. */
 function githubMessage(item: GithubComment, text: string, id: string): ContextMessage {
   const line = item.line ?? item.original_line
-  return { id, from: item.user.login, at: item.created_at ?? item.submitted_at ?? '', text,
-    ...!isHumanLogin(item.user) ? { bot: true } : {}, ...item.html_url ? { url: item.html_url } : {},
-    ...item.path ? { path: item.path, ...line != null ? { line } : {} } : {} }
+  return {
+    id,
+    from: item.user.login,
+    at: item.created_at ?? item.submitted_at ?? '',
+    text,
+    ...(!isHumanLogin(item.user) ? { bot: true } : {}),
+    ...(item.html_url ? { url: item.html_url } : {}),
+    ...(item.path ? { path: item.path, ...(line != null ? { line } : {}) } : {}),
+  }
 }
 const reviewText = (review: GithubComment): string =>
   [review.state && review.state !== 'COMMENTED' ? review.state : '', review.body ?? ''].filter(Boolean).join('\n\n')
 const DescriptionSchema = IssueSchema.extend({
-  labels: z.array(z.looseObject({ name: z.string() })).nullish(), draft: z.boolean().nullish(), merged: z.boolean().nullish(),
-  head: z.looseObject({ ref: z.string() }).nullish(), base: z.looseObject({ ref: z.string() }).nullish(),
+  labels: z.array(z.looseObject({ name: z.string() })).nullish(),
+  draft: z.boolean().nullish(),
+  merged: z.boolean().nullish(),
+  head: z.looseObject({ ref: z.string() }).nullish(),
+  base: z.looseObject({ ref: z.string() }).nullish(),
 })
-async function reviewThread(commands: Commands, number: number, comment: number, tally?: Tally): Promise<GithubComment[]> {
+async function reviewThread(
+  commands: Commands,
+  number: number,
+  comment: number,
+  tally?: Tally,
+): Promise<GithubComment[]> {
   const comments = await commands.pages(CommentSchema, `pulls/${number}/comments?per_page=100`, tally)
   const root = comments.find(item => item.id === comment)?.in_reply_to_id ?? comment
-  return comments.filter(item => item.id === root || item.in_reply_to_id === root)
+  return comments
+    .filter(item => item.id === root || item.in_reply_to_id === root)
     .sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''))
 }
 function threadMessages(thread: GithubComment[], id: (comment: GithubComment) => string): ContextMessage[] {
   const [first] = thread
-  return thread.map(item => item === first
-    ? githubMessage(item, [reviewPlace(item), item.body ?? ''].filter(Boolean).join('\n\n'), id(item))
-    : { ...githubMessage(item, item.body ?? '', id(item)), ...first ? { reply_to: id(first) } : {} })
+  return thread.map(item =>
+    item === first
+      ? githubMessage(item, [reviewPlace(item), item.body ?? ''].filter(Boolean).join('\n\n'), id(item))
+      : { ...githubMessage(item, item.body ?? '', id(item)), ...(first ? { reply_to: id(first) } : {}) },
+  )
 }
 
-export const repositoryCommands = (commands: Commands, repository: string): Commands => commands.at(`repos/${repository}`)
+export const repositoryCommands = (commands: Commands, repository: string): Commands =>
+  commands.at(`repos/${repository}`)
 
 /**
  * Reads an Issue or PR, a page of its comments or reviews, a review thread, or a CI snapshot as model-facing
@@ -94,9 +150,13 @@ export async function readGithub(commands: Commands, resource: string): Promise<
   // A commit's CI, such as the default branch's, which no PR names.
   const commit = /^github\/commits\/([0-9a-f]{7,40})\/checks$/.exec(resource)
   if (commit) return pullChecks(commands, commit[1]!)
-  const match = /^github\/(issues|pulls)\/([1-9]\d*)(?:\/(comments|reviews|checks|thread)(?:\/([1-9]\d*))?)?$/.exec(resource)
+  const match = /^github\/(issues|pulls)\/([1-9]\d*)(?:\/(comments|reviews|checks|thread)(?:\/([1-9]\d*))?)?$/.exec(
+    resource,
+  )
   if (!match) {
-    throw new Error('Use github/issues/<number>, github/pulls/<number>, or append /comments/<page>, /reviews/<page>, /thread/<comment-id> or /checks; or github/commits/<sha>/checks')
+    throw new Error(
+      'Use github/issues/<number>, github/pulls/<number>, or append /comments/<page>, /reviews/<page>, /thread/<comment-id> or /checks; or github/commits/<sha>/checks',
+    )
   }
   const [, kind, number, section, page = '1'] = match
   if (kind === 'issues' && (section === 'reviews' || section === 'checks' || section === 'thread')) {
@@ -109,7 +169,8 @@ export async function readGithub(commands: Commands, resource: string): Promise<
     return pullChecks(commands, pr.head.sha)
   }
   if (section === 'thread') {
-    if (!match[4]) throw new Error('Name the review thread by one of its comments: github/pulls/<number>/thread/<comment-id>')
+    if (!match[4])
+      throw new Error('Name the review thread by one of its comments: github/pulls/<number>/thread/<comment-id>')
     const thread = await reviewThread(commands, Number(number), Number(match[4]))
     if (!thread.length) throw new Error('No review comment of this PR has that id')
     return { messages: threadMessages(thread, item => String(item.id)) }
@@ -118,17 +179,33 @@ export async function readGithub(commands: Commands, resource: string): Promise<
     const item = await commands.api(DescriptionSchema, path)
     const branches = item.head && item.base ? { head: item.head.ref, base: item.base.ref } : {}
     const labels = item.labels?.length ? { labels: item.labels.map(label => label.name) } : {}
-    return { number: item.number, title: item.title, state: item.state, ...item.merged ? { merged: true } : {},
-      ...item.draft ? { draft: true } : {}, ...branches, ...labels, ...githubMessage(item, item.body ?? '', String(item.number)) }
+    return {
+      number: item.number,
+      title: item.title,
+      state: item.state,
+      ...(item.merged ? { merged: true } : {}),
+      ...(item.draft ? { draft: true } : {}),
+      ...branches,
+      ...labels,
+      ...githubMessage(item, item.body ?? '', String(item.number)),
+    }
   }
   const listed = await commands.api(z.array(z.unknown()), `${path}/${section}?per_page=20&page=${page}`)
   const tally = { skipped: 0 }
   const items = validItems(CommentSchema, listed, tally)
-  const messages = items.map(item => section === 'reviews'
-    ? githubMessage({ ...item, created_at: item.submitted_at ?? item.created_at }, reviewText(item), String(item.id))
-    : { ...githubMessage(item, item.body ?? '', String(item.id)), ...item.in_reply_to_id ? { reply_to: String(item.in_reply_to_id) } : {} })
-  return { messages, ...tally.skipped ? { skipped: tally.skipped } : {},
-    ...listed.length === 20 ? { next_resource: `github/${kind}/${number}/${section}/${Number(page) + 1}` } : {} }
+  const messages = items.map(item =>
+    section === 'reviews'
+      ? githubMessage({ ...item, created_at: item.submitted_at ?? item.created_at }, reviewText(item), String(item.id))
+      : {
+          ...githubMessage(item, item.body ?? '', String(item.id)),
+          ...(item.in_reply_to_id ? { reply_to: String(item.in_reply_to_id) } : {}),
+        },
+  )
+  return {
+    messages,
+    ...(tally.skipped ? { skipped: tally.skipped } : {}),
+    ...(listed.length === 20 ? { next_resource: `github/${kind}/${number}/${section}/${Number(page) + 1}` } : {}),
+  }
 }
 /** Reads one page of an Issue or PR conversation (with the Issue/PR description first on page 1), using comment URLs as message IDs. */
 async function conversationPage(commands: Commands, number: number, page: number) {
@@ -140,8 +217,14 @@ async function conversationPage(commands: Commands, number: number, page: number
   const listed = await commands.api(z.array(z.unknown()), `issues/${number}/comments?per_page=100&page=${page}`)
   const tally = { skipped: 0 }
   const comments = validItems(CommentSchema, listed, tally)
-  messages.push(...comments.map(comment => githubMessage(comment, comment.body ?? '', comment.html_url ?? String(comment.id))))
-  return { messages, next_resource: listed.length === 100 ? String(page + 1) : null, ...tally.skipped ? { skipped: tally.skipped } : {} }
+  messages.push(
+    ...comments.map(comment => githubMessage(comment, comment.body ?? '', comment.html_url ?? String(comment.id))),
+  )
+  return {
+    messages,
+    next_resource: listed.length === 100 ? String(page + 1) : null,
+    ...(tally.skipped ? { skipped: tally.skipped } : {}),
+  }
 }
 /**
  * Context reader for a GitHub Trigger: reads the review thread for an inline review comment (whose first comment is its

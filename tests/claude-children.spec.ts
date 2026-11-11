@@ -20,13 +20,19 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const child of extra.splice(0)) {
-    try { child.kill() } catch {}
+    try {
+      child.kill()
+    } catch {}
   }
   rmSync(dir, { recursive: true, force: true })
 })
 
-const exited = (child: { once(event: 'exit', fn: (code: number | null, signal: NodeJS.Signals | null) => void): unknown }) =>
-  new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve => child.once('exit', (code, signal) => resolve({ code, signal })))
+const exited = (child: {
+  once(event: 'exit', fn: (code: number | null, signal: NodeJS.Signals | null) => void): unknown
+}) =>
+  new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve =>
+    child.once('exit', (code, signal) => resolve({ code, signal })),
+  )
 
 describe('ChildRegistry', () => {
   it('round trips add and remove', () => {
@@ -86,7 +92,11 @@ describe('reapChildren', () => {
   })
 
   it('kills a child that ignores SIGTERM after the grace period', async () => {
-    const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); process.stdout.write('ready'); setInterval(() => {}, 1000)", 'claude-cli-stub'])
+    const child = spawn(process.execPath, [
+      '-e',
+      "process.on('SIGTERM', () => {}); process.stdout.write('ready'); setInterval(() => {}, 1000)",
+      'claude-cli-stub',
+    ])
     extra.push(child)
     const done = exited(child)
     await new Promise<void>(resolve => child.stdout.once('data', () => resolve()))
@@ -111,7 +121,13 @@ describe('claude runtime children option', () => {
   it('passes the tracking spawn to the SDK when a children file is set', async () => {
     const sdk = stubSdk()
     const { spec } = contractSpec('followup starts a new turn')
-    const runtime = new ClaudeRuntime({ mode: 'api-key', configDir: dir, children: join(dir, 'children.json'), query: sdk.query, sandbox: false })
+    const runtime = new ClaudeRuntime({
+      mode: 'api-key',
+      configDir: dir,
+      children: join(dir, 'children.json'),
+      query: sdk.query,
+      sandbox: false,
+    })
     await runtime.open(spec)
     expect(typeof sdk.queries[0]!.options.spawnClaudeCodeProcess).toBe('function')
   })

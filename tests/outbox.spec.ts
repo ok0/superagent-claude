@@ -70,7 +70,12 @@ it('holds every message while processing is paused, and sends it once processing
 })
 
 it('keeps a message for a Source that is not enabled waiting, and sends it once the Source is enabled', async () => {
-  outbox.send({ id: 'waiting', channel: { source: 'probe', thread: 'probe:1', address: {} }, text: 'Done', kind: 'reply' })
+  outbox.send({
+    id: 'waiting',
+    channel: { source: 'probe', thread: 'probe:1', address: {} },
+    text: 'Done',
+    kind: 'reply',
+  })
   await outbox.sent()
   expect([outbox.status('waiting'), board.all.reply?.state]).toEqual(['pending', 'ready'])
   enabled.add('probe')
@@ -105,7 +110,8 @@ it('does not send an id again after the Store reopens', async () => {
 
 it('sends the messages of one Ticket to one conversation in the order queued, holding later ones behind an earlier failure', async () => {
   failing = new Set(['a'])
-  for (const id of ['a', 'b', 'c']) outbox.send({ id, channel: chat('chat:1'), text: id, kind: 'reply', ticketId: 't1' })
+  for (const id of ['a', 'b', 'c'])
+    outbox.send({ id, channel: chat('chat:1'), text: id, kind: 'reply', ticketId: 't1' })
   await outbox.sent()
   expect(delivered).toEqual([])
   expect(['a', 'b', 'c'].map(id => outbox.status(id))).toEqual(['pending', 'pending', 'pending'])

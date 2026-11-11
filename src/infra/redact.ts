@@ -5,7 +5,12 @@ export const REDACTED = '[redacted]'
 export function redactor(env: Readonly<Record<string, string | undefined>>, mask = '***'): (text: string) => string {
   const values: string[] = []
   for (const [name, value] of Object.entries(env)) {
-    if (typeof value === 'string' && value.length >= 8 && /(TOKEN|SECRET|PASSWORD|API_KEY|ACCESS_KEY|CREDENTIAL)/i.test(name)) values.push(value)
+    if (
+      typeof value === 'string' &&
+      value.length >= 8 &&
+      /(TOKEN|SECRET|PASSWORD|API_KEY|ACCESS_KEY|CREDENTIAL)/i.test(name)
+    )
+      values.push(value)
   }
   return text => {
     let out = text

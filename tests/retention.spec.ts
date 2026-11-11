@@ -24,8 +24,17 @@ const ids = { old: 'a'.repeat(32), recent: 'b'.repeat(32), open: 'c'.repeat(32) 
 
 function ticket(id: string, ended?: string): Ticket {
   return {
-    id, title: id, decisionId: 'd', mandate: {}, channels: [], assignments: [], inputs: [], undelivered: [],
-    createdAt: iso(START), updatedAt: iso(START), origin: { triggerId: 't', triggerIds: ['t'] },
+    id,
+    title: id,
+    decisionId: 'd',
+    mandate: {},
+    channels: [],
+    assignments: [],
+    inputs: [],
+    undelivered: [],
+    createdAt: iso(START),
+    updatedAt: iso(START),
+    origin: { triggerId: 't', triggerIds: ['t'] },
     ...(ended ? { ended: { at: ended, by: 'executor', outcome: 'completed' } } : {}),
   } as unknown as Ticket
 }
@@ -43,11 +52,23 @@ function harness(wrap?: (ws: Workspaces) => Pick<WorkspaceProvider, 'remove'>) {
   sh(['init', '-b', 'main', repo], dir)
   writeFileSync(join(repo, 'README.md'), 'hello')
   sh(['add', '-A'], repo)
-  sh(['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', 'commit', '-m', 'init'], repo)
+  sh(
+    ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', 'commit', '-m', 'init'],
+    repo,
+  )
   sh(['push', origin, 'main'], repo)
-  const commands = new Commands({ apiProgram: 'gh', baseEnv: env, env: { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' } })
+  const commands = new Commands({
+    apiProgram: 'gh',
+    baseEnv: env,
+    env: { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' },
+  })
   const stateDir = join(dir, 'state')
-  const ws = new Workspaces({ stateDir, commands, repositoryOf: () => 'owner/repo', access: { remote: () => origin, env: () => ({}), secrets: [] } })
+  const ws = new Workspaces({
+    stateDir,
+    commands,
+    repositoryOf: () => 'owner/repo',
+    access: { remote: () => origin, env: () => ({}), secrets: [] },
+  })
   const workspaces = wrap ? wrap(ws) : ws
   const time = { now: START, days: 14 }
 
@@ -63,8 +84,16 @@ function harness(wrap?: (ws: Workspaces) => Pick<WorkspaceProvider, 'remove'>) {
     s.store.tickets.save(ticket(id, ended))
     const prepared = await ws.prepare(ticket(id, ended), id)
     s.workers.put({
-      ticketId: id, assignmentId: 'as-' + id.slice(0, 4), runtime: 'fake', sessionId: null, repository: 'owner/repo',
-      cwd: prepared.cwd, branch: prepared.branch, turns: 0, costUsd: 0, promptVersion: null,
+      ticketId: id,
+      assignmentId: 'as-' + id.slice(0, 4),
+      runtime: 'fake',
+      sessionId: null,
+      repository: 'owner/repo',
+      cwd: prepared.cwd,
+      branch: prepared.branch,
+      turns: 0,
+      costUsd: 0,
+      promptVersion: null,
     })
   }
 
@@ -127,7 +156,12 @@ describe('retention', () => {
 
   it('a failed cleanup is retried and ends as one cleanup', async () => {
     let fail = 1
-    const h = harness(ws => ({ remove: async id => { if (fail-- > 0) throw new Error('disk busy'); return ws.remove(id) } }))
+    const h = harness(ws => ({
+      remove: async id => {
+        if (fail-- > 0) throw new Error('disk busy')
+        return ws.remove(id)
+      },
+    }))
     const s = h.open()
     await h.seed(s, ids.old, iso(START - 15 * DAY))
     expect(s.retention.evaluate()).toBe(1)

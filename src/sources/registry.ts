@@ -17,7 +17,10 @@ export class SourceRegistry implements SourceScope {
   private readonly configs: () => Readonly<Record<string, unknown>>
   private readonly board: Pick<HealthBoard, 'claim'>
 
-  constructor(configs: () => Readonly<Record<string, unknown>> = () => ({}), board: Pick<HealthBoard, 'claim'> = new HealthBoard()) {
+  constructor(
+    configs: () => Readonly<Record<string, unknown>> = () => ({}),
+    board: Pick<HealthBoard, 'claim'> = new HealthBoard(),
+  ) {
     this.configs = configs
     this.board = board
   }
@@ -30,7 +33,11 @@ export class SourceRegistry implements SourceScope {
     } catch {
       throw new Error(`Source kind ${kind.kind} declares the health entry ${kind.kind}, which another part reports`)
     }
-    const registration: Registration = { kind: kind as unknown as SourceKind, entries: new Map([[kind.kind, entry]]), live: true }
+    const registration: Registration = {
+      kind: kind as unknown as SourceKind,
+      entries: new Map([[kind.kind, entry]]),
+      live: true,
+    }
     this.registrations.set(kind.kind, registration)
     return () => {
       if (this.registrations.get(kind.kind) === registration) this.registrations.delete(kind.kind)
@@ -59,12 +66,14 @@ export class SourceRegistry implements SourceScope {
   }
 
   kinds(): SourceKind[] {
-    return [...this.registrations.values()].map(registration => registration.kind).sort((a, b) => a.kind.localeCompare(b.kind))
+    return [...this.registrations.values()]
+      .map(registration => registration.kind)
+      .sort((a, b) => a.kind.localeCompare(b.kind))
   }
 
   instance<C extends Record<string, unknown>>(id: string): SourceInstance<C> | undefined {
     const kind = this.kind(id)
-    return kind ? this.resolve(kind) as SourceInstance<C> : undefined
+    return kind ? (this.resolve(kind) as SourceInstance<C>) : undefined
   }
 
   enabled(source: string): boolean {
@@ -88,7 +97,14 @@ export class SourceRegistry implements SourceScope {
     return this.kinds().flatMap(kind => {
       const environment = kind.environment
       const instance = this.resolve(kind)
-      return environment && instance.enabled ? [{ kind: kind.kind, values: (input: { trigger?: Trigger }) => environment.values({ config: instance.config, ...input }) }] : []
+      return environment && instance.enabled
+        ? [
+            {
+              kind: kind.kind,
+              values: (input: { trigger?: Trigger }) => environment.values({ config: instance.config, ...input }),
+            },
+          ]
+        : []
     })
   }
 
@@ -99,8 +115,11 @@ export class SourceRegistry implements SourceScope {
   }
 
   find(query: string): { threads: string[]; terms: string[] } {
-    const found = this.kinds().flatMap(kind => kind.find ? [kind.find(query)] : [])
-    return { threads: [...new Set(found.flatMap(item => item.threads))], terms: [...new Set(found.flatMap(item => item.terms))] }
+    const found = this.kinds().flatMap(kind => (kind.find ? [kind.find(query)] : []))
+    return {
+      threads: [...new Set(found.flatMap(item => item.threads))],
+      terms: [...new Set(found.flatMap(item => item.terms))],
+    }
   }
 
   repliesTo(trigger: Trigger): string | undefined {
@@ -121,7 +140,10 @@ export class SourceRegistry implements SourceScope {
   scope(input: { source: string; meta: Record<string, unknown> }): ScopeResult {
     const kind = this.kind(input.source)
     const stored = this.configs()[input.source]
-    if (!kind) return stored !== undefined ? { listened: false, reason: 'source_not_installed' } : { listened: true, observed: false }
+    if (!kind)
+      return stored !== undefined
+        ? { listened: false, reason: 'source_not_installed' }
+        : { listened: true, observed: false }
     const instance = this.resolve(kind)
     if (!instance.enabled) return { listened: false, reason: 'source_disabled' }
     return kind.scope?.({ meta: input.meta }, instance.config) ?? { listened: true, observed: false }
@@ -129,6 +151,11 @@ export class SourceRegistry implements SourceScope {
 
   private resolve(kind: SourceKind): SourceInstance {
     const parsed = kind.schema.safeParse(this.configs()[kind.kind] ?? {})
-    return { id: kind.kind, kind: kind.kind, enabled: parsed.success, config: parsed.success ? parsed.data : kind.schema.parse({}) }
+    return {
+      id: kind.kind,
+      kind: kind.kind,
+      enabled: parsed.success,
+      config: parsed.success ? parsed.data : kind.schema.parse({}),
+    }
   }
 }

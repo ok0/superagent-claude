@@ -20,19 +20,43 @@ export function repositoryAccess(env: Readonly<Record<string, string | undefined
   const encoded = token ? Buffer.from(`x-access-token:${token}`).toString('base64') : ''
   return {
     remote: repository => `https://github.com/${repository}.git`,
-    env: (): Record<string, string> => token ? { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader', GIT_CONFIG_VALUE_0: `Authorization: Basic ${encoded}` } : {},
+    env: (): Record<string, string> =>
+      token
+        ? {
+            GIT_CONFIG_COUNT: '1',
+            GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+            GIT_CONFIG_VALUE_0: `Authorization: Basic ${encoded}`,
+          }
+        : {},
     secrets: token ? [token, encoded] : [],
   }
 }
 
-export interface InstalledSources { kinds: SourceKind[]; services: SourceService[]; agentLogin: () => string | undefined; access: RepositoryAccess; pulls: PullRequests; githubRead(repository: string, resource: string, signal?: AbortSignal): Promise<unknown> }
-export interface InstallOptions { commands?: Commands; timers?: PollTimers; now?: () => number }
+export interface InstalledSources {
+  kinds: SourceKind[]
+  services: SourceService[]
+  agentLogin: () => string | undefined
+  access: RepositoryAccess
+  pulls: PullRequests
+  githubRead(repository: string, resource: string, signal?: AbortSignal): Promise<unknown>
+}
+export interface InstallOptions {
+  commands?: Commands
+  timers?: PollTimers
+  now?: () => number
+}
 
-export function installedSources(config: Config, env: Readonly<Record<string, string | undefined>>, options: InstallOptions = {}): InstalledSources {
+export function installedSources(
+  config: Config,
+  env: Readonly<Record<string, string | undefined>>,
+  options: InstallOptions = {},
+): InstalledSources {
   const token = env[GITHUB_TOKEN_ENV]?.trim()
   if (!token) throw new StartupRefused('agent-token', `Startup refused (agent-token): ${GITHUB_TOKEN_ENV} is not set`)
   let login: string | undefined
-  const commands = options.commands ?? new Commands({ apiProgram: 'gh', baseEnv: env, apiEnv: { GH_TOKEN: token, GH_PROMPT_DISABLED: '1' } })
+  const commands =
+    options.commands ??
+    new Commands({ apiProgram: 'gh', baseEnv: env, apiEnv: { GH_TOKEN: token, GH_PROMPT_DISABLED: '1' } })
   const github = githubSource({
     repositories: config.repositories,
     commands,
@@ -40,12 +64,26 @@ export function installedSources(config: Config, env: Readonly<Record<string, st
     ...(options.now ? { now: options.now } : {}),
     check: {
       login: (account, error) => {
-        if (account === undefined) throw new StartupRefused('agent-account', `Startup refused (agent-account): could not read the agent account with ${GITHUB_TOKEN_ENV}${error ? ': ' + error : ''}`)
+        if (account === undefined)
+          throw new StartupRefused(
+            'agent-account',
+            `Startup refused (agent-account): could not read the agent account with ${GITHUB_TOKEN_ENV}${error ? ': ' + error : ''}`,
+          )
         login = account
         assertAgentLogin(config, account)
       },
-      access: accessible => { assertRepositoryAccess(config, accessible) },
+      access: accessible => {
+        assertRepositoryAccess(config, accessible)
+      },
     },
   })
-  return { kinds: [github.kind], services: [github.service], agentLogin: () => login, access: repositoryAccess(env), pulls: githubPullRequests(commands), githubRead: (repository, resource, signal) => readGithub(repositoryCommands(commands.withSignal(signal), repository), resource) }
+  return {
+    kinds: [github.kind],
+    services: [github.service],
+    agentLogin: () => login,
+    access: repositoryAccess(env),
+    pulls: githubPullRequests(commands),
+    githubRead: (repository, resource, signal) =>
+      readGithub(repositoryCommands(commands.withSignal(signal), repository), resource),
+  }
 }

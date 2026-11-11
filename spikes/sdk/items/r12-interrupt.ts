@@ -31,16 +31,16 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
     options: baseOptions(ctx, ctx.newRepo(`${ID}-1`)),
     first: { text: 'Use the Bash tool to run exactly: sleep 20; echo LONG . Then reply LONGDONE.', uuid: A },
     onEntry: (e, c) => {
-      if (!pushedB && e.toolUses?.some((u) => u.name === 'Bash') === true) {
+      if (!pushedB && e.toolUses?.some(u => u.name === 'Bash') === true) {
         pushedB = true
         c.push({ text: 'Reply with exactly QUEUEDWORD.', uuid: B, priority: 'later' })
-        c.after(2000, async (cc) => {
+        c.after(2000, async cc => {
           try {
             const receipt = await cc.interrupt()
             receiptJson = JSON.stringify(receipt)
             stillQueuedHasB = receiptJson.includes(B)
             interrupted = true
-            cc.after(60000, (c3) => c3.end())
+            cc.after(60000, c3 => c3.end())
           } catch (err) {
             interruptError = err instanceof Error ? err.message : String(err)
           }

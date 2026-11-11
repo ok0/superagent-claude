@@ -13,8 +13,12 @@ import { gates, workerHarness } from './fixtures/executor.ts'
 import { waitUntil } from './fixtures/async.ts'
 
 let directory: string
-beforeEach(() => { directory = mkdtempSync(join(tmpdir(), 'recovery-')) })
-afterEach(() => { rmSync(directory, { recursive: true, force: true }) })
+beforeEach(() => {
+  directory = mkdtempSync(join(tmpdir(), 'recovery-'))
+})
+afterEach(() => {
+  rmSync(directory, { recursive: true, force: true })
+})
 
 it('ends a running Assignment on restart and resumes its session with the recovery note first', async () => {
   const w1 = workerHarness({ directory, script: () => ({ hold: new Promise(() => {}) }) })
@@ -32,7 +36,10 @@ it('ends a running Assignment on restart and resumes its session with the recove
   expect(t.assignments[0]).toMatchObject({ state: 'ended', endedReason: 'hostRestarted' })
   expect(t.assignments[1]!.state).toBe('running')
   expect(w2.runtime.opened[0]).toMatchObject({ resume: stored.sessionId, cwd: stored.cwd })
-  expect(w2.runtime.sessions[0]!.sent[0]).toMatchObject({ id: key('input', id, 'restart', t.assignments[1]!.id), mode: 'followup' })
+  expect(w2.runtime.sessions[0]!.sent[0]).toMatchObject({
+    id: key('input', id, 'restart', t.assignments[1]!.id),
+    mode: 'followup',
+  })
   expect(w2.runtime.sessions[0]!.sent[0]!.text).toContain('The host restarted')
   expect(w2.runtime.sessions[0]!.sent[1]!.id).toBe(`assignment:${t.assignments[1]!.id}`)
 })
@@ -67,7 +74,12 @@ it('recovers running tickets oldest first under the slot rule', async () => {
   w1.store.close()
 
   const g = gates()
-  const w2 = workerHarness({ directory, max: 1, start: false, script: ({ spec, index }) => index === 0 ? { hold: g.get(spec.key) } : {} })
+  const w2 = workerHarness({
+    directory,
+    max: 1,
+    start: false,
+    script: ({ spec, index }) => (index === 0 ? { hold: g.get(spec.key) } : {}),
+  })
   recover({ tickets: w2.store.tickets, engine: w2.engine, executor: w2.executor })
   w2.effects.start()
   await waitUntil(() => w2.runtime.opened.length === 1)
@@ -119,13 +131,17 @@ it('does not resume an ended ticket on restart', async () => {
 })
 
 it('leaves idle ready tickets without a session on restart and resumes only the one at work', async () => {
-  const w1 = workerHarness({ directory, max: 3, script: ({ inputs, index }) => {
-    const text = inputs.map(input => input.text).join('')
-    if (text.includes('"trigger_id":"3"')) return { hold: new Promise(() => {}) }
-    if (text.includes('"trigger_id":"5"')) return {}
-    if (index === 0) return { tools: [{ name: 'report', args: { state: 'ready', summary: 'PR opened' } }] }
-    return {}
-  } })
+  const w1 = workerHarness({
+    directory,
+    max: 3,
+    script: ({ inputs, index }) => {
+      const text = inputs.map(input => input.text).join('')
+      if (text.includes('"trigger_id":"3"')) return { hold: new Promise(() => {}) }
+      if (text.includes('"trigger_id":"5"')) return {}
+      if (index === 0) return { tools: [{ name: 'report', args: { state: 'ready', summary: 'PR opened' } }] }
+      return {}
+    },
+  })
   const a = accepted(w1, '1', 't1').ticketId!
   w1.engine.bindThread(a, { source: 'gh', id: 'pr-1' }, true)
   w1.tick(1)
@@ -133,12 +149,22 @@ it('leaves idle ready tickets without a session on restart and resumes only the 
   w1.engine.bindThread(b, { source: 'gh', id: 'pr-2' }, true)
   w1.tick(1)
   const c = accepted(w1, '3', 't3').ticketId!
-  await waitUntil(() => w1.ticket(a).assignments[0]?.report?.state === 'ready' && w1.ticket(b).assignments[0]?.report?.state === 'ready')
+  await waitUntil(
+    () =>
+      w1.ticket(a).assignments[0]?.report?.state === 'ready' && w1.ticket(b).assignments[0]?.report?.state === 'ready',
+  )
   await waitUntil(() => !!w1.runtime.sessions[0]?.closed && !!w1.runtime.sessions[1]?.closed)
   w1.tick(1)
-  w1.engine.receive(trigger('5', { actor: guest, threads: [{ source: 'chat', id: 't2' }] })); w1.pump()
-  await waitUntil(() => w1.ticket(b).assignments[0]!.idleAt !== undefined && w1.ticket(b).assignments[0]!.deliveredAt !== undefined
-    && w1.ticket(b).assignments[0]!.idleAt! >= w1.ticket(b).assignments[0]!.deliveredAt! && w1.runtime.sessions.length === 4 && w1.runtime.sessions[3]!.closed)
+  w1.engine.receive(trigger('5', { actor: guest, threads: [{ source: 'chat', id: 't2' }] }))
+  w1.pump()
+  await waitUntil(
+    () =>
+      w1.ticket(b).assignments[0]!.idleAt !== undefined &&
+      w1.ticket(b).assignments[0]!.deliveredAt !== undefined &&
+      w1.ticket(b).assignments[0]!.idleAt! >= w1.ticket(b).assignments[0]!.deliveredAt! &&
+      w1.runtime.sessions.length === 4 &&
+      w1.runtime.sessions[3]!.closed,
+  )
   const resumed = w1.workers.get(a)!.sessionId
   await w1.effects.drain()
   w1.store.close()
@@ -156,15 +182,25 @@ it('leaves idle ready tickets without a session on restart and resumes only the 
   }
   expect(w2.ticket(c).assignments).toHaveLength(2)
   expect(w2.slots.used).toBe(1)
-  w2.engine.receive(trigger('6', { actor: guest, threads: [{ source: 'chat', id: 't1' }] })); w2.pump()
+  w2.engine.receive(trigger('6', { actor: guest, threads: [{ source: 'chat', id: 't1' }] }))
+  w2.pump()
   await waitUntil(() => w2.runtime.opened.length === 2)
   expect(w2.runtime.opened[1]!.key).toBe(`worker-${a}`)
   expect(w2.runtime.opened[1]!.resume).toBe(resumed)
 })
 
 it('keeps reports when the limits drop below the usage before a restart', async () => {
-  const w1 = workerHarness({ directory, limits: { maxTurns: 100, maxBudgetUsd: 5 }, script: ({ index }) => index === 0
-    ? { tools: [{ name: 'report', args: { state: 'ready', summary: 'PR opened' } }], turnEnded: { turns: 5, costUsd: 1 } } : {} })
+  const w1 = workerHarness({
+    directory,
+    limits: { maxTurns: 100, maxBudgetUsd: 5 },
+    script: ({ index }) =>
+      index === 0
+        ? {
+            tools: [{ name: 'report', args: { state: 'ready', summary: 'PR opened' } }],
+            turnEnded: { turns: 5, costUsd: 1 },
+          }
+        : {},
+  })
   const id = accepted(w1, '1').ticketId!
   w1.engine.bindThread(id, { source: 'gh', id: 'pr-1' }, true)
   await waitUntil(() => w1.ticket(id).assignments[0]?.report?.state === 'ready')

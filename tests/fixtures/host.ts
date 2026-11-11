@@ -61,21 +61,29 @@ export interface Host {
 }
 
 function parsed(inputs: { text: string; mode: string }[], mode: string): Record<string, unknown>[] {
-  return inputs.filter(input => input.mode === mode).flatMap(input => {
-    try { return [JSON.parse(input.text) as Record<string, unknown>] } catch { return [] }
-  })
+  return inputs
+    .filter(input => input.mode === mode)
+    .flatMap(input => {
+      try {
+        return [JSON.parse(input.text) as Record<string, unknown>]
+      } catch {
+        return []
+      }
+    })
 }
 
 export async function startRuntime(options: HostOptions = {}): Promise<Host> {
   const dir = mkdtempSync(join(tmpdir(), 'router-runtime-'))
   const config: Config = ConfigSchema.parse({
-    repositories: [REPO], policy: { allowed: ['alice'], acceptMode: options.acceptMode ?? 'auto' }, stateDir: join(dir, 'state'),
+    repositories: [REPO],
+    policy: { allowed: ['alice'], acceptMode: options.acceptMode ?? 'auto' },
+    stateDir: join(dir, 'state'),
   })
   const chat = testSource('chat', {
     scope: () => ({ listened: true, observed: true }),
-    repliesTo: t => typeof t.meta.parent === 'string' ? t.meta.parent : undefined,
+    repliesTo: t => (typeof t.meta.parent === 'string' ? t.meta.parent : undefined),
   })
-  const fake = new FakeRuntime(turn => turn.spec.role === 'router' ? options.router?.(turn) : options.worker?.(turn))
+  const fake = new FakeRuntime(turn => (turn.spec.role === 'router' ? options.router?.(turn) : options.worker?.(turn)))
   let offset = 0
   let broken = 0
   const agentRuntime: AgentRuntime = {
@@ -90,7 +98,12 @@ export async function startRuntime(options: HostOptions = {}): Promise<Host> {
     },
   }
   const runtime = new Runtime({
-    config, runtime: agentRuntime, router: 'session', kinds: [chat.kind], services: [chat.service], now: () => Date.now() + offset,
+    config,
+    runtime: agentRuntime,
+    router: 'session',
+    kinds: [chat.kind],
+    services: [chat.service],
+    now: () => Date.now() + offset,
     ...(options.configDir ? { configDir: options.configDir } : {}),
   })
   await runtime.start()
@@ -103,23 +116,32 @@ export async function startRuntime(options: HostOptions = {}): Promise<Host> {
     if (!tool) throw new Error(`No tool ${name} in the session`)
     return tool.execute(args, new AbortController().signal)
   }
-  const workerSession = (ticketId: string): FakeSession | undefined => fake.sessions.find(session => session.spec.key === workerKey(ticketId))
-  const workerSessions = (ticketId: string): FakeSession[] => fake.sessions.filter(session => session.spec.key === workerKey(ticketId))
+  const workerSession = (ticketId: string): FakeSession | undefined =>
+    fake.sessions.find(session => session.spec.key === workerKey(ticketId))
+  const workerSessions = (ticketId: string): FakeSession[] =>
+    fake.sessions.filter(session => session.spec.key === workerKey(ticketId))
   const relaysOf = (): Record<string, unknown>[] => routerSessions().flatMap(session => parsed(session.sent, 'steer'))
 
   const host: Host = {
-    runtime, fake, dir,
+    runtime,
+    fake,
+    dir,
     receive: trigger => chat.emit(trigger),
     idle: () => runtime.passes.idle(),
     pump: async () => {
       await runtime.passes.pump()
       await runtime.passes.idle()
     },
-    advance: ms => { offset += ms },
+    advance: ms => {
+      offset += ms
+    },
     routerSessions,
     relays: relaysOf,
     injects: () => routerSessions().flatMap(session => parsed(session.sent, 'inject')),
-    candidates: () => relaysOf().filter(relay => relay.kind === 'candidate').map(relay => String(relay.trigger_id)),
+    candidates: () =>
+      relaysOf()
+        .filter(relay => relay.kind === 'candidate')
+        .map(relay => String(relay.trigger_id)),
     followups: () => relaysOf().filter(relay => relay.kind === 'follow_up'),
     replies: () => chat.sent.map(message => String(message.text)),
     workerSession,
@@ -127,7 +149,9 @@ export async function startRuntime(options: HostOptions = {}): Promise<Host> {
     routerTool: (name, args) => callTool(lastSpec('router'), name, args),
     workerTool: (ticketId, name, args) => callTool(lastSpec('worker', workerKey(ticketId)), name, args),
     route: async item => {
-      const out = await host.routerTool('orchestrator_route', { decisions: [item] }) as { results: Record<string, unknown>[] }
+      const out = (await host.routerTool('orchestrator_route', { decisions: [item] })) as {
+        results: Record<string, unknown>[]
+      }
       const result = out.results[0]!
       if (typeof result.refused === 'string') throw new Error(result.refused)
       return result
@@ -135,13 +159,21 @@ export async function startRuntime(options: HostOptions = {}): Promise<Host> {
     acceptedTicket: async accepted => {
       host.receive(accepted)
       await host.idle()
-      await host.route({ kind: 'accept', trigger_id: accepted.id, title: 'Fix', worktree_name: 'fix-it', acknowledgement: 'On it.' })
+      await host.route({
+        kind: 'accept',
+        trigger_id: accepted.id,
+        title: 'Fix',
+        worktree_name: 'fix-it',
+        acknowledgement: 'On it.',
+      })
       await waitUntil(() => runtime.store.tickets.open().some(ticket => ticket.origin.triggerIds.includes(accepted.id)))
       const ticket = runtime.store.tickets.open().find(candidate => candidate.origin.triggerIds.includes(accepted.id))!
       await waitUntil(() => workerSession(ticket.id) !== undefined)
       return { ticket }
     },
-    breakRouter: times => { broken = times },
+    breakRouter: times => {
+      broken = times
+    },
     stop: async () => {
       await runtime.stop()
       rmSync(dir, { recursive: true, force: true })

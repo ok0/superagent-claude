@@ -22,16 +22,22 @@ export class CliError extends Error {
 /** Extracts a sanitized error from a failed subprocess without echoing argv, which may contain message text. */
 export function commandError(error: unknown, program = 'command'): Error {
   if (error instanceof Error && error.name === 'AbortError') return error
-  const exitCode = error && typeof error === 'object' && 'code' in error && typeof error.code === 'number' ? error.code : undefined
+  const exitCode =
+    error && typeof error === 'object' && 'code' in error && typeof error.code === 'number' ? error.code : undefined
   if (error && typeof error === 'object' && 'stderr' in error && typeof error.stderr === 'string') {
     const stderr = error.stderr.trim()
     let parsed: { error?: { code?: number; message?: string } } | undefined
-    try { parsed = JSON.parse(stderr.slice(stderr.indexOf('{'))) as typeof parsed }
-    catch { /* Non-JSON CLI diagnostics are retained below. */ }
+    try {
+      parsed = JSON.parse(stderr.slice(stderr.indexOf('{'))) as typeof parsed
+    } catch {
+      /* Non-JSON CLI diagnostics are retained below. */
+    }
     const code = parsed?.error?.code
-    if (parsed?.error?.message) return new CliError(`${parsed.error.message}${code ? ` (${code})` : ''}`, code, exitCode)
+    if (parsed?.error?.message)
+      return new CliError(`${parsed.error.message}${code ? ` (${code})` : ''}`, code, exitCode)
     // The API program exits non-zero on HTTP errors (such as "Not Found (HTTP 404)") and on HTTP 304, which conditional reads rely on.
-    if (stderr) return new CliError(stderr.slice(0, 2000), Number(/\bHTTP (\d{3})\b/.exec(stderr)?.[1]) || undefined, exitCode)
+    if (stderr)
+      return new CliError(stderr.slice(0, 2000), Number(/\bHTTP (\d{3})\b/.exec(stderr)?.[1]) || undefined, exitCode)
   }
   return new CliError(`${basename(program)} ${ended(error)}`, undefined, exitCode)
 }
@@ -46,11 +52,16 @@ function ended(error: unknown): string {
   return typeof code === 'string' ? `could not run: ${code}` : 'failed'
 }
 
-export interface Tally { skipped: number }
+export interface Tally {
+  skipped: number
+}
 
 /** Parses array elements against a schema, skipping invalid items and incrementing `tally.skipped`. */
 export function validItems<T>(item: z.ZodType<T>, list: readonly unknown[], tally?: Tally): T[] {
-  const items = list.flatMap(value => { const parsed = item.safeParse(value); return parsed.success ? [parsed.data] : [] })
+  const items = list.flatMap(value => {
+    const parsed = item.safeParse(value)
+    return parsed.success ? [parsed.data] : []
+  })
   if (tally) tally.skipped += list.length - items.length
   return items
 }
@@ -97,14 +108,22 @@ export class Commands {
 
   withSignal(signal?: AbortSignal): Commands {
     if (!signal) return this
-    return new Commands({ ...this.options, signal: this.options.signal ? AbortSignal.any([this.options.signal, signal]) : signal })
+    return new Commands({
+      ...this.options,
+      signal: this.options.signal ? AbortSignal.any([this.options.signal, signal]) : signal,
+    })
   }
 
   at(root: string): Commands {
     return new Commands({ ...this.options, root: root.replace(/\/+$/, '') })
   }
 
-  async run(program: string, args: string[], cwd?: string, extra: Readonly<Record<string, string>> = {}): Promise<string> {
+  async run(
+    program: string,
+    args: string[],
+    cwd?: string,
+    extra: Readonly<Record<string, string>> = {},
+  ): Promise<string> {
     const env = subprocessEnv(this.options.baseEnv, { ...this.options.env, ...extra })
     try {
       const { stdout } = await (this.options.exec ?? execProgram)(program, args, {
@@ -115,7 +134,9 @@ export class Commands {
         maxBuffer: MAX_BUFFER,
       })
       return stdout
-    } catch (error) { throw commandError(error, program) }
+    } catch (error) {
+      throw commandError(error, program)
+    }
   }
 
   private runApi(args: string[]): Promise<string> {
@@ -142,7 +163,9 @@ export class Commands {
 
   /** Fetches all pages of an API list under the root, skipping items that fail schema validation. */
   async pages<T>(item: z.ZodType<T>, path: string, tally?: Tally): Promise<T[]> {
-    const pages = z.array(z.array(z.unknown())).parse(await this.call(['api', this.path(path), '--paginate', '--slurp']))
+    const pages = z
+      .array(z.array(z.unknown()))
+      .parse(await this.call(['api', this.path(path), '--paginate', '--slurp']))
     return validItems(item, pages.flat(), tally)
   }
 

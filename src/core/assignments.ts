@@ -24,7 +24,8 @@ export interface WorkerReport {
   limit?: 'turn' | 'budget'
 }
 // Port note: vendor-specific state wording neutralised to "remote state" (charter R11); behavior unchanged.
-const RECOVERY_NOTE = 'The host restarted during this ticket. Inspect the current worktree, git history and remote state before continuing. Do not repeat an already completed external operation. Finish the original assignment and report its status.'
+const RECOVERY_NOTE =
+  'The host restarted during this ticket. Inspect the current worktree, git history and remote state before continuing. Do not repeat an already completed external operation. Finish the original assignment and report its status.'
 
 /**
  * Assignments records what the Executor and its workers report about the Assignments that run tickets: one started, Inputs
@@ -37,18 +38,27 @@ export class Assignments extends EnginePart {
   private readonly tickets: Tickets
   private readonly replies: Replies
   // Port note: parameter properties expanded to explicit fields (erasableSyntaxOnly); behavior unchanged.
-  constructor(options: EngineOptions, tickets: Tickets, replies: Replies) { super(options); this.tickets = tickets; this.replies = replies }
+  constructor(options: EngineOptions, tickets: Tickets, replies: Replies) {
+    super(options)
+    this.tickets = tickets
+    this.replies = replies
+  }
 
   /** Marks a non-ended assignment running, queues a held accept acknowledgement (ADR-32), queues delivery of waiting undelivered inputs on an open ticket, and emits `assignment.started`. */
   started(ticketId: string, assignmentId: string): void {
     const ticket = this.require(ticketId)
     const assignment = ticket.assignments.find(item => item.id === assignmentId)
     if (!assignment || assignment.state === 'ended') return
-    assignment.state = 'running'; assignment.startedAt ??= this.now()
-    const held = ticket.acknowledgement; delete ticket.acknowledgement
+    assignment.state = 'running'
+    assignment.startedAt ??= this.now()
+    const held = ticket.acknowledgement
+    delete ticket.acknowledgement
     ticket.updatedAt = this.now()
     this.repo.tickets.save(ticket)
-    if (held) { const trigger = this.repo.triggers.get(held.triggerId); if (trigger) this.replies.acknowledgeAccepted(ticketId, trigger, held.text) }
+    if (held) {
+      const trigger = this.repo.triggers.get(held.triggerId)
+      if (trigger) this.replies.acknowledgeAccepted(ticketId, trigger, held.text)
+    }
     if (liveTicket(ticket) && ticket.undelivered.length) this.options.executor.deliver(ticket, assignment)
     this.emit('assignment.started', { ticketId, assignmentId })
   }
@@ -59,10 +69,14 @@ export class Assignments extends EnginePart {
   delivered(ticketId: string, assignmentId: string, inputIds: string[]): void {
     const ticket = this.running(ticketId, assignmentId)
     if (!ticket) return
-    ticket.undelivered = ticket.undelivered.filter(id => !inputIds.includes(id)); ticket.updatedAt = this.now()
+    ticket.undelivered = ticket.undelivered.filter(id => !inputIds.includes(id))
+    ticket.updatedAt = this.now()
     runningAssignment(ticket)!.deliveredAt = ticket.updatedAt
     for (const input of ticket.inputs) {
-      if (input.kind === 'trigger' && inputIds.includes(input.id)) { input.readAt ??= null; input.deliveredTo = assignmentId }
+      if (input.kind === 'trigger' && inputIds.includes(input.id)) {
+        input.readAt ??= null
+        input.deliveredTo = assignmentId
+      }
     }
     delete ticket.delivery
     this.repo.tickets.save(ticket)
@@ -71,7 +85,8 @@ export class Assignments extends EnginePart {
   read(ticketId: string, inputIds: string[]): void {
     const ticket = this.require(ticketId)
     if (!liveTicket(ticket)) return
-    for (const input of ticket.inputs) if (input.kind === 'trigger' && inputIds.includes(input.id)) input.readAt ||= this.now()
+    for (const input of ticket.inputs)
+      if (input.kind === 'trigger' && inputIds.includes(input.id)) input.readAt ||= this.now()
     this.repo.tickets.save(ticket)
   }
   turnEnded(ticketId: string, assignmentId: string): void {
@@ -142,7 +157,11 @@ export class Assignments extends EnginePart {
     if (assignment.state === 'ended') throw new UserError('assignmentEnded')
     const at = this.now()
     const previous = ticket.attention
-    const ask = (question: string) => ({ id: key('attention', ticketId, question, at), question, ...(report.askedBy ? { triggerId: report.askedBy } : {}) })
+    const ask = (question: string) => ({
+      id: key('attention', ticketId, question, at),
+      question,
+      ...(report.askedBy ? { triggerId: report.askedBy } : {}),
+    })
     const asked = report.question && report.question !== previous?.question ? ask(report.question) : previous
     const attention = report.question === null || report.state === 'ready' ? undefined : asked
     if (attention) ticket.attention = attention
@@ -155,15 +174,22 @@ export class Assignments extends EnginePart {
     if (report.limit && report.state === 'blocked') assignment.limit = report.limit
     ticket.updatedAt = at
     if (report.title !== undefined) ticket.title = report.title
-    if (report.answers &&!ticket.answers?.includes(report.answers)) ticket.answers = [...ticket.answers ?? [], report.answers]
+    if (report.answers && !ticket.answers?.includes(report.answers))
+      ticket.answers = [...(ticket.answers ?? []), report.answers]
     if (report.answers) this.takeUp(ticketId, report.answers)
-    if (report.state === 'blocked' || report.state === 'failed') ticket.undelivered = ticket.undelivered.filter(id => !automatic(ticket.inputs.find(input => input.id === id)))
+    if (report.state === 'blocked' || report.state === 'failed')
+      ticket.undelivered = ticket.undelivered.filter(id => !automatic(ticket.inputs.find(input => input.id === id)))
     this.repo.tickets.save(ticket)
     if (report.limit && report.state === 'blocked') this.replies.limitStopped(ticket, assignment.id, report.limit, pull)
     // A ticket that follows Threads ends with them: a ready report ends it only once followsDone holds, with that outcome.
     const ready = !ticket.follows?.length ? 'completed' : this.tickets.followsDone(ticket)?.outcome
     // A dropped report after a close the ticket deferred ends it as the close did, which its final notice tells.
-    const outcome = report.state === 'dropped' ? this.tickets.followsDone(ticket)?.outcome ?? 'dropped' : report.state === 'ready' ? ready : undefined
+    const outcome =
+      report.state === 'dropped'
+        ? (this.tickets.followsDone(ticket)?.outcome ?? 'dropped')
+        : report.state === 'ready'
+          ? ready
+          : undefined
     if (outcome) this.tickets.end(ticketId, 'executor', outcome, at)
     return this.require(ticketId)
   }

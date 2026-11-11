@@ -3,9 +3,19 @@
 import type { z } from 'zod'
 import type { OutboundMessage, ScopeResult, Trigger } from '../core/index.ts'
 
-export interface VariableSpec { key: string; description: string }
-export interface EnvironmentInput<C> { config: C; trigger?: Trigger }
-export interface AdmissionRowView { id: string; label: string; note: string }
+export interface VariableSpec {
+  key: string
+  description: string
+}
+export interface EnvironmentInput<C> {
+  config: C
+  trigger?: Trigger
+}
+export interface AdmissionRowView {
+  id: string
+  label: string
+  note: string
+}
 /** What the kind marks as addressed to the agent, which an allowed sender's explicit request requires, and its receiving scopes for the admission table. */
 export interface SourcePolicyPart<C> {
   explicit: string
@@ -23,11 +33,24 @@ export interface SourceChannel<C> {
 }
 /** Normalized message returned by thread context readers; `bot` marks a non-human sender whose message can never authorize work on its own (at most an inferred candidate). */
 export interface ContextMessage {
-  id: string; from: string; at: string; text: string
-  bot?: true; deleted?: true; reply_to?: string; url?: string; path?: string; line?: number
+  id: string
+  from: string
+  at: string
+  text: string
+  bot?: true
+  deleted?: true
+  reply_to?: string
+  url?: string
+  path?: string
+  line?: number
 }
 export type ContextPartName = 'thread' | 'root' | 'parent'
-export interface ContextPart { messages: ContextMessage[]; next?: string | undefined; body: Record<string, unknown>; status?: string }
+export interface ContextPart {
+  messages: ContextMessage[]
+  next?: string | undefined
+  body: Record<string, unknown>
+  status?: string
+}
 /** Bounded thread context reader used by assessments to inspect messages around a trigger. */
 export interface ThreadContext<C> {
   /** The ID of the Trigger's own message among the messages of its Thread. */
@@ -61,4 +84,9 @@ export interface SourceKind<C extends Record<string, unknown> = Record<string, u
   environment?: { variables: readonly VariableSpec[]; values(input: EnvironmentInput<C>): Record<string, string> }
 }
 
-export interface SourceInstance<C extends Record<string, unknown> = Record<string, unknown>> { id: string; kind: string; enabled: boolean; config: C }
+export interface SourceInstance<C extends Record<string, unknown> = Record<string, unknown>> {
+  id: string
+  kind: string
+  enabled: boolean
+  config: C
+}

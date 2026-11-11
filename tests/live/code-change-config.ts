@@ -1,5 +1,12 @@
 export const LIVE_LIMITS = { max: 2, maxTurns: 300, maxBudgetUsd: 30 } as const
-export const LIVE_WAIT = { pullPerRoundMs: 2_400_000, stepMs: 30_000, settleMs: 300_000, settleCapMs: 1_800_000, judgePerFlowMs: 1_800_000, replyGraceMs: 900_000 } as const
+export const LIVE_WAIT = {
+  pullPerRoundMs: 2_400_000,
+  stepMs: 30_000,
+  settleMs: 300_000,
+  settleCapMs: 1_800_000,
+  judgePerFlowMs: 1_800_000,
+  replyGraceMs: 900_000,
+} as const
 export function pullWaitMs(flows: number): number {
   return LIVE_WAIT.pullPerRoundMs * Math.max(1, Math.ceil(flows / LIVE_LIMITS.max))
 }

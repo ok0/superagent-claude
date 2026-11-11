@@ -24,7 +24,12 @@ const PINS = {
   } as Record<string, string>,
 }
 
-type LockEntry = { version?: string; workspaces?: string[]; optionalDependencies?: Record<string, string>; link?: boolean }
+type LockEntry = {
+  version?: string
+  workspaces?: string[]
+  optionalDependencies?: Record<string, string>
+  link?: boolean
+}
 
 function readJson(path: string): Record<string, unknown> {
   return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
@@ -57,23 +62,35 @@ describe('web seed', () => {
       test: 'npm test --workspaces --if-present',
     })
     expect(root.engines).toEqual({ node: '^24.15.0' })
-    for (const key of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) expect(root[key]).toBeUndefined()
+    for (const key of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'])
+      expect(root[key]).toBeUndefined()
 
     const web = readJson(join(SEED, 'web', 'package.json'))
     expect(web.scripts).toEqual({ dev: 'vite', typecheck: 'tsc --noEmit', test: 'vitest run' })
     expect(web.dependencies).toEqual(PINS.dependencies)
     expect(web.devDependencies).toEqual(PINS.devDependencies)
     for (const key of ['peerDependencies', 'optionalDependencies']) expect(web[key]).toBeUndefined()
-    const versions = { ...(web.dependencies as Record<string, string>), ...(web.devDependencies as Record<string, string>) }
+    const versions = {
+      ...(web.dependencies as Record<string, string>),
+      ...(web.devDependencies as Record<string, string>),
+    }
     for (const version of Object.values(versions)) expect(version).toMatch(/^\d+\.\d+\.\d+$/)
 
     const paths = seedPaths()
     const lockNames = paths.filter(path => LOCK_NAMES.includes(basename(path)))
     expect(lockNames).toEqual(['package-lock.json'])
-    for (const file of ['web/vite.config.ts', 'web/tsconfig.json', 'web/index.html', 'web/src/main.tsx', 'web/src/api/client.ts']) {
+    for (const file of [
+      'web/vite.config.ts',
+      'web/tsconfig.json',
+      'web/index.html',
+      'web/src/main.tsx',
+      'web/src/api/client.ts',
+    ]) {
       expect(paths).toContain(file)
     }
-    const components = paths.filter(path => /^web\/src\/components\/[^/]+\.tsx$/.test(path) && !path.endsWith('.test.tsx'))
+    const components = paths.filter(
+      path => /^web\/src\/components\/[^/]+\.tsx$/.test(path) && !path.endsWith('.test.tsx'),
+    )
     expect(components.length).toBeGreaterThanOrEqual(6)
     expect(components.length).toBeLessThanOrEqual(8)
     const webTests = paths.filter(path => /^web\/src\/.+\.test\.tsx$/.test(path))
@@ -85,7 +102,10 @@ describe('web seed', () => {
   })
 
   it('lockfile pins the web packages', () => {
-    const lock = readJson(join(SEED, 'package-lock.json')) as { lockfileVersion?: number; packages?: Record<string, LockEntry> }
+    const lock = readJson(join(SEED, 'package-lock.json')) as {
+      lockfileVersion?: number
+      packages?: Record<string, LockEntry>
+    }
     expect(lock.lockfileVersion).toBe(3)
     const packages = lock.packages ?? {}
     expect(packages['']?.workspaces).toEqual(['api', 'web'])

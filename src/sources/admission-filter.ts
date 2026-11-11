@@ -17,7 +17,9 @@ export interface AdmissionFilterDeps {
 
 export class AdmissionFilter implements Pick<EngineForSources, 'receive'> {
   private readonly deps: AdmissionFilterDeps
-  constructor(deps: AdmissionFilterDeps) { this.deps = deps }
+  constructor(deps: AdmissionFilterDeps) {
+    this.deps = deps
+  }
 
   receive(trigger: Trigger): ReceiveResult {
     const rule = this.deps.rule()
@@ -41,10 +43,13 @@ export class AdmissionFilter implements Pick<EngineForSources, 'receive'> {
     const { store } = this.deps
     return trigger.threads.some(ref => {
       const thread = store.threads.get(threadKey(ref))
-      return !!thread && thread.subscriptions.some(id => {
-        const ticket = store.tickets.get(id)
-        return !!ticket && !ticket.ended && allowed.some(login => sameName(login, ticket.mandate.actor.id))
-      })
+      return (
+        !!thread &&
+        thread.subscriptions.some(id => {
+          const ticket = store.tickets.get(id)
+          return !!ticket && !ticket.ended && allowed.some(login => sameName(login, ticket.mandate.actor.id))
+        })
+      )
     })
   }
 }

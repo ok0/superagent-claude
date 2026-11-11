@@ -15,8 +15,12 @@ export function packageRoot(): string {
   for (let depth = 0; depth < 6; depth++) {
     const manifest = join(directory, 'package.json')
     if (existsSync(manifest)) {
-      try { if ((JSON.parse(readFileSync(manifest, 'utf8')) as { name?: string }).name === PACKAGE_NAME) return cached = directory }
-      catch { /* A foreign package.json on the way up is not this package. */ }
+      try {
+        if ((JSON.parse(readFileSync(manifest, 'utf8')) as { name?: string }).name === PACKAGE_NAME)
+          return (cached = directory)
+      } catch {
+        /* A foreign package.json on the way up is not this package. */
+      }
     }
     directory = dirname(directory)
   }

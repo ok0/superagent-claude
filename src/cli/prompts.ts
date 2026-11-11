@@ -47,7 +47,11 @@ export function promptsCommand(argv: readonly string[], io: Pick<CliIo, 'out' | 
   let rows: PromptRow[] = []
   if (existsSync(db)) {
     const reader = openReadOnly(db)
-    try { rows = promptRows(reader.db) } finally { reader.close() }
+    try {
+      rows = promptRows(reader.db)
+    } finally {
+      reader.close()
+    }
   }
   io.out(formatDiff(promptDiff(loadBuiltins(), readTeam(join(dirname(path), 'prompts', 'team')), rows)))
   return 0

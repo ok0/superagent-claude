@@ -1,5 +1,14 @@
 /** Maps a SessionSpec to the SDK Options: a whitelisted environment, the builtin tool sets, the fixed permission posture (dontAsk, never bypass), the guard and read hooks, the worker-only Agent with the subagent guard, the sandbox and the limits. */
-import type { Options, HookCallback, HookCallbackMatcher, McpServerConfig, SandboxSettings, Settings, SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk'
+import type {
+  Options,
+  HookCallback,
+  HookCallbackMatcher,
+  McpServerConfig,
+  SandboxSettings,
+  Settings,
+  SpawnOptions,
+  SpawnedProcess,
+} from '@anthropic-ai/claude-agent-sdk'
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve, relative, isAbsolute, dirname, basename, join } from 'node:path'
 import type { SessionSpec } from '../../executor/contract.ts'
@@ -11,8 +20,20 @@ export type AuthMode = 'api-key' | 'subscription' | 'bedrock' | 'vertex'
 export const AUTH_ENV: Record<AuthMode, readonly string[]> = {
   'api-key': ['ANTHROPIC_API_KEY'],
   subscription: ['CLAUDE_CODE_OAUTH_TOKEN'],
-  bedrock: ['CLAUDE_CODE_USE_BEDROCK', 'AWS_REGION', 'AWS_PROFILE', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN'],
-  vertex: ['CLAUDE_CODE_USE_VERTEX', 'CLOUD_ML_REGION', 'ANTHROPIC_VERTEX_PROJECT_ID', 'GOOGLE_APPLICATION_CREDENTIALS'],
+  bedrock: [
+    'CLAUDE_CODE_USE_BEDROCK',
+    'AWS_REGION',
+    'AWS_PROFILE',
+    'AWS_ACCESS_KEY_ID',
+    'AWS_SECRET_ACCESS_KEY',
+    'AWS_SESSION_TOKEN',
+  ],
+  vertex: [
+    'CLAUDE_CODE_USE_VERTEX',
+    'CLOUD_ML_REGION',
+    'ANTHROPIC_VERTEX_PROJECT_ID',
+    'GOOGLE_APPLICATION_CREDENTIALS',
+  ],
 }
 
 export const CLAUDE_INHERITED_ENV = [...INHERITED_ENV, 'USER', 'LOGNAME', 'SHELL', 'TMPDIR'] as const
@@ -31,7 +52,10 @@ const SUBAGENT_NESTED = 'A subagent cannot start another subagent'
 const SUBAGENT_HOST_TOOL = 'Host tools are only available to the main worker, not to subagents'
 
 /** Turns off the CLI's commit and PR attribution in every session through the flag settings layer; settingSources stays as it is (ADR-34). */
-export const ATTRIBUTION_OFF = { attribution: { commit: '', pr: '', sessionUrl: false }, includeCoAuthoredBy: false } as const satisfies Settings
+export const ATTRIBUTION_OFF = {
+  attribution: { commit: '', pr: '', sessionUrl: false },
+  includeCoAuthoredBy: false,
+} as const satisfies Settings
 
 export interface OptionsContext {
   mode: AuthMode
@@ -55,7 +79,17 @@ export interface OptionsContext {
 const READ_TOOLS = ['Read', 'Glob', 'Grep']
 const WRITE_TOOLS = ['Write', 'Edit', 'NotebookEdit']
 const SHELL_TOOLS = ['Bash']
-export const READONLY_GIT_RULES = ['Bash(git show:*)', 'Bash(git log:*)', 'Bash(git diff:*)', 'Bash(git status:*)', 'Bash(git branch:*)', 'Bash(git blame:*)', 'Bash(git cat-file:*)', 'Bash(git ls-files:*)', 'Bash(git rev-parse:*)'] as const
+export const READONLY_GIT_RULES = [
+  'Bash(git show:*)',
+  'Bash(git log:*)',
+  'Bash(git diff:*)',
+  'Bash(git status:*)',
+  'Bash(git branch:*)',
+  'Bash(git blame:*)',
+  'Bash(git cat-file:*)',
+  'Bash(git ls-files:*)',
+  'Bash(git rev-parse:*)',
+] as const
 
 function isSecretName(key: string): boolean {
   if (Object.values(AUTH_ENV).some(keys => keys.includes(key))) return true
@@ -64,7 +98,10 @@ function isSecretName(key: string): boolean {
   return key === 'CLAUDE_CONFIG_DIR' || key === 'CLAUDE_CODE_DISABLE_AUTO_MEMORY'
 }
 
-export function claudeEnv(spec: SessionSpec, ctx: Pick<OptionsContext, 'mode' | 'env' | 'configDir'>): Record<string, string> {
+export function claudeEnv(
+  spec: SessionSpec,
+  ctx: Pick<OptionsContext, 'mode' | 'env' | 'configDir'>,
+): Record<string, string> {
   const base = subprocessEnv(ctx.env)
   for (const key of CLAUDE_INHERITED_ENV) {
     const value = ctx.env[key]
@@ -97,7 +134,8 @@ export function builtinTools(builtins: SessionSpec['builtins']): { allowed: stri
 }
 
 const OUTSIDE_CWD = 'Writing outside the working directory is not allowed'
-const PUSH_OR_PR = 'Push, pull requests and PR changes go through the orchestrator_publish, orchestrator_review_reply, orchestrator_pr_auto_merge and orchestrator_pr_close tools'
+const PUSH_OR_PR =
+  'Push, pull requests and PR changes go through the orchestrator_publish, orchestrator_review_reply, orchestrator_pr_auto_merge and orchestrator_pr_close tools'
 const PROC_READ = 'Reading /proc is not allowed'
 
 function isProcPath(path: string): boolean {
@@ -122,9 +160,14 @@ export function underProc(path: string): boolean {
 function canonical(path: string): string {
   let existing = path
   const rest: string[] = []
-  while (!existsSync(existing) && dirname(existing) !== existing) { rest.unshift(basename(existing)); existing = dirname(existing) }
+  while (!existsSync(existing) && dirname(existing) !== existing) {
+    rest.unshift(basename(existing))
+    existing = dirname(existing)
+  }
   let real = existing
-  try { real = realpathSync(existing) } catch {}
+  try {
+    real = realpathSync(existing)
+  } catch {}
   return join(real, ...rest)
 }
 
@@ -137,13 +180,22 @@ function globLiteralPrefix(pattern: string): string {
   return parts.join('/')
 }
 
-export function guardDecision(spec: SessionSpec, toolName: string, input: unknown, agentId?: string): string | undefined {
+export function guardDecision(
+  spec: SessionSpec,
+  toolName: string,
+  input: unknown,
+  agentId?: string,
+): string | undefined {
   const args = (input ?? {}) as Record<string, unknown>
   if (toolName === AGENT_TOOL) {
     if (spec.role !== 'worker') return AGENT_NOT_ALLOWED
     if (agentId !== undefined) return SUBAGENT_NESTED
     if (args.isolation !== undefined) return SUBAGENT_ISOLATION
-    if (args.subagent_type !== undefined && !(typeof args.subagent_type === 'string' && SUBAGENT_TYPES.includes(args.subagent_type))) return SUBAGENT_TYPE
+    if (
+      args.subagent_type !== undefined &&
+      !(typeof args.subagent_type === 'string' && SUBAGENT_TYPES.includes(args.subagent_type))
+    )
+      return SUBAGENT_TYPE
     return undefined
   }
   if (agentId !== undefined && toolName.startsWith(HOST_TOOL_PREFIX)) return SUBAGENT_HOST_TOOL
@@ -176,21 +228,29 @@ export function guardDecision(spec: SessionSpec, toolName: string, input: unknow
 }
 
 export function foregroundInput(input: unknown): Record<string, unknown> {
-  return { ...(input ?? {}) as Record<string, unknown>, run_in_background: false }
+  return { ...((input ?? {}) as Record<string, unknown>), run_in_background: false }
 }
 
 export function sdkOptions(spec: SessionSpec, ctx: OptionsContext): Options {
   const tools = builtinTools(spec.builtins)
   const guard: HookCallback = async input => {
     if (input.hook_event_name !== 'PreToolUse') return {}
-    const agentId = typeof (input as { agent_id?: unknown }).agent_id === 'string' ? (input as { agent_id: string }).agent_id : undefined
+    const agentId =
+      typeof (input as { agent_id?: unknown }).agent_id === 'string'
+        ? (input as { agent_id: string }).agent_id
+        : undefined
     const reason = guardDecision(spec, input.tool_name, input.tool_input, agentId)
     if (reason === undefined) {
-      if (input.tool_name === AGENT_TOOL) return { hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: foregroundInput(input.tool_input) } }
+      if (input.tool_name === AGENT_TOOL)
+        return { hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: foregroundInput(input.tool_input) } }
       return {}
     }
-    try { agentId === undefined ? ctx.onDeny?.(input.tool_name, reason) : ctx.onDeny?.(input.tool_name, reason, agentId) } catch {}
-    return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }
+    try {
+      agentId === undefined ? ctx.onDeny?.(input.tool_name, reason) : ctx.onDeny?.(input.tool_name, reason, agentId)
+    } catch {}
+    return {
+      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason },
+    }
   }
   const read: HookCallback = async input => {
     if (typeof (input as { agent_id?: unknown }).agent_id === 'string') return {}
@@ -206,8 +266,13 @@ export function sdkOptions(spec: SessionSpec, ctx: OptionsContext): Options {
     settings: { ...ATTRIBUTION_OFF, attribution: { ...ATTRIBUTION_OFF.attribution } },
     permissionMode: 'dontAsk',
     abortController: ctx.abortController,
-    systemPrompt: spec.role === 'worker' ? { type: 'preset', preset: 'claude_code', append: spec.instructions } : spec.instructions,
-    allowedTools: [...tools.allowed, ...(spec.role === 'worker' ? [AGENT_TOOL] : []), ...spec.tools.map(t => mcpToolName(t.name))],
+    systemPrompt:
+      spec.role === 'worker' ? { type: 'preset', preset: 'claude_code', append: spec.instructions } : spec.instructions,
+    allowedTools: [
+      ...tools.allowed,
+      ...(spec.role === 'worker' ? [AGENT_TOOL] : []),
+      ...spec.tools.map(t => mcpToolName(t.name)),
+    ],
     disallowedTools: spec.role === 'worker' ? tools.disallowed : [...tools.disallowed, AGENT_TOOL],
     canUseTool: async toolName => ({ behavior: 'deny', message: `${toolName} is not allowed in this session` }),
     mcpServers: ctx.mcp ? { superagent: ctx.mcp } : {},
@@ -221,7 +286,9 @@ export function sdkOptions(spec: SessionSpec, ctx: OptionsContext): Options {
             allowUnsandboxedCommands: false,
             autoAllowBashIfSandboxed: true,
             network: { allowedDomains: [...spec.network.allow] },
-            ...(ctx.weakerNestedSandbox ? { enableWeakerNestedSandbox: true, filesystem: { denyRead: ['/proc'] } } : {}),
+            ...(ctx.weakerNestedSandbox
+              ? { enableWeakerNestedSandbox: true, filesystem: { denyRead: ['/proc'] } }
+              : {}),
           } satisfies SandboxSettings,
         }
       : {}),

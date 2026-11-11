@@ -12,7 +12,10 @@ import { ClaudeRuntime, type QueryFn, type ToolDenial } from '../runtimes/claude
 import { CLAUDE_INHERITED_ENV } from '../runtimes/claude/options.ts'
 import { FakeRuntime, type FakeScript } from '../runtimes/fake/runtime.ts'
 
-export function agentEnv(credential: Credential, env: Readonly<Record<string, string | undefined>>): Record<string, string> {
+export function agentEnv(
+  credential: Credential,
+  env: Readonly<Record<string, string | undefined>>,
+): Record<string, string> {
   const values: Record<string, string> = {}
   for (const name of CLAUDE_INHERITED_ENV) {
     const value = env[name]
@@ -44,7 +47,11 @@ export function toolDeniedRecord(d: ToolDenial, at: string): LogRecord {
   }
 }
 
-export interface Agent { runtime: AgentRuntime; workspaces: 'git' | 'scratch'; router: 'session' | 'deterministic' }
+export interface Agent {
+  runtime: AgentRuntime
+  workspaces: 'git' | 'scratch'
+  router: 'session' | 'deterministic'
+}
 
 export function createAgent(o: AgentOptions): Agent {
   if (o.fake) return { runtime: new FakeRuntime(o.fake), workspaces: 'scratch', router: 'deterministic' }

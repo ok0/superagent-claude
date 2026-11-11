@@ -5,15 +5,31 @@ export type InputMode = 'steer' | 'followup' | 'inject'
 /** How a turn ended: normally, at the turn limit, at the budget limit, or with an error. */
 export type TurnOutcome = 'success' | 'max_turns' | 'budget' | 'error'
 /** One input given to a session: its id, text and delivery mode. */
-export interface RuntimeInput { id: string; text: string; mode: InputMode }
+export interface RuntimeInput {
+  id: string
+  text: string
+  mode: InputMode
+}
 /** A host tool a session may call, with its argument schema and its execution. */
-export interface ToolSpec { name: string; description: string; schema: z.ZodObject; execute(args: unknown, signal: AbortSignal): Promise<unknown> }
+export interface ToolSpec {
+  name: string
+  description: string
+  schema: z.ZodObject
+  execute(args: unknown, signal: AbortSignal): Promise<unknown>
+}
 /** Everything a runtime needs to open a session. */
 export interface SessionSpec {
-  key: string; role: 'router' | 'worker'; cwd: string; instructions: string; tools: ToolSpec[]
+  key: string
+  role: 'router' | 'worker'
+  cwd: string
+  instructions: string
+  tools: ToolSpec[]
   builtins: { fs: 'none' | 'read' | 'write'; shell: boolean; web: false }
-  network: { allow: string[] }; limits: { maxTurns: number; maxBudgetUsd: number }
-  resume?: string; model?: string; env: Record<string, string>
+  network: { allow: string[] }
+  limits: { maxTurns: number; maxBudgetUsd: number }
+  resume?: string
+  model?: string
+  env: Record<string, string>
 }
 /** What a session reports back to the host, in order. */
 export type RuntimeEvent =
@@ -23,7 +39,10 @@ export type RuntimeEvent =
   | { type: 'error'; message: string; retryable: boolean }
   | { type: 'closed' }
 /** What a runtime reports about its sandbox and version. */
-export interface RuntimeProbe { sandbox: boolean; version: string }
+export interface RuntimeProbe {
+  sandbox: boolean
+  version: string
+}
 /** One open conversation with a runtime. */
 export interface AgentSession {
   readonly sessionId?: string
@@ -44,5 +63,13 @@ export interface AgentRuntime {
 /** Applies inputsRead idempotently: `fresh` returns, in order, the ids it has not returned before (duplicates within one call count once). */
 export class ReadLedger {
   private readonly seen = new Set<string>()
-  fresh(ids: readonly string[]): string[] { const out: string[] = []; for (const id of ids) if (!this.seen.has(id)) { this.seen.add(id); out.push(id) } return out }
+  fresh(ids: readonly string[]): string[] {
+    const out: string[] = []
+    for (const id of ids)
+      if (!this.seen.has(id)) {
+        this.seen.add(id)
+        out.push(id)
+      }
+    return out
+  }
 }

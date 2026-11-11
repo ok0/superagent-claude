@@ -11,14 +11,14 @@ const PROMPT =
   'Use the Bash tool with run_in_background set to true to run exactly: sleep 10; echo BGDONE > bg.txt . Do not wait for it and do not check on it. Reply with exactly STARTED.'
 
 interface Attempt {
-  outcome: ScenarioOutcome;
-  bgFlag: boolean;
-  toolReturnMs: number | undefined;
-  firstResultT: number;
-  earlyNotification: boolean;
-  success: boolean;
-  notificationKeys: string[];
-  bgFile: boolean;
+  outcome: ScenarioOutcome
+  bgFlag: boolean
+  toolReturnMs: number | undefined
+  firstResultT: number
+  earlyNotification: boolean
+  success: boolean
+  notificationKeys: string[]
+  bgFile: boolean
 }
 
 function initLines(init: Record<string, unknown> | undefined): string[] {
@@ -41,25 +41,25 @@ async function attempt(ctx: SpikeContext, n: number): Promise<Attempt> {
     first: { text: PROMPT },
     onEntry: (e, c) => {
       if (e.type !== 'result') return
-      if (c.results.length === 1) c.after(60000, (cc) => cc.end())
+      if (c.results.length === 1) c.after(60000, cc => cc.end())
       else if (c.results.length >= 2) c.end()
     },
   })
 
   const tl = outcome.timeline
-  const bashIdx = tl.findIndex((e) => e.toolUses?.some((u) => u.name === 'Bash') === true)
+  const bashIdx = tl.findIndex(e => e.toolUses?.some(u => u.name === 'Bash') === true)
   const bashEntry = tl[bashIdx]
-  const bgFlag = tl.some((e) =>
-    (e.toolUses ?? []).some((u) => u.name === 'Bash' && u.input.includes('"run_in_background":true')),
+  const bgFlag = tl.some(e =>
+    (e.toolUses ?? []).some(u => u.name === 'Bash' && u.input.includes('"run_in_background":true')),
   )
-  const toolResultEntry = bashIdx === -1 ? undefined : tl.slice(bashIdx + 1).find((e) => (e.toolResults?.length ?? 0) > 0)
+  const toolResultEntry = bashIdx === -1 ? undefined : tl.slice(bashIdx + 1).find(e => (e.toolResults?.length ?? 0) > 0)
   const toolReturnMs =
     bashEntry !== undefined && toolResultEntry !== undefined ? toolResultEntry.t - bashEntry.t : undefined
 
-  const firstIdx = tl.findIndex((e) => e.type === 'result')
+  const firstIdx = tl.findIndex(e => e.type === 'result')
   const firstResultT = tl[firstIdx]?.t ?? -1
   const after = firstIdx === -1 ? [] : tl.slice(firstIdx + 1)
-  const followUp = after.find((e) => isTaskEntry(e) || e.type === 'result')
+  const followUp = after.find(e => isTaskEntry(e) || e.type === 'result')
   const earlyNotification = firstIdx === -1 ? false : tl.slice(0, firstIdx).some(isTaskEntry)
   const note = after.find(isTaskEntry)
   const success = bgFlag && toolReturnMs !== undefined && toolReturnMs < 5000 && followUp !== undefined
@@ -92,7 +92,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
     attempts.push(r)
     init ??= r.outcome.init
     costs.push(r.outcome.costs)
-    const origins = r.outcome.results.slice(1).map((e) => JSON.stringify(e.result?.origin ?? null))
+    const origins = r.outcome.results.slice(1).map(e => JSON.stringify(e.result?.origin ?? null))
     observations.push(
       `attempt ${n}: bgFlag=${r.bgFlag}; toolReturnMs=${r.toolReturnMs ?? 'n/a'}; firstResultT=${r.firstResultT}; success=${r.success}; earlyNotification=${r.earlyNotification}; bgFile=${r.bgFile}; notificationKeys=${r.notificationKeys.join('|') || 'none'}`,
     )
@@ -102,9 +102,9 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
     ctx.log(`${ID} attempt ${n}: success=${r.success}`)
   }
 
-  const used = attempts.filter((a) => a.bgFlag).length
-  const successes = attempts.filter((a) => a.success).length
-  const deviation = attempts.some((a) => a.earlyNotification)
+  const used = attempts.filter(a => a.bgFlag).length
+  const successes = attempts.filter(a => a.success).length
+  const deviation = attempts.some(a => a.earlyNotification)
   observations.unshift(...initLines(init), `successes=${successes}/${attempts.length}; flag_used=${used}`)
 
   let status: ItemResult['status']

@@ -48,7 +48,9 @@ describe('status', () => {
     expect(text).toContain('effect reply m1')
     expect(text).toContain('owner/repo  accessible, push allowed')
     expect(text).toContain('owner/other  not accessible: Not Found (HTTP 404)')
-    expect(text).toContain('Subscription consent: given at 2026-01-02T03:04:05.000Z (allowed list hash 0123456789abcdef)')
+    expect(text).toContain(
+      'Subscription consent: given at 2026-01-02T03:04:05.000Z (allowed list hash 0123456789abcdef)',
+    )
     expect(text).not.toContain(TOKEN)
     store.close()
   })
@@ -61,7 +63,17 @@ describe('status', () => {
     const a = ticket.assignments[0]!
     a.report = { state: 'ready', summary: 'Opened the pull request', at: iso(now - 50_000) }
     a.idleAt = iso(now - 40_000)
-    ticket.inputs = [{ id: 'in-1', kind: 'trigger', triggerId: 'tr-1', at: iso(now - 70_000), human: true, readAt: iso(now - 65_000), deliveredTo: a.id }] as never
+    ticket.inputs = [
+      {
+        id: 'in-1',
+        kind: 'trigger',
+        triggerId: 'tr-1',
+        at: iso(now - 70_000),
+        human: true,
+        readAt: iso(now - 65_000),
+        deliveredTo: a.id,
+      },
+    ] as never
     store.tickets.save(ticket)
     const run = async () => {
       const { io: cli, out } = io(dir)
@@ -72,7 +84,15 @@ describe('status', () => {
     expect(first).toContain('Idle sessions (1):')
     expect(first).toContain(`${IDS.running}  Fix the flaky test  idle since ${a.idleAt}`)
     expect(first).toContain('Running assignments: none')
-    ticket.inputs.push({ id: 'in-2', kind: 'trigger', triggerId: 'tr-2', at: iso(now - 30_000), human: true, readAt: null, deliveredTo: a.id } as never)
+    ticket.inputs.push({
+      id: 'in-2',
+      kind: 'trigger',
+      triggerId: 'tr-2',
+      at: iso(now - 30_000),
+      human: true,
+      readAt: null,
+      deliveredTo: a.id,
+    } as never)
     store.tickets.save(ticket)
     const unread = await run()
     expect(unread).toContain('Running assignments (1):')
@@ -101,7 +121,11 @@ describe('status', () => {
   it('shows consent as not applicable without a recorded consent', async () => {
     const dir = tempDir()
     const { store, configPath } = seedState(dir)
-    store.set(KV.health.snapshot, { at: new Date().toISOString(), pid: 1, entries: { auth: { state: 'ready', detail: 'ok', values: { mode: 'api-key' } } } })
+    store.set(KV.health.snapshot, {
+      at: new Date().toISOString(),
+      pid: 1,
+      entries: { auth: { state: 'ready', detail: 'ok', values: { mode: 'api-key' } } },
+    })
     const { io: cli, out } = io(dir)
     expect(await main(['status', '--config', configPath], cli)).toBe(0)
     expect(out.join('')).toContain('Subscription consent: not applicable (auth.mode api-key)')
@@ -147,7 +171,13 @@ describe('HealthRecorder', () => {
     board.claim('runtime', { state: 'ready', detail: 'ok' })
     const written: HealthSnapshot[] = []
     let clock = Date.parse('2026-03-01T00:00:00.000Z')
-    const recorder = new HealthRecorder(board, snapshot => { written.push(snapshot) }, () => clock)
+    const recorder = new HealthRecorder(
+      board,
+      snapshot => {
+        written.push(snapshot)
+      },
+      () => clock,
+    )
     expect(recorder.record()).toBe(true)
     clock += 1000
     expect(recorder.record()).toBe(false)

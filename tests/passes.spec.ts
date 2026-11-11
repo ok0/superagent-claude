@@ -12,15 +12,33 @@ function passes(closing = () => false, extra: Partial<Pick<PassesHost, 'timers' 
   const health = new HealthBoard().claim('runtime', { state: 'starting', detail: '' })
   const engine = { receive: vi.fn(() => 'stored' as const), evaluateDue: vi.fn() }
   const effects = { kick: vi.fn(), idle: vi.fn(async () => {}) }
-  const value = new Passes({ engine, effects, health, lifetime: new AbortController().signal, configured: () => true, closing, ...extra })
+  const value = new Passes({
+    engine,
+    effects,
+    health,
+    lifetime: new AbortController().signal,
+    configured: () => true,
+    closing,
+    ...extra,
+  })
   return { passes: value, engine, effects, health }
 }
-const trigger = { id: 't1', source: 'chat', threads: [{ source: 'chat', id: 'room_1:msg_1' }], actor: { source: 'chat', id: 'user_a' }, human: true,
-  at: '2026-10-01T00:00:00.000Z', text: 'hi', meta: {} } as Trigger
+const trigger = {
+  id: 't1',
+  source: 'chat',
+  threads: [{ source: 'chat', id: 'room_1:msg_1' }],
+  actor: { source: 'chat', id: 'user_a' },
+  human: true,
+  at: '2026-10-01T00:00:00.000Z',
+  text: 'hi',
+  meta: {},
+} as Trigger
 
 it('reports a failed pass as an error of the runtime, which the next pass that succeeds clears', async () => {
   const h = passes()
-  h.engine.evaluateDue.mockImplementationOnce(() => { throw new Error('database is locked') })
+  h.engine.evaluateDue.mockImplementationOnce(() => {
+    throw new Error('database is locked')
+  })
   h.passes.request()
   await h.passes.idle()
   expect(h.health.get()).toMatchObject({ state: 'error', detail: 'A pass failed: Error: database is locked' })
@@ -56,19 +74,31 @@ it('starts no timer once stopped, as a start-up that ends after a stop asks', as
     h.passes.start()
     await vi.advanceTimersByTimeAsync(10_000)
     expect(h.engine.evaluateDue).not.toHaveBeenCalled()
-  } finally { vi.useRealTimers() }
+  } finally {
+    vi.useRealTimers()
+  }
 })
 
 it('runs a pass on every tick of an injected 2-second timer, stamps health with the injected clock, and clears the timer on stop', async () => {
   let tick = () => {}
-  const timers = { setInterval: vi.fn((run: () => void) => { tick = run; return 'handle' }), clearInterval: vi.fn() }
+  const timers = {
+    setInterval: vi.fn((run: () => void) => {
+      tick = run
+      return 'handle'
+    }),
+    clearInterval: vi.fn(),
+  }
   const h = passes(() => false, { timers, now: () => Date.parse('2026-10-01T00:00:00Z') })
   h.passes.start()
   expect(timers.setInterval).toHaveBeenCalledWith(expect.any(Function), 2000)
-  tick(); await h.passes.idle()
+  tick()
+  await h.passes.idle()
   expect(h.engine.evaluateDue).toHaveBeenCalledOnce()
-  h.engine.evaluateDue.mockImplementationOnce(() => { throw new Error('database is locked') })
-  tick(); await h.passes.idle()
+  h.engine.evaluateDue.mockImplementationOnce(() => {
+    throw new Error('database is locked')
+  })
+  tick()
+  await h.passes.idle()
   expect(h.health.get()).toMatchObject({ state: 'error', at: '2026-10-01T00:00:00.000Z' })
   await h.passes.stop()
   expect(timers.clearInterval).toHaveBeenCalledWith('handle')

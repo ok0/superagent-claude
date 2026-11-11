@@ -38,7 +38,8 @@ export function pushFailure(message: string, status: number | undefined): PushFa
   if (status === 401 || status === 403 || status === 404) return { kind: 'access', status }
   if (/repository not found|repository '[^']*' not found/i.test(message)) return { kind: 'access', status: 404 }
   if (/permission to \S+ denied|permission denied|access denied/i.test(message)) return { kind: 'access', status: 403 }
-  if (/authentication failed|could not read username|invalid username or password/i.test(message)) return { kind: 'access', status: 401 }
+  if (/authentication failed|could not read username|invalid username or password/i.test(message))
+    return { kind: 'access', status: 401 }
   return { kind: 'transient' }
 }
 
@@ -51,8 +52,18 @@ export interface WorkspaceProvider {
 
 export const CO_AUTHOR = /^[^<>\r\n]+ <[^<>\s@]+@[^<>\s]+>$/
 
-export interface PushOptions { coAuthors?: readonly string[] }
-export interface PushResult { repository: string; branch: string; base: string; head: string; pushed: number; rewritten: number; uncommitted: boolean }
+export interface PushOptions {
+  coAuthors?: readonly string[]
+}
+export interface PushResult {
+  repository: string
+  branch: string
+  base: string
+  head: string
+  pushed: number
+  rewritten: number
+  uncommitted: boolean
+}
 
 export function coAuthorTrailers(message: string, coAuthors: readonly string[]): string {
   const lines = new Set(message.split(/\r?\n/).map(line => line.trim().toLowerCase()))
@@ -66,7 +77,12 @@ export function coAuthorTrailers(message: string, coAuthors: readonly string[]):
 }
 
 export function worktreeName(ticket: Pick<Ticket, 'id' | 'execution'>): string {
-  const slug = (ticket.execution?.name ?? '').toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '').replace(/\.\.+/g, '.').slice(0, 40)
+  const slug = (ticket.execution?.name ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^[-.]+|[-.]+$/g, '')
+    .replace(/\.\.+/g, '.')
+    .slice(0, 40)
   return slug ? `${slug}-${ticket.id.slice(0, 12)}` : ticket.id
 }
 
@@ -74,7 +90,11 @@ const NAME = /^[a-z0-9][a-z0-9._-]{0,99}$/i
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
 
 /** Where a repository is fetched from, the env that authenticates only the clone and fetch calls, and the values masked in errors. Provided by the Source assembly point so the executor never names the hosting service. */
-export interface RepositoryAccess { remote(repository: string): string; env(repository: string): Record<string, string>; secrets: readonly string[] }
+export interface RepositoryAccess {
+  remote(repository: string): string
+  env(repository: string): Record<string, string>
+  secrets: readonly string[]
+}
 
 export interface WorkspacesOptions {
   stateDir: string
@@ -114,7 +134,13 @@ export class Workspaces implements WorkspaceProvider {
 
   private serial<T>(key: string, run: () => Promise<T>): Promise<T> {
     const result = (this.chains.get(key) ?? Promise.resolve()).then(run, run)
-    this.chains.set(key, result.then(() => undefined, () => undefined))
+    this.chains.set(
+      key,
+      result.then(
+        () => undefined,
+        () => undefined,
+      ),
+    )
     return result
   }
 
@@ -127,7 +153,8 @@ export class Workspaces implements WorkspaceProvider {
   }
 
   async prepare(ticket: Ticket, name: string): Promise<Workspace> {
-    if (!NAME.test(name) || name.includes('..') || name.endsWith('.lock')) throw new Error('Invalid worktree name: ' + name)
+    if (!NAME.test(name) || name.includes('..') || name.endsWith('.lock'))
+      throw new Error('Invalid worktree name: ' + name)
     const repository = this.repositoryOf(ticket)
     if (!REPOSITORY.test(repository)) throw new RepositoryAccessError(repository, 'not an owner/name repository')
     const cwd = this.worktreePath(ticket.id)
@@ -144,8 +171,14 @@ export class Workspaces implements WorkspaceProvider {
       const base = await this.clone(repository)
       mkdirSync(dirname(cwd), { recursive: true })
       await this.git(['worktree', 'prune'], base)
-      const exists = await this.git(['rev-parse', '--verify', '--quiet', 'refs/heads/' + branch], base).then(() => true, () => false)
-      await this.git(exists ? ['worktree', 'add', cwd, branch] : ['worktree', 'add', '--no-track', '-b', branch, cwd, 'origin/HEAD'], base)
+      const exists = await this.git(['rev-parse', '--verify', '--quiet', 'refs/heads/' + branch], base).then(
+        () => true,
+        () => false,
+      )
+      await this.git(
+        exists ? ['worktree', 'add', cwd, branch] : ['worktree', 'add', '--no-track', '-b', branch, cwd, 'origin/HEAD'],
+        base,
+      )
       return { repository, cwd, branch }
     })
   }
@@ -163,7 +196,11 @@ export class Workspaces implements WorkspaceProvider {
       }
     } catch (e) {
       if (!existsSync(join(dir, '.git'))) rmSync(dir, { recursive: true, force: true })
-      throw new RepositoryAccessError(repository, this.redact(e instanceof Error ? e.message : String(e)), accessStatus(e))
+      throw new RepositoryAccessError(
+        repository,
+        this.redact(e instanceof Error ? e.message : String(e)),
+        accessStatus(e),
+      )
     }
     await this.git(['config', 'core.hooksPath', this.hooks], dir)
     return dir
@@ -172,7 +209,9 @@ export class Workspaces implements WorkspaceProvider {
   async remove(ticketId: string): Promise<void> {
     const path = this.worktreePath(ticketId)
     if (!existsSync(path)) return
-    const common = existsSync(join(path, '.git')) ? (await this.git(['rev-parse', '--path-format=absolute', '--git-common-dir'], path).catch(() => '')).trim() : ''
+    const common = existsSync(join(path, '.git'))
+      ? (await this.git(['rev-parse', '--path-format=absolute', '--git-common-dir'], path).catch(() => '')).trim()
+      : ''
     rmSync(path, { recursive: true, force: true })
     if (common) await this.git(['--git-dir', common, 'worktree', 'prune'], this.stateDir).catch(() => '')
   }
@@ -183,7 +222,8 @@ export class Workspaces implements WorkspaceProvider {
 
   async push(ticket: Ticket, options: PushOptions): Promise<PushResult> {
     const coAuthors = options.coAuthors ?? []
-    for (const entry of coAuthors) if (!CO_AUTHOR.test(entry)) throw new Error('A co-author is written as Name <email>: ' + entry)
+    for (const entry of coAuthors)
+      if (!CO_AUTHOR.test(entry)) throw new Error('A co-author is written as Name <email>: ' + entry)
     const repository = this.repositoryOf(ticket)
     const cwd = this.worktreePath(ticket.id)
     if (!existsSync(join(cwd, '.git'))) throw new Error('This ticket has no worktree to publish')
@@ -191,35 +231,62 @@ export class Workspaces implements WorkspaceProvider {
       const branch = (await this.git(['branch', '--show-current'], cwd)).trim()
       if (!branch.startsWith('agent/')) throw new Error('The worktree is not on its agent branch')
       const clone = await this.clone(repository)
-      const base = (await this.git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], clone)).trim().replace(/^origin\//, '')
+      const base = (await this.git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], clone))
+        .trim()
+        .replace(/^origin\//, '')
       const uncommitted = (await this.git(['status', '--porcelain'], cwd)).trim() !== ''
-      const list = (await this.git(['rev-list', '--reverse', '--topo-order', 'HEAD', '--not', '--remotes=origin'], cwd)).split('\n').map(line => line.trim()).filter(Boolean)
+      const list = (await this.git(['rev-list', '--reverse', '--topo-order', 'HEAD', '--not', '--remotes=origin'], cwd))
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)
       let rewritten = 0
       if (list.length) {
         const map = new Map<string, string>()
         for (const sha of list) {
           const parents = (await this.git(['rev-list', '--parents', '-n', '1', sha], cwd)).trim().split(' ').slice(1)
-          const [an, ae, ad, cn, ce, cd, tree] = (await this.git(['show', '-s', '--format=%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI%x00%T', sha], cwd)).trim().split('\u0000')
+          const [an, ae, ad, cn, ce, cd, tree] = (
+            await this.git(['show', '-s', '--format=%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI%x00%T', sha], cwd)
+          )
+            .trim()
+            .split('\u0000')
           const msg = await this.git(['show', '-s', '--format=%B', sha], cwd)
           const next = stripAiAttribution(coAuthorTrailers(msg, coAuthors))
           const np = parents.map(parent => map.get(parent) ?? parent)
           if (next === msg && np.length === parents.length && np.every((parent, i) => parent === parents[i])) {
             map.set(sha, sha)
           } else {
-            const commit = (await this.git(['commit-tree', '--no-gpg-sign', tree ?? '', ...np.flatMap(parent => ['-p', parent]), '-m', next], cwd, {
-              GIT_AUTHOR_NAME: an ?? '', GIT_AUTHOR_EMAIL: ae ?? '', GIT_AUTHOR_DATE: ad ?? '',
-              GIT_COMMITTER_NAME: cn ?? '', GIT_COMMITTER_EMAIL: ce ?? '', GIT_COMMITTER_DATE: cd ?? '',
-            })).trim()
+            const commit = (
+              await this.git(
+                ['commit-tree', '--no-gpg-sign', tree ?? '', ...np.flatMap(parent => ['-p', parent]), '-m', next],
+                cwd,
+                {
+                  GIT_AUTHOR_NAME: an ?? '',
+                  GIT_AUTHOR_EMAIL: ae ?? '',
+                  GIT_AUTHOR_DATE: ad ?? '',
+                  GIT_COMMITTER_NAME: cn ?? '',
+                  GIT_COMMITTER_EMAIL: ce ?? '',
+                  GIT_COMMITTER_DATE: cd ?? '',
+                },
+              )
+            ).trim()
             map.set(sha, commit)
             rewritten++
           }
         }
         const old = (await this.git(['rev-parse', 'HEAD'], cwd)).trim()
         const replacement = map.get(old)
-        if (replacement !== undefined && replacement !== old) await this.git(['update-ref', 'refs/heads/' + branch, replacement, old], cwd)
+        if (replacement !== undefined && replacement !== old)
+          await this.git(['update-ref', 'refs/heads/' + branch, replacement, old], cwd)
       }
-      const remoteExists = await this.git(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/' + branch], cwd).then(() => true, () => false)
-      if (list.length === 0 && !remoteExists) throw new Error('There are no commits to publish; commit the change first')
+      const remoteExists = await this.git(
+        ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/' + branch],
+        cwd,
+      ).then(
+        () => true,
+        () => false,
+      )
+      if (list.length === 0 && !remoteExists)
+        throw new Error('There are no commits to publish; commit the change first')
       if (list.length > 0) {
         for (let attempt = 1; ; attempt++) {
           try {
@@ -229,14 +296,26 @@ export class Workspaces implements WorkspaceProvider {
             if (error instanceof Error && error.name === 'AbortError') throw error
             const message = this.redact(error instanceof Error ? error.message : String(error))
             const failure = pushFailure(message, accessStatus(error))
-            if (failure.kind === 'rejected') throw new Error('The push was rejected without force; the remote branch has commits this worktree lacks: ' + message)
+            if (failure.kind === 'rejected')
+              throw new Error(
+                'The push was rejected without force; the remote branch has commits this worktree lacks: ' + message,
+              )
             if (failure.kind === 'access') throw new RepositoryAccessError(repository, message, failure.status)
-            if (attempt >= PUSH_ATTEMPTS) throw new Error(`The push still failed after ${PUSH_ATTEMPTS} attempts by the host: ${message}`)
+            if (attempt >= PUSH_ATTEMPTS)
+              throw new Error(`The push still failed after ${PUSH_ATTEMPTS} attempts by the host: ${message}`)
             await this.sleep(PUSH_BACKOFF_MS[attempt - 1] ?? PUSH_BACKOFF_MS.at(-1)!)
           }
         }
       }
-      return { repository, branch, base, head: (await this.git(['rev-parse', 'HEAD'], cwd)).trim(), pushed: list.length, rewritten, uncommitted }
+      return {
+        repository,
+        branch,
+        base,
+        head: (await this.git(['rev-parse', 'HEAD'], cwd)).trim(),
+        pushed: list.length,
+        rewritten,
+        uncommitted,
+      }
     })
   }
 }

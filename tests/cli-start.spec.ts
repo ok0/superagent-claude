@@ -13,7 +13,8 @@ const dirs: string[] = []
 const children: ChildProcess[] = []
 
 afterEach(() => {
-  for (const child of children.splice(0)) if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+  for (const child of children.splice(0))
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
@@ -25,7 +26,15 @@ function tempDir(): string {
 
 function writeConfig(dir: string, extra: Record<string, unknown> = {}): string {
   const path = join(dir, 'superagent-claude.json')
-  writeFileSync(path, JSON.stringify({ repositories: ['owner/repo'], policy: { allowed: ['alice'] }, stateDir: join(dir, 'state'), ...extra }))
+  writeFileSync(
+    path,
+    JSON.stringify({
+      repositories: ['owner/repo'],
+      policy: { allowed: ['alice'] },
+      stateDir: join(dir, 'state'),
+      ...extra,
+    }),
+  )
   return path
 }
 
@@ -35,12 +44,21 @@ function io(cwd: string) {
 
 function spawnCli(args: string[], dir: string) {
   const entry = process.env.SUPERAGENT_CLAUDE_CLI ?? fileURLToPath(new URL('../src/cli/bin.ts', import.meta.url))
-  const child = spawn(process.execPath, [entry, ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...cliEnv(dir) } as NodeJS.ProcessEnv })
+  const child = spawn(process.execPath, [entry, ...args], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, ...cliEnv(dir) } as NodeJS.ProcessEnv,
+  })
   children.push(child)
   const state = { out: '', err: '', code: undefined as number | null | undefined }
-  child.stdout.setEncoding('utf8').on('data', (chunk: string) => { state.out += chunk })
-  child.stderr.setEncoding('utf8').on('data', (chunk: string) => { state.err += chunk })
-  child.once('exit', code => { state.code = code })
+  child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+    state.out += chunk
+  })
+  child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+    state.err += chunk
+  })
+  child.once('exit', code => {
+    state.code = code
+  })
   return { child, state }
 }
 
@@ -84,7 +102,12 @@ describe('start in process', () => {
     const c = io(dir)
     const p = main(['start', '--config', writeConfig(dir, { security: { allowUnsandboxed: true } })], c.io)
     await waitUntil(() => c.out.join('').includes('"runtime.started"'), 10_000)
-    const started = c.out.join('').split('\n').filter(line => line.length > 0).map(line => JSON.parse(line) as { event: string; runtime?: string }).find(record => record.event === 'runtime.started')
+    const started = c.out
+      .join('')
+      .split('\n')
+      .filter(line => line.length > 0)
+      .map(line => JSON.parse(line) as { event: string; runtime?: string })
+      .find(record => record.event === 'runtime.started')
     expect(started?.runtime).toBe('claude')
     c.listeners.SIGINT!()
     expect(await p).toBe(0)
@@ -98,7 +121,10 @@ describe('start in process', () => {
     c.listeners.SIGINT!()
     expect(await p).toBe(0)
 
-    const lines = c.out.join('').split('\n').filter(line => line.length > 0)
+    const lines = c.out
+      .join('')
+      .split('\n')
+      .filter(line => line.length > 0)
     const events = lines.map(line => {
       const record = JSON.parse(line) as { level: unknown; at: unknown; event: string; runtime?: string }
       expect(record).toHaveProperty('level')

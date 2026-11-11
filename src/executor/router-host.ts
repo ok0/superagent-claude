@@ -10,9 +10,13 @@ import type { PromptChange } from './worker-executor.ts'
 
 export const ROUTER_KEY = 'router'
 export const REOPEN_LIMIT = 3
-export const ROUTER_CONTEXT_NOTE = 'The host instructions changed since the earlier Router session, so this is a new session with the current instructions. Read open work with orchestrator_read tickets before deciding; do not repeat replies or decisions already recorded.'
+export const ROUTER_CONTEXT_NOTE =
+  'The host instructions changed since the earlier Router session, so this is a new session with the current instructions. Read open work with orchestrator_read tickets before deciding; do not repeat replies or decisions already recorded.'
 
-export interface RouterRecord { sessionId: string | null; promptVersion: string | null }
+export interface RouterRecord {
+  sessionId: string | null
+  promptVersion: string | null
+}
 
 export interface RouterDeps {
   instructions(): string
@@ -73,7 +77,9 @@ export class RouterHost {
   async ensure(): Promise<void> {
     if (this.closing) throw new Error('The Router session is closing')
     if (this.session) return
-    this.opening ??= this.open().finally(() => { this.opening = undefined })
+    this.opening ??= this.open().finally(() => {
+      this.opening = undefined
+    })
     await this.opening
   }
 
@@ -161,7 +167,9 @@ export class RouterHost {
       at: this.stamp(),
     })
     if (this.unread.size > 0 && this.failures < REOPEN_LIMIT) {
-      void this.ensure().catch(error => this.options.health?.set({ state: 'error', detail: String(error), at: this.stamp() }))
+      void this.ensure().catch(error =>
+        this.options.health?.set({ state: 'error', detail: String(error), at: this.stamp() }),
+      )
     }
   }
 

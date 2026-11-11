@@ -11,7 +11,15 @@ describe('Commands', () => {
     const exec = ok()
     const commands = new Commands({
       apiProgram: 'gh',
-      baseEnv: { PATH: '/bin', HOME: '/h', LANG: 'C', ANTHROPIC_API_KEY: 'k', SUPERAGENT_CLAUDE_GITHUB_TOKEN: 't', AWS_SECRET_ACCESS_KEY: 's', GH_TOKEN: 'leak' },
+      baseEnv: {
+        PATH: '/bin',
+        HOME: '/h',
+        LANG: 'C',
+        ANTHROPIC_API_KEY: 'k',
+        SUPERAGENT_CLAUDE_GITHUB_TOKEN: 't',
+        AWS_SECRET_ACCESS_KEY: 's',
+        GH_TOKEN: 'leak',
+      },
       apiEnv: { GH_TOKEN: 't' },
       exec,
     })
@@ -39,19 +47,40 @@ describe('Commands', () => {
 
   it('turns failures into CliError with the HTTP status and without argv', async () => {
     const httpFailure = Object.assign(new Error('failed'), { stderr: 'gh: Not Found (HTTP 404)', code: 1 })
-    const failing = new Commands({ apiProgram: 'gh', baseEnv: {}, exec: vi.fn(async () => { throw httpFailure }) })
+    const failing = new Commands({
+      apiProgram: 'gh',
+      baseEnv: {},
+      exec: vi.fn(async () => {
+        throw httpFailure
+      }),
+    })
     const error = await failing.call(['api', 'x', '-f', 'body=secret-body']).catch((caught: unknown) => caught)
     expect(error).toBeInstanceOf(CliError)
     expect((error as CliError).code).toBe(404)
     expect((error as Error).message).not.toContain('secret-body')
 
-    const jsonFailure = Object.assign(new Error('failed'), { stderr: '{"error":{"code":410,"message":"Gone"}}', code: 1 })
-    const gone = new Commands({ apiProgram: 'gh', baseEnv: {}, exec: vi.fn(async () => { throw jsonFailure }) })
+    const jsonFailure = Object.assign(new Error('failed'), {
+      stderr: '{"error":{"code":410,"message":"Gone"}}',
+      code: 1,
+    })
+    const gone = new Commands({
+      apiProgram: 'gh',
+      baseEnv: {},
+      exec: vi.fn(async () => {
+        throw jsonFailure
+      }),
+    })
     const goneError = await gone.call(['api', 'x']).catch((caught: unknown) => caught)
     expect((goneError as CliError).code).toBe(410)
 
     const abort = Object.assign(new Error('aborted'), { name: 'AbortError' })
-    const aborted = new Commands({ apiProgram: 'gh', baseEnv: {}, exec: vi.fn(async () => { throw abort }) })
+    const aborted = new Commands({
+      apiProgram: 'gh',
+      baseEnv: {},
+      exec: vi.fn(async () => {
+        throw abort
+      }),
+    })
     await expect(aborted.call(['api', 'x'])).rejects.toBe(abort)
   })
 

@@ -14,7 +14,7 @@ function host(ended?: { by: string }) {
   }
   const h: ExecutorToolsHost = {
     engine: () => engine as never,
-    ticket: () => (ended ? { ended } as never : {} as never),
+    ticket: () => (ended ? ({ ended } as never) : ({} as never)),
   }
   return { engine, host: h }
 }
@@ -55,8 +55,9 @@ describe('worker tools', () => {
     const follow = find(executorTools(h, { id: 'T1' }), 'orchestrator_thread_follow')
     await follow.execute({ thread: 'github:Owner/Repo#7', reason: 'The issue it fixes.' }, new AbortController().signal)
     expect(engine.followForContext).toHaveBeenCalledWith('T1', { source: 'github', id: 'Owner/Repo#7' })
-    await expect(follow.execute({ thread: 'github:other/repo#7', reason: 'r' }, new AbortController().signal))
-      .rejects.toThrow(/not in the configured repositories/)
+    await expect(
+      follow.execute({ thread: 'github:other/repo#7', reason: 'r' }, new AbortController().signal),
+    ).rejects.toThrow(/not in the configured repositories/)
     expect(engine.followForContext).toHaveBeenCalledTimes(1)
   })
 
@@ -74,8 +75,15 @@ describe('worker tools', () => {
   it('a valid report reaches the engine', async () => {
     const { engine, host: h } = host()
     const report = find(executorTools(h, { id: 'T1' }), 'orchestrator_report')
-    const result = await report.execute({ state: 'progress', summary: 's', human_action: 'Can you grant push access to owner/repo?' }, new AbortController().signal)
-    expect(engine.report).toHaveBeenCalledWith('T1', { state: 'progress', summary: 's', question: 'Can you grant push access to owner/repo?' })
+    const result = await report.execute(
+      { state: 'progress', summary: 's', human_action: 'Can you grant push access to owner/repo?' },
+      new AbortController().signal,
+    )
+    expect(engine.report).toHaveBeenCalledWith('T1', {
+      state: 'progress',
+      summary: 's',
+      question: 'Can you grant push access to owner/repo?',
+    })
     expect(result).toEqual({ reported: true })
   })
 
@@ -85,10 +93,12 @@ describe('worker tools', () => {
     'word '.repeat(101) + 'ok?',
     'Approve?\nMerge?',
     ['a?', 'b?'],
-  ])('human_action %s is a tool error', async (humanAction) => {
+  ])('human_action %s is a tool error', async humanAction => {
     const { engine, host: h } = host()
     const report = find(executorTools(h, { id: 'T1' }), 'orchestrator_report')
-    await expect(report.execute({ state: 'progress', summary: 's', human_action: humanAction }, new AbortController().signal)).rejects.toThrow()
+    await expect(
+      report.execute({ state: 'progress', summary: 's', human_action: humanAction }, new AbortController().signal),
+    ).rejects.toThrow()
     expect(engine.report).not.toHaveBeenCalled()
   })
 
@@ -104,16 +114,25 @@ describe('worker tools', () => {
   it('a report on an ended ticket fails', async () => {
     const { h } = { h: host({ by: 'human' }).host }
     const report = find(executorTools(h, { id: 'T1' }), 'orchestrator_report')
-    await expect(report.execute({ state: 'ready', summary: 's' }, new AbortController().signal)).rejects.toThrow(/Ticket ended/)
+    await expect(report.execute({ state: 'ready', summary: 's' }, new AbortController().signal)).rejects.toThrow(
+      /Ticket ended/,
+    )
   })
 
   it('ack text over 100 words is rejected; a short ack is sent', async () => {
     const { engine, host: h } = host()
     const ack = find(executorTools(h, { id: 'T1' }), 'orchestrator_ack')
-    await expect(ack.execute({ trigger_id: 'A', text: 'word '.repeat(101) }, new AbortController().signal)).rejects.toThrow()
+    await expect(
+      ack.execute({ trigger_id: 'A', text: 'word '.repeat(101) }, new AbortController().signal),
+    ).rejects.toThrow()
     expect(engine.reply).not.toHaveBeenCalled()
     const result = await ack.execute({ trigger_id: 'A', text: 'On it.' }, new AbortController().signal)
-    expect(engine.reply).toHaveBeenCalledWith({ purpose: 'acknowledgement', ticketId: 'T1', triggerId: 'A', text: 'On it.' })
+    expect(engine.reply).toHaveBeenCalledWith({
+      purpose: 'acknowledgement',
+      ticketId: 'T1',
+      triggerId: 'A',
+      text: 'On it.',
+    })
     expect(result).toEqual({ trigger_id: 'A', acknowledgement: 'pending', reused: false })
   })
 
@@ -126,18 +145,24 @@ describe('worker tools', () => {
   it('a report title reaches the engine and omission keeps the title', async () => {
     const { engine, host: h } = host()
     const report = find(executorTools(h, { id: 'T1' }), 'orchestrator_report')
-    await report.execute({ state: 'progress', summary: 's', title: '  Add WELCOME.md instead  ' }, new AbortController().signal)
+    await report.execute(
+      { state: 'progress', summary: 's', title: '  Add WELCOME.md instead  ' },
+      new AbortController().signal,
+    )
     expect(engine.report.mock.calls[0]?.[1]).toMatchObject({ title: 'Add WELCOME.md instead' })
     await report.execute({ state: 'progress', summary: 's' }, new AbortController().signal)
     expect(engine.report.mock.calls[1]?.[1]).not.toHaveProperty('title')
-    await expect(report.execute({ state: 'progress', summary: 's', title: 'x'.repeat(200) }, new AbortController().signal))
-      .resolves.toEqual({ reported: true })
+    await expect(
+      report.execute({ state: 'progress', summary: 's', title: 'x'.repeat(200) }, new AbortController().signal),
+    ).resolves.toEqual({ reported: true })
   })
 
-  it.each(['', '   ', 'x'.repeat(201)])('report title %# is a tool error', async (title) => {
+  it.each(['', '   ', 'x'.repeat(201)])('report title %# is a tool error', async title => {
     const { engine, host: h } = host()
     const report = find(executorTools(h, { id: 'T1' }), 'orchestrator_report')
-    await expect(report.execute({ state: 'progress', summary: 's', title }, new AbortController().signal)).rejects.toThrow()
+    await expect(
+      report.execute({ state: 'progress', summary: 's', title }, new AbortController().signal),
+    ).rejects.toThrow()
     expect(engine.report).not.toHaveBeenCalled()
   })
 })

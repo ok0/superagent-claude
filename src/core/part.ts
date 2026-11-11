@@ -3,7 +3,17 @@
 import { UserError } from './errors.ts'
 import { followupOwners, reached, threadKey } from './model.ts'
 import type { Thread, ThreadRef, Ticket, Trigger } from './model.ts'
-import type { Assessor, AssessmentOutcome, DomainEvent, DomainEvents, Executor, Outbox, Policy, Repositories, SourceScope } from './ports.ts'
+import type {
+  Assessor,
+  AssessmentOutcome,
+  DomainEvent,
+  DomainEvents,
+  Executor,
+  Outbox,
+  Policy,
+  Repositories,
+  SourceScope,
+} from './ports.ts'
 
 export interface EngineOptions {
   repo: Repositories
@@ -26,11 +36,20 @@ export abstract class EnginePart {
   protected readonly repo: Repositories
   protected readonly options: EngineOptions
   // Port note: parameter property expanded to an explicit field (erasableSyntaxOnly); behavior unchanged.
-  constructor(options: EngineOptions) { this.options = options; this.repo = options.repo }
-  protected now(): string { return this.options.now?.() ?? new Date().toISOString() }
-  protected policy(): Policy { return this.options.policy() }
+  constructor(options: EngineOptions) {
+    this.options = options
+    this.repo = options.repo
+  }
+  protected now(): string {
+    return this.options.now?.() ?? new Date().toISOString()
+  }
+  protected policy(): Policy {
+    return this.options.policy()
+  }
   /** The tickets whose worker decides a person's follow-up: see `followupOwners`. */
-  protected owners(trigger: Trigger): string[] { return followupOwners(trigger, this.repo) }
+  protected owners(trigger: Trigger): string[] {
+    return followupOwners(trigger, this.repo)
+  }
   /** Refuse a main-Session routing of a follow-up a ticket's worker still decides. */
   protected leftToWorkers(trigger: Trigger): void {
     const owners = this.owners(trigger)
@@ -45,7 +64,7 @@ export abstract class EnginePart {
   protected handBack(ticketId: string, trigger: Trigger, reason: string): boolean {
     const decided = this.owners(trigger).includes(ticketId)
     const disposition = this.repo.triggers.disposition(trigger.id) ?? { fanout: [], at: this.now() }
-    const handbacks = [...disposition.handbacks ?? [], { ticketId, reason, at: this.now() }]
+    const handbacks = [...(disposition.handbacks ?? []), { ticketId, reason, at: this.now() }]
     this.repo.triggers.saveDisposition(trigger.id, { ...disposition, handbacks })
     return decided && !this.owners(trigger).length && this.queueForEval(trigger)
   }
@@ -53,7 +72,7 @@ export abstract class EnginePart {
   protected takeUp(ticketId: string, triggerId: string): void {
     const disposition = this.repo.triggers.disposition(triggerId)
     if (disposition && !disposition.acked?.includes(ticketId)) {
-      this.repo.triggers.saveDisposition(triggerId, { ...disposition, acked: [...disposition.acked ?? [], ticketId] })
+      this.repo.triggers.saveDisposition(triggerId, { ...disposition, acked: [...(disposition.acked ?? []), ticketId] })
     }
   }
   /** Queue a Trigger on its primary Thread for the next Eval, unless it waits there already or an Eval holds it. */
@@ -67,16 +86,35 @@ export abstract class EnginePart {
   protected emit<K extends keyof DomainEvents>(type: K, data: DomainEvents[K]): void {
     this.options.emit?.({ type, at: this.now(), data } as DomainEvent)
   }
-  protected require(ticketId: string): Ticket { const ticket = this.repo.tickets.get(ticketId); if (!ticket) throw new UserError('unknownTicket'); return ticket }
+  protected require(ticketId: string): Ticket {
+    const ticket = this.repo.tickets.get(ticketId)
+    if (!ticket) throw new UserError('unknownTicket')
+    return ticket
+  }
   /** Returns the stored Thread or an unsaved empty Thread aggregate. */
   protected thread(ref: ThreadRef): Thread {
     const k = threadKey(ref)
-    return this.repo.threads.get(k) ?? { key: k, ref: { source: ref.source, id: ref.id }, createdAt: this.now(), subscriptions: [], correlated: [], pending: [], meta: {} }
+    return (
+      this.repo.threads.get(k) ?? {
+        key: k,
+        ref: { source: ref.source, id: ref.id },
+        createdAt: this.now(),
+        subscriptions: [],
+        correlated: [],
+        pending: [],
+        meta: {},
+      }
+    )
   }
   protected ticketsOnThread(thread: Thread): Ticket[] {
-    return thread.subscriptions.flatMap(id => { const ticket = this.repo.tickets.get(id); return ticket ? [ticket] : [] })
+    return thread.subscriptions.flatMap(id => {
+      const ticket = this.repo.tickets.get(id)
+      return ticket ? [ticket] : []
+    })
   }
-  protected source(ticket: Ticket): Trigger | undefined { return this.repo.triggers.get(ticket.origin.triggerId) }
+  protected source(ticket: Ticket): Trigger | undefined {
+    return this.repo.triggers.get(ticket.origin.triggerId)
+  }
   protected reaches(ticket: Ticket, trigger: Trigger, context = true): boolean {
     return reached(ticket, trigger, k => this.repo.threads.get(k), context)
   }

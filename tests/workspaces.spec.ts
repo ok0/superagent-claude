@@ -1,11 +1,30 @@
 /** Git workspaces: worktrees on agent branches over a shared clone, reuse of uncommitted files, hooks disabled, and repository access failures reported as failed reports. */
 import { execFileSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Ticket } from '../src/core/index.ts'
-import { PUSH_BACKOFF_MS, RepositoryAccessError, Workspaces, accessStatus, coAuthorTrailers, pushFailure, worktreeName, type RepositoryAccess } from '../src/executor/workspaces.ts'
+import {
+  PUSH_BACKOFF_MS,
+  RepositoryAccessError,
+  Workspaces,
+  accessStatus,
+  coAuthorTrailers,
+  pushFailure,
+  worktreeName,
+  type RepositoryAccess,
+} from '../src/executor/workspaces.ts'
 import { CliError, Commands, commandError, execProgram } from '../src/infra/commands.ts'
 import { isAiAttributionLine } from '../src/infra/text.ts'
 import { waitUntil } from './fixtures/async.ts'
@@ -23,8 +42,12 @@ const GEN = '🤖 Generated with [' + PRODUCT + '](https://claude.com/claude-cod
 const COMMIT = ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false']
 const idA = 'a'.repeat(32)
 const idB = 'b'.repeat(32)
-const ticket = (id: string): Ticket => ({ id } as Ticket)
-const local = (remote: string, env: Record<string, string> = {}, secrets: string[] = []): RepositoryAccess => ({ remote: () => remote, env: () => env, secrets })
+const ticket = (id: string): Ticket => ({ id }) as Ticket
+const local = (remote: string, env: Record<string, string> = {}, secrets: string[] = []): RepositoryAccess => ({
+  remote: () => remote,
+  env: () => env,
+  secrets,
+})
 type Sh = (args: string[], cwd: string) => string
 function commit(sh: Sh, cwd: string, file: string, text: string, message: string): void {
   writeFileSync(join(cwd, file), text)
@@ -37,7 +60,10 @@ function spy(dir: string) {
     apiProgram: 'gh',
     baseEnv: { PATH: process.env.PATH!, HOME: join(dir, 'home'), LANG: 'C' },
     env: { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' },
-    exec: (p, a, o) => { calls.push({ args: a, env: o.env }); return execProgram(p, a, o) },
+    exec: (p, a, o) => {
+      calls.push({ args: a, env: o.env })
+      return execProgram(p, a, o)
+    },
   })
   return { commands, calls }
 }
@@ -61,7 +87,11 @@ function fixture() {
   sh(['add', '-A'], seed)
   sh([...COMMIT, 'commit', '-m', 'init'], seed)
   sh(['push', origin, 'main'], seed)
-  const commands = new Commands({ apiProgram: 'gh', baseEnv: ENV, env: { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' } })
+  const commands = new Commands({
+    apiProgram: 'gh',
+    baseEnv: ENV,
+    env: { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' },
+  })
   const state = join(dir, 'state')
   const ws = new Workspaces({ stateDir: state, commands, repositoryOf: () => 'owner/repo', access: local(origin) })
   return { dir, sh, origin, marker, state, commands, ws }
@@ -122,8 +152,16 @@ describe('git workspaces', () => {
 
   it('throws RepositoryAccessError with the repository and cause when the clone fails', async () => {
     const { dir, state, commands } = fixture()
-    const bad = new Workspaces({ stateDir: state, commands, repositoryOf: () => 'owner/repo', access: local(join(dir, 'missing.git')) })
-    const error = await bad.prepare(ticket(idA), 'alpha').then(() => undefined, (e: unknown) => e)
+    const bad = new Workspaces({
+      stateDir: state,
+      commands,
+      repositoryOf: () => 'owner/repo',
+      access: local(join(dir, 'missing.git')),
+    })
+    const error = await bad.prepare(ticket(idA), 'alpha').then(
+      () => undefined,
+      (e: unknown) => e,
+    )
     expect(error).toBeInstanceOf(RepositoryAccessError)
     const access = error as RepositoryAccessError
     expect(access.repository).toBe('owner/repo')
@@ -134,9 +172,18 @@ describe('git workspaces', () => {
 
   it('reports failed with the repository and cause when the workspace cannot be prepared', async () => {
     const { dir, state, commands } = fixture()
-    const bad = new Workspaces({ stateDir: state, commands, repositoryOf: () => 'owner/repo', access: local(join(dir, 'missing.git')) })
+    const bad = new Workspaces({
+      stateDir: state,
+      commands,
+      repositoryOf: () => 'owner/repo',
+      access: local(join(dir, 'missing.git')),
+    })
     let reason = ''
-    try { await bad.prepare(ticket(idA), 'alpha') } catch (e) { reason = (e as RepositoryAccessError).reason }
+    try {
+      await bad.prepare(ticket(idA), 'alpha')
+    } catch (e) {
+      reason = (e as RepositoryAccessError).reason
+    }
     const w = workerHarness({ prepare: t => bad.prepare(t, t.id) })
     const id = accepted(w, '1').ticketId!
     await waitUntil(() => w.ticket(id).assignments.at(-1)?.report?.state === 'failed')
@@ -150,19 +197,33 @@ describe('git workspaces', () => {
     const { dir, sh, origin, state } = fixture()
     const SECRET = 'ghp_TESTSECRET0123456789'
     const B64 = Buffer.from('x-access-token:' + SECRET).toString('base64')
-    const AUTH = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraheader', GIT_CONFIG_VALUE_0: 'Authorization: Basic ' + B64 }
+    const AUTH = {
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'http.extraheader',
+      GIT_CONFIG_VALUE_0: 'Authorization: Basic ' + B64,
+    }
     const calls: { args: readonly string[]; env: Record<string, string> }[] = []
     const commands = new Commands({
       apiProgram: 'gh',
       baseEnv: { PATH: process.env.PATH!, HOME: join(dir, 'home'), LANG: 'C' },
       env: { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' },
-      exec: (p, a, o) => { calls.push({ args: a, env: o.env }); return execProgram(p, a, o) },
+      exec: (p, a, o) => {
+        calls.push({ args: a, env: o.env })
+        return execProgram(p, a, o)
+      },
     })
-    const ws = new Workspaces({ stateDir: state, commands, repositoryOf: () => 'owner/repo', access: local(origin, AUTH, [SECRET, B64]) })
+    const ws = new Workspaces({
+      stateDir: state,
+      commands,
+      repositoryOf: () => 'owner/repo',
+      access: local(origin, AUTH, [SECRET, B64]),
+    })
     const a = await ws.prepare(ticket(idA), 'alpha')
     const b = await ws.prepare(ticket(idB), 'beta')
     expect(calls.filter(c => c.env.GIT_CONFIG_VALUE_0 !== undefined).map(c => c.args[2])).toEqual(['clone', 'fetch'])
-    expect(calls.filter(c => c.env.GIT_CONFIG_VALUE_0 === undefined).every(c => c.env.GIT_CONFIG_COUNT === undefined)).toBe(true)
+    expect(
+      calls.filter(c => c.env.GIT_CONFIG_VALUE_0 === undefined).every(c => c.env.GIT_CONFIG_COUNT === undefined),
+    ).toBe(true)
     const clone = join(state, 'repos', 'owner__repo')
     const texts = [
       readFileSync(join(clone, '.git', 'config'), 'utf8'),
@@ -180,9 +241,21 @@ describe('git workspaces', () => {
     const { dir, state, commands } = fixture()
     const SECRET = 'ghp_TESTSECRET0123456789'
     const B64 = Buffer.from('x-access-token:' + SECRET).toString('base64')
-    const AUTH = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraheader', GIT_CONFIG_VALUE_0: 'Authorization: Basic ' + B64 }
-    const bad = new Workspaces({ stateDir: state, commands, repositoryOf: () => 'owner/repo', access: local(join(dir, 'missing-' + SECRET + '.git'), AUTH, [SECRET, B64]) })
-    const error = await bad.prepare(ticket(idA), 'alpha').then(() => undefined, (e: unknown) => e) as RepositoryAccessError
+    const AUTH = {
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'http.extraheader',
+      GIT_CONFIG_VALUE_0: 'Authorization: Basic ' + B64,
+    }
+    const bad = new Workspaces({
+      stateDir: state,
+      commands,
+      repositoryOf: () => 'owner/repo',
+      access: local(join(dir, 'missing-' + SECRET + '.git'), AUTH, [SECRET, B64]),
+    })
+    const error = (await bad.prepare(ticket(idA), 'alpha').then(
+      () => undefined,
+      (e: unknown) => e,
+    )) as RepositoryAccessError
     expect(error).toBeInstanceOf(RepositoryAccessError)
     expect(error.repository).toBe('owner/repo')
     expect(error.reason).toContain('***')
@@ -200,11 +273,29 @@ describe('git workspaces', () => {
   it('a clone 403 is a repository access error with the repository and status and without the token', async () => {
     const { state, commands } = fixture()
     const SECRET = 'SECRET'
-    const bad = new Workspaces({ stateDir: state, commands: { git: async args => {
-      if (args.includes('clone')) throw commandError(Object.assign(new Error('x'), { stderr: "fatal: unable to access 'https://SECRET@host/acme/widgets.git/': The requested URL returned error: 403", code: 128 }), 'git')
-      return ''
-    } }, repositoryOf: () => 'acme/widgets', access: local('https://host/acme/widgets.git', {}, [SECRET]) })
-    const error = await bad.prepare(ticket(idA), 'alpha').then(() => undefined, (e: unknown) => e) as RepositoryAccessError
+    const bad = new Workspaces({
+      stateDir: state,
+      commands: {
+        git: async args => {
+          if (args.includes('clone'))
+            throw commandError(
+              Object.assign(new Error('x'), {
+                stderr:
+                  "fatal: unable to access 'https://SECRET@host/acme/widgets.git/': The requested URL returned error: 403",
+                code: 128,
+              }),
+              'git',
+            )
+          return ''
+        },
+      },
+      repositoryOf: () => 'acme/widgets',
+      access: local('https://host/acme/widgets.git', {}, [SECRET]),
+    })
+    const error = (await bad.prepare(ticket(idA), 'alpha').then(
+      () => undefined,
+      (e: unknown) => e,
+    )) as RepositoryAccessError
     expect(error).toBeInstanceOf(RepositoryAccessError)
     expect(error.status).toBe(403)
     expect(error.repository).toBe('acme/widgets')
@@ -233,7 +324,13 @@ describe('git workspaces', () => {
     const a = await ws.prepare(ticket(idA), 'alpha')
     commit(sh, a.cwd, 'one.txt', '1', 'c1')
     const first = await ws.push(ticket(idA), {})
-    expect({ branch: first.branch, base: first.base, pushed: first.pushed, rewritten: first.rewritten, uncommitted: first.uncommitted }).toEqual({ branch: 'agent/alpha', base: 'main', pushed: 1, rewritten: 0, uncommitted: false })
+    expect({
+      branch: first.branch,
+      base: first.base,
+      pushed: first.pushed,
+      rewritten: first.rewritten,
+      uncommitted: first.uncommitted,
+    }).toEqual({ branch: 'agent/alpha', base: 'main', pushed: 1, rewritten: 0, uncommitted: false })
     expect(sh(['rev-parse', 'refs/heads/agent/alpha'], origin).trim()).toBe(sh(['rev-parse', 'HEAD'], a.cwd).trim())
     expect((await ws.push(ticket(idA), {})).pushed).toBe(0)
   })
@@ -258,7 +355,9 @@ describe('git workspaces', () => {
       expect(body.split('Co-authored-by: Ann Lee <ann@example.com>').length - 1).toBe(1)
     }
     for (const call of calls.filter(c => c.args.includes('push'))) {
-      expect(call.args.some(arg => ['--force', '-f', '--force-with-lease'].includes(arg) || arg.startsWith('+'))).toBe(false)
+      expect(call.args.some(arg => ['--force', '-f', '--force-with-lease'].includes(arg) || arg.startsWith('+'))).toBe(
+        false,
+      )
     }
   })
 
@@ -281,10 +380,14 @@ describe('git workspaces', () => {
       expect(body.split('\n').some(isAiAttributionLine)).toBe(false)
       expect(body.split('Co-authored-by: Ann Lee <ann@example.com>').length - 1).toBe(1)
     }
-    expect(sh(['log', '-1', '--format=%B', 'agent/alpha~1'], origin)).toContain('Co-authored-by: Bea Kim <bea@example.com>')
+    expect(sh(['log', '-1', '--format=%B', 'agent/alpha~1'], origin)).toContain(
+      'Co-authored-by: Bea Kim <bea@example.com>',
+    )
     expect(sh(['log', '-1', '--format=%B', 'agent/alpha~1'], origin)).toContain('Body.')
     for (const call of calls.filter(c => c.args.includes('push'))) {
-      expect(call.args.some(arg => ['--force', '-f', '--force-with-lease'].includes(arg) || arg.startsWith('+'))).toBe(false)
+      expect(call.args.some(arg => ['--force', '-f', '--force-with-lease'].includes(arg) || arg.startsWith('+'))).toBe(
+        false,
+      )
     }
   })
 
@@ -325,9 +428,18 @@ describe('git workspaces', () => {
     const { dir, sh, origin, state } = fixture()
     const SECRET = 'ghp_TESTSECRET0123456789'
     const B64 = Buffer.from('x-access-token:' + SECRET).toString('base64')
-    const AUTH = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraheader', GIT_CONFIG_VALUE_0: 'Authorization: Basic ' + B64 }
+    const AUTH = {
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'http.extraheader',
+      GIT_CONFIG_VALUE_0: 'Authorization: Basic ' + B64,
+    }
     const { commands, calls } = spy(dir)
-    const ws = new Workspaces({ stateDir: state, commands, repositoryOf: () => 'owner/repo', access: local(origin, AUTH, [SECRET, B64]) })
+    const ws = new Workspaces({
+      stateDir: state,
+      commands,
+      repositoryOf: () => 'owner/repo',
+      access: local(origin, AUTH, [SECRET, B64]),
+    })
     const a = await ws.prepare(ticket(idA), 'alpha')
     commit(sh, a.cwd, 'one.txt', '1', 'c1')
     await ws.push(ticket(idA), {})
@@ -336,14 +448,18 @@ describe('git workspaces', () => {
   })
 
   it('coAuthorTrailers appends to an existing trailer block and skips present ones', () => {
-    expect(coAuthorTrailers('Fix\n\nSigned-off-by: A <a@x.io>\n', ['B <b@x.io>'])).toBe('Fix\n\nSigned-off-by: A <a@x.io>\nCo-authored-by: B <b@x.io>\n')
+    expect(coAuthorTrailers('Fix\n\nSigned-off-by: A <a@x.io>\n', ['B <b@x.io>'])).toBe(
+      'Fix\n\nSigned-off-by: A <a@x.io>\nCo-authored-by: B <b@x.io>\n',
+    )
     const message = 'Fix\n\nCo-authored-by: B <b@x.io>\n'
     expect(coAuthorTrailers(message, ['B <b@x.io>'])).toBe(message)
   })
 
   it('worktreeName uses the execution name with the id prefix, else the id', () => {
     expect(worktreeName({ id: 'c'.repeat(32) })).toBe('c'.repeat(32))
-    expect(worktreeName({ id: 'c'.repeat(32), execution: { name: 'Fix Login!', directory: '', assignment: '' } })).toBe('fix-login-cccccccccccc')
+    expect(worktreeName({ id: 'c'.repeat(32), execution: { name: 'Fix Login!', directory: '', assignment: '' } })).toBe(
+      'fix-login-cccccccccccc',
+    )
   })
 })
 
@@ -360,9 +476,11 @@ function flaky(commands: Pick<Commands, 'git'>, stderrs: string[]) {
   return { commands: { git }, count }
 }
 
-const TRANSIENT = " ! [remote rejected] HEAD -> agent/alpha (fatal error in commit_refs)\nerror: failed to push some refs to 'https://host/owner/repo.git'"
-const NFF = " ! [rejected]        HEAD -> agent/alpha (non-fast-forward)\nerror: failed to push some refs"
-const DENIED = "remote: Permission to owner/repo.git denied to ok0-worker.\nfatal: unable to access 'https://host/owner/repo.git/': The requested URL returned error: 403"
+const TRANSIENT =
+  " ! [remote rejected] HEAD -> agent/alpha (fatal error in commit_refs)\nerror: failed to push some refs to 'https://host/owner/repo.git'"
+const NFF = ' ! [rejected]        HEAD -> agent/alpha (non-fast-forward)\nerror: failed to push some refs'
+const DENIED =
+  "remote: Permission to owner/repo.git denied to ok0-worker.\nfatal: unable to access 'https://host/owner/repo.git/': The requested URL returned error: 403"
 const MISSING = "remote: Repository not found.\nfatal: repository 'https://host/owner/repo.git/' not found"
 
 describe('push retries', () => {
@@ -370,7 +488,15 @@ describe('push retries', () => {
     const { sh, commands, state, origin } = fixture()
     const f = flaky(commands, stderrs)
     const delays: number[] = []
-    const ws = new Workspaces({ stateDir: state, commands: f.commands, repositoryOf: () => 'owner/repo', access: local(origin), sleep: async ms => { delays.push(ms) } })
+    const ws = new Workspaces({
+      stateDir: state,
+      commands: f.commands,
+      repositoryOf: () => 'owner/repo',
+      access: local(origin),
+      sleep: async ms => {
+        delays.push(ms)
+      },
+    })
     const a = await ws.prepare(ticket(idA), 'alpha')
     commit(sh, a.cwd, 'one.txt', '1', 'c1')
     return { sh, origin, a, f, delays, ws }
@@ -387,7 +513,10 @@ describe('push retries', () => {
 
   it('returns an error after three transient push failures', async () => {
     const { f, delays, ws } = await pushWith([TRANSIENT, TRANSIENT, TRANSIENT])
-    const error = await ws.push(ticket(idA), {}).then(() => undefined, (e: unknown) => e) as Error
+    const error = (await ws.push(ticket(idA), {}).then(
+      () => undefined,
+      (e: unknown) => e,
+    )) as Error
     expect(error).toBeInstanceOf(Error)
     expect(error).not.toBeInstanceOf(RepositoryAccessError)
     expect(error.message).toContain('fatal error in commit_refs')
@@ -405,7 +534,10 @@ describe('push retries', () => {
 
   it('a 403 push is a repository access error at once', async () => {
     const { f, delays, ws } = await pushWith([DENIED])
-    const error = await ws.push(ticket(idA), {}).then(() => undefined, (e: unknown) => e) as RepositoryAccessError
+    const error = (await ws.push(ticket(idA), {}).then(
+      () => undefined,
+      (e: unknown) => e,
+    )) as RepositoryAccessError
     expect(error).toBeInstanceOf(RepositoryAccessError)
     expect(error.status).toBe(403)
     expect(f.count.pushes).toBe(1)
@@ -414,7 +546,10 @@ describe('push retries', () => {
 
   it('a missing repository is a repository access error at once', async () => {
     const { f, ws } = await pushWith([MISSING])
-    const error = await ws.push(ticket(idA), {}).then(() => undefined, (e: unknown) => e) as RepositoryAccessError
+    const error = (await ws.push(ticket(idA), {}).then(
+      () => undefined,
+      (e: unknown) => e,
+    )) as RepositoryAccessError
     expect(error).toBeInstanceOf(RepositoryAccessError)
     expect(error.status).toBe(404)
     expect(f.count.pushes).toBe(1)

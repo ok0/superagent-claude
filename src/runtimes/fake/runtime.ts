@@ -1,7 +1,18 @@
 /** A scripted AgentRuntime for tests and demos: each turn runs the reaction its script returns, following the input-mode semantics of docs/runtime-contract.md deterministically (no real time or network; delays use injected timers). */
-import type { AgentRuntime, AgentSession, RuntimeEvent, RuntimeInput, RuntimeProbe, SessionSpec, TurnOutcome } from '../../executor/contract.ts'
+import type {
+  AgentRuntime,
+  AgentSession,
+  RuntimeEvent,
+  RuntimeInput,
+  RuntimeProbe,
+  SessionSpec,
+  TurnOutcome,
+} from '../../executor/contract.ts'
 
-export interface FakeToolCall { name: string; args: unknown }
+export interface FakeToolCall {
+  name: string
+  args: unknown
+}
 export interface FakeReaction {
   hold?: Promise<unknown>
   delayMs?: number
@@ -10,16 +21,32 @@ export interface FakeReaction {
   turnEnded?: { outcome?: TurnOutcome; turns?: number; costUsd?: number; background?: number }
   error?: { message: string; retryable: boolean }
 }
-export interface FakeTurn { spec: SessionSpec; session: FakeSession; index: number; inputs: RuntimeInput[] }
+export interface FakeTurn {
+  spec: SessionSpec
+  session: FakeSession
+  index: number
+  inputs: RuntimeInput[]
+}
 export type FakeScript = (turn: FakeTurn) => FakeReaction | undefined
-export interface FakeTimers { setTimeout(run: () => void, ms: number): unknown }
-export interface FakeOptions { timers?: FakeTimers; probe?: RuntimeProbe }
+export interface FakeTimers {
+  setTimeout(run: () => void, ms: number): unknown
+}
+export interface FakeOptions {
+  timers?: FakeTimers
+  probe?: RuntimeProbe
+}
 
 function until(promise: Promise<unknown>, signal: AbortSignal): Promise<void> {
   return new Promise<void>(resolve => {
-    if (signal.aborted) { resolve(); return }
+    if (signal.aborted) {
+      resolve()
+      return
+    }
     signal.addEventListener('abort', () => resolve(), { once: true })
-    promise.then(() => resolve(), () => resolve())
+    promise.then(
+      () => resolve(),
+      () => resolve(),
+    )
   })
 }
 
@@ -56,7 +83,9 @@ export class FakeSession implements AgentSession {
     for (;;) {
       while (this.queue.length > 0) yield this.queue.shift()!
       if (this.ended) return
-      await new Promise<void>(resolve => { this.wake = () => resolve() })
+      await new Promise<void>(resolve => {
+        this.wake = () => resolve()
+      })
       this.wake = undefined
     }
   }
@@ -75,7 +104,14 @@ export class FakeSession implements AgentSession {
     this.abort?.abort()
     if (this.busy) {
       const end = this.reaction?.turnEnded ?? {}
-      this.emit({ type: 'turnEnded', outcome: end.outcome ?? 'success', turns: end.turns ?? 1, costUsd: end.costUsd ?? 0, background: 0, discarded: true })
+      this.emit({
+        type: 'turnEnded',
+        outcome: end.outcome ?? 'success',
+        turns: end.turns ?? 1,
+        costUsd: end.costUsd ?? 0,
+        background: 0,
+        discarded: true,
+      })
     }
     this.busy = false
     return { stillQueued: queued.map(input => input.id) }
@@ -116,7 +152,12 @@ export class FakeSession implements AgentSession {
   }
 
   private pause(ms: number, signal: AbortSignal): Promise<void> {
-    return until(new Promise<void>(resolve => { this.timers.setTimeout(() => resolve(), ms) }), signal)
+    return until(
+      new Promise<void>(resolve => {
+        this.timers.setTimeout(() => resolve(), ms)
+      }),
+      signal,
+    )
   }
 
   private async run(reaction: FakeReaction, signal: AbortSignal, turn: { inputs: string[] }): Promise<void> {
@@ -127,16 +168,23 @@ export class FakeSession implements AgentSession {
     for (const call of reaction.tools ?? []) {
       if (delay > 0) await this.pause(delay, signal)
       if (signal.aborted) return
-      const record: { name: string; args: unknown; result?: unknown; error?: string } = { name: call.name, args: call.args }
+      const record: { name: string; args: unknown; result?: unknown; error?: string } = {
+        name: call.name,
+        args: call.args,
+      }
       const tool = this.spec.tools.find(candidate => candidate.name === call.name)
       if (!tool) record.error = 'unknown tool'
       else {
-        try { record.result = await tool.execute(tool.schema.parse(call.args), signal) }
-        catch (e) { record.error = String(e) }
+        try {
+          record.result = await tool.execute(tool.schema.parse(call.args), signal)
+        } catch (e) {
+          record.error = String(e)
+        }
       }
       this.toolCalls.push(record)
       if (signal.aborted) return
-      if (this.pendingSteer.length > 0) this.read(turn, [...this.injects.splice(0), ...this.pendingSteer.splice(0)], reaction.repeatReads === true)
+      if (this.pendingSteer.length > 0)
+        this.read(turn, [...this.injects.splice(0), ...this.pendingSteer.splice(0)], reaction.repeatReads === true)
     }
     if (delay > 0) await this.pause(delay, signal)
     if (signal.aborted) return
@@ -148,7 +196,13 @@ export class FakeSession implements AgentSession {
       return
     }
     const end = reaction.turnEnded ?? {}
-    this.emit({ type: 'turnEnded', outcome: end.outcome ?? 'success', turns: end.turns ?? 1, costUsd: end.costUsd ?? 0, background: end.background ?? 0 })
+    this.emit({
+      type: 'turnEnded',
+      outcome: end.outcome ?? 'success',
+      turns: end.turns ?? 1,
+      costUsd: end.costUsd ?? 0,
+      background: end.background ?? 0,
+    })
     this.busy = false
     this.next()
   }

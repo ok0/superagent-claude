@@ -16,7 +16,7 @@ function initLines(init: Record<string, unknown> | undefined): string[] {
 
 function hitsText(timeline: TimelineEntry[], uuid: string): string {
   const hits = findEcho(timeline, uuid)
-  return hits.length === 0 ? 'none' : hits.map((h) => `${h.type}.${h.field}@${h.index}`).join(',')
+  return hits.length === 0 ? 'none' : hits.map(h => `${h.type}.${h.field}@${h.index}`).join(',')
 }
 
 export const item: SpikeItem = { id: ID, req: REQ, title: TITLE, adrs: 'ADR-5', live: true, estimateUsd: 0.2, run }
@@ -39,7 +39,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
         pushedC = true
         c.push({ text: 'Use the Bash tool to run exactly: sleep 5; echo S2 . Then reply DONE2.', uuid: C })
       }
-      if (pushedC && !pushedB && e.toolUses?.some((u) => u.name === 'Bash') === true) {
+      if (pushedC && !pushedB && e.toolUses?.some(u => u.name === 'Bash') === true) {
         pushedB = true
         c.push({ text: 'Also include the word KIWI in your reply.', uuid: B, priority: 'next' })
       }
@@ -51,10 +51,10 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   const tl = outcome.timeline
   const aHits = findEcho(tl, A)
   const bHits = findEcho(tl, B)
-  const firstAssistant = tl.findIndex((e) => e.type === 'assistant')
-  const firstResult = tl.findIndex((e) => e.type === 'result')
-  const toolResult = tl.findIndex((e) => (e.toolResults?.length ?? 0) > 0)
-  const kiwi = tl.findIndex((e) => e.type === 'assistant' && (e.text ?? '').includes('KIWI'))
+  const firstAssistant = tl.findIndex(e => e.type === 'assistant')
+  const firstResult = tl.findIndex(e => e.type === 'result')
+  const toolResult = tl.findIndex(e => (e.toolResults?.length ?? 0) > 0)
+  const kiwi = tl.findIndex(e => e.type === 'assistant' && (e.text ?? '').includes('KIWI'))
   const bFirst = bHits[0]?.index ?? -1
   const nextAssistant = bFirst === -1 ? -1 : tl.findIndex((e, i) => i > bFirst && e.type === 'assistant')
 
@@ -67,8 +67,8 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
 
   const bAfterTool = toolResult !== -1 && bFirst > toolResult
   const bBeforeKiwi = kiwi === -1 || (bFirst !== -1 && bFirst <= kiwi)
-  const onlyResultA = aHits.length > 0 && aHits.every((h) => h.type === 'result')
-  const onlyResultB = bHits.length > 0 && bHits.every((h) => h.type === 'result')
+  const onlyResultA = aHits.length > 0 && aHits.every(h => h.type === 'result')
+  const onlyResultB = bHits.length > 0 && bHits.every(h => h.type === 'result')
 
   let status: ItemResult['status']
   let deviation = false

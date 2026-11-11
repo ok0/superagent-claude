@@ -18,14 +18,16 @@ const files = readdirSync(LIVE_DIR, { recursive: true })
   .sort()
 const text = (name: string): string => readFileSync(join(LIVE_DIR, name), 'utf8')
 const contents = files.map(name => [name, text(name)] as const)
-const withPattern = (pattern: RegExp): string[] => contents.filter(([, body]) => pattern.test(body)).map(([name]) => name)
+const withPattern = (pattern: RegExp): string[] =>
+  contents.filter(([, body]) => pattern.test(body)).map(([name]) => name)
 const PUT_ARGV = /\[[^[\]]*'PUT'[^[\]]*\]/g
 const putCount = (text: string): number => text.split("'PUT'").length - 1
 function putProblems(name: string, body: string): string[] {
   if (name === 'guard.ts') return []
   const problems: string[] = []
   const argvs = [...body.matchAll(PUT_ARGV)].map(match => match[0])
-  if (argvs.reduce((n, argv) => n + putCount(argv), 0) !== putCount(body)) problems.push(name + ': PUT outside a flat argv array')
+  if (argvs.reduce((n, argv) => n + putCount(argv), 0) !== putCount(body))
+    problems.push(name + ': PUT outside a flat argv array')
   for (const argv of argvs) {
     if (name === 'owner-merge.ts' && argv.includes("/merge'")) continue
     if (!argv.includes('/contents/')) problems.push(name + ': PUT without /contents/: ' + argv)
@@ -36,7 +38,9 @@ function putProblems(name: string, body: string): string[] {
 
 describe('live guard static scan', () => {
   it('only gh.ts spawns gh', () => {
-    expect(withPattern(/\b(?:execFile|execFileSync|execFileAsync|spawn|spawnSync|exec|execSync)\(\s*['"]gh['"]/)).toEqual(['gh.ts'])
+    expect(
+      withPattern(/\b(?:execFile|execFileSync|execFileAsync|spawn|spawnSync|exec|execSync)\(\s*['"]gh['"]/),
+    ).toEqual(['gh.ts'])
   })
 
   it('git push only against a local origin', () => {
@@ -98,7 +102,8 @@ describe('live guard static scan', () => {
         deleteFiles.push(name)
       }
     }
-    for (const name of new Set(deleteFiles)) expect(['cleanup-playground.ts', 'code-change.spec.ts', 'owner-merge.ts']).toContain(name)
+    for (const name of new Set(deleteFiles))
+      expect(['cleanup-playground.ts', 'code-change.spec.ts', 'owner-merge.ts']).toContain(name)
   })
 
   it('milestone scans use the full pattern', () => {
@@ -124,13 +129,16 @@ describe('live guard static scan', () => {
     expect(putProblems('x.ts', "gh(['repos/a/b/contents/f', '-X', 'PUT'])")).toHaveLength(1)
     expect(putProblems('seed-playground.ts', "gh(['repos/a/b/pulls/1/merge', '-X', 'PUT'])")).toHaveLength(1)
     expect(putProblems('seed-playground.ts', "const m = 'PUT'")).toHaveLength(1)
-    expect(putProblems('seed-playground.ts', "gh([\n  'repos/' + P + '/contents/' + f,\n  '-X',\n  'PUT',\n])")).toEqual([])
+    expect(
+      putProblems('seed-playground.ts', "gh([\n  'repos/' + P + '/contents/' + f,\n  '-X',\n  'PUT',\n])"),
+    ).toEqual([])
     expect(putProblems('owner-merge.ts', "ghRaw(t, [endpoint + '/merge', '-X', 'PUT'])")).toEqual([])
   })
 
   it('local gh credential only in the seed script and read-only checks', () => {
     expect(withPattern(/\bghLocal(?:Json|Raw)\b/)).toEqual(['gh.ts', 'seed-playground.ts'])
-    for (const name of withPattern(/localIdentity\(/)) expect(['gh.ts', 'seed-playground.ts', 'code-change.spec.ts']).toContain(name)
+    for (const name of withPattern(/localIdentity\(/))
+      expect(['gh.ts', 'seed-playground.ts', 'code-change.spec.ts']).toContain(name)
   })
 
   it('seed fixture is data, not harness code', () => {
@@ -141,6 +149,7 @@ describe('live guard static scan', () => {
       expect(body, name).not.toMatch(/\bimport\b[^\n]*['"][^'"]*fixtures\/playground-seed\//)
       expect(body, name).not.toMatch(/\bimport\(\s*['"][^'"]*fixtures\/playground-seed\//)
     }
-    for (const name of seedTs) expect(text(name), name).not.toMatch(/api\.github\.com|github\.com\/[^\s'"]*superagent|child_process/)
+    for (const name of seedTs)
+      expect(text(name), name).not.toMatch(/api\.github\.com|github\.com\/[^\s'"]*superagent|child_process/)
   })
 })

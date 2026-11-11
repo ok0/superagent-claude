@@ -10,9 +10,15 @@ import { SourceRegistry } from '../src/sources/registry.ts'
 import { fakeGh } from './fixtures/fake-gh.ts'
 
 const probe: SourceKind<{ interval: number }> = {
-  kind: 'probe', schema: z.object({ interval: z.number().int().min(1).default(5) }).strict(),
+  kind: 'probe',
+  schema: z.object({ interval: z.number().int().min(1).default(5) }).strict(),
 }
-const message = (source: string): OutboundMessage => ({ id: 'r1', channel: { source, thread: 'probe:1', address: { room: 'r' } }, text: 'hi', kind: 'reply' })
+const message = (source: string): OutboundMessage => ({
+  id: 'r1',
+  channel: { source, thread: 'probe:1', address: { room: 'r' } },
+  text: 'hi',
+  kind: 'reply',
+})
 
 describe('Source registry', () => {
   it('validates submitted configs with the kind schema and refuses kinds that are not installed', () => {
@@ -22,21 +28,39 @@ describe('Source registry', () => {
     expect(() => sources.validate('probe', { interval: 0 })).toThrow()
     expect(() => sources.validate('missing', {})).toThrow('not installed')
   })
-  it('sends and reads a kind\'s Threads through its own channel and context, and nothing for a kind without them', async () => {
+  it("sends and reads a kind's Threads through its own channel and context, and nothing for a kind without them", async () => {
     const sources = new SourceRegistry(() => ({ probe: { interval: 7 } }))
     const sent: OutboundMessage[] = []
     const read: unknown[] = []
-    sources.register({ ...probe,
-      channel: { send: async message => { sent.push(message); return 'sent' } },
-      threadContext: { messageId: trigger => String(trigger.meta.id), read: async (trigger, part, cursor, config) => {
-        read.push([trigger.id, part, cursor, config.interval])
-        return { messages: [{ id: 'm1', from: 'u', at: '1', text: '' }], body: { page: cursor ?? 'first' } }
-      } } })
+    sources.register({
+      ...probe,
+      channel: {
+        send: async message => {
+          sent.push(message)
+          return 'sent'
+        },
+      },
+      threadContext: {
+        messageId: trigger => String(trigger.meta.id),
+        read: async (trigger, part, cursor, config) => {
+          read.push([trigger.id, part, cursor, config.interval])
+          return { messages: [{ id: 'm1', from: 'u', at: '1', text: '' }], body: { page: cursor ?? 'first' } }
+        },
+      },
+    })
     expect(await sources.send(message('probe'))).toBe('sent')
     expect(sent).toEqual([message('probe')])
     expect(await sources.send(message('retired'))).toBe('waiting')
-    const trigger: Trigger = { id: 't1', source: 'probe', threads: [{ source: 'probe', id: '1' }], actor: { source: 'probe', id: 'u' }, human: true,
-      at: '', text: 'hi', meta: { id: 'm1' } }
+    const trigger: Trigger = {
+      id: 't1',
+      source: 'probe',
+      threads: [{ source: 'probe', id: '1' }],
+      actor: { source: 'probe', id: 'u' },
+      human: true,
+      at: '',
+      text: 'hi',
+      meta: { id: 'm1' },
+    }
     const context = sources.threadContext(trigger)!
     expect(context.messageId).toBe('m1')
     expect(await context.read('thread', '2')).toMatchObject({ body: { page: '2' } })
@@ -85,11 +109,20 @@ describe('Source registry', () => {
     expect(disabled.enabled('probe')).toBe(false)
     expect(disabled.enabled('other')).toBe(false)
     const sources = new SourceRegistry(() => ({}))
-    sources.register({ ...probe,
-      scope: ({ meta }) => meta.room === 'r' ? { listened: true, observed: true, row: 'r' } : { listened: false, reason: 'room_not_listened' },
+    sources.register({
+      ...probe,
+      scope: ({ meta }) =>
+        meta.room === 'r'
+          ? { listened: true, observed: true, row: 'r' }
+          : { listened: false, reason: 'room_not_listened' },
       channel: { allowed: address => address.room === 'r', send: async () => 'sent' },
-      find: query => ({ threads: [`probe:${query}`], terms: [query] }) })
-    expect(sources.scope({ source: 'probe', meta: { room: 'r' } })).toEqual({ listened: true, observed: true, row: 'r' })
+      find: query => ({ threads: [`probe:${query}`], terms: [query] }),
+    })
+    expect(sources.scope({ source: 'probe', meta: { room: 'r' } })).toEqual({
+      listened: true,
+      observed: true,
+      row: 'r',
+    })
     expect(sources.channelAllowed({ source: 'probe', address: { room: 'x' } })).toBe(false)
     expect(sources.channelAllowed({ source: 'probe', address: { room: 'r' } })).toBe(true)
     expect(sources.channelAllowed({ source: 'none', address: { room: 'r' } })).toBe(false)
@@ -99,9 +132,19 @@ describe('Source registry', () => {
 })
 
 describe('with the hosting Source kind', () => {
-  const hosting = () => githubSource({ repositories: ['acme/widgets', 'acme/gadgets'], commands: fakeGh({ repositories: {} }).commands }).kind
-  const trigger: Trigger = { id: 't1', source: 'github', threads: [{ source: 'github', id: 'acme/widgets#7' }], actor: { source: 'github', id: 'alice' },
-    human: true, at: '', text: 'hi', meta: {} }
+  const hosting = () =>
+    githubSource({ repositories: ['acme/widgets', 'acme/gadgets'], commands: fakeGh({ repositories: {} }).commands })
+      .kind
+  const trigger: Trigger = {
+    id: 't1',
+    source: 'github',
+    threads: [{ source: 'github', id: 'acme/widgets#7' }],
+    actor: { source: 'github', id: 'alice' },
+    human: true,
+    at: '',
+    text: 'hi',
+    meta: {},
+  }
 
   it('refuses the kind when its health entry is taken, and gives up its entries at unregister', () => {
     const taken = new HealthBoard()
@@ -135,16 +178,27 @@ describe('with the hosting Source kind', () => {
     registry.register(hosting())
     expect(registry.find('#12')).toEqual({ threads: ['github:acme/widgets#12', 'github:acme/gadgets#12'], terms: [] })
     expect(registry.find('acme/gadgets#12')).toEqual({ threads: ['github:acme/gadgets#12'], terms: [] })
-    expect(registry.find('https://github.com/ACME/widgets/pull/7#issuecomment-3')).toEqual({ threads: ['github:acme/widgets#7'], terms: [] })
+    expect(registry.find('https://github.com/ACME/widgets/pull/7#issuecomment-3')).toEqual({
+      threads: ['github:acme/widgets#7'],
+      terms: [],
+    })
     expect(registry.find('https://github.com/other/repo/issues/7')).toEqual({ threads: [], terms: [] })
     expect(registry.find('login fails')).toEqual({ threads: [], terms: [] })
   })
   it('allows a reply on a configured repository only', () => {
     const registry = new SourceRegistry(() => ({}))
-    expect(registry.channelAllowed({ source: 'github', address: { repository: 'acme/widgets', number: '7' } })).toBe(false)
+    expect(registry.channelAllowed({ source: 'github', address: { repository: 'acme/widgets', number: '7' } })).toBe(
+      false,
+    )
     registry.register(hosting())
-    expect(registry.channelAllowed({ source: 'github', address: { repository: 'acme/widgets', number: '7' } })).toBe(true)
-    expect(registry.channelAllowed({ source: 'github', address: { repository: 'ACME/WIDGETS', number: '7' } })).toBe(true)
-    expect(registry.channelAllowed({ source: 'github', address: { repository: 'other/repo', number: '7' } })).toBe(false)
+    expect(registry.channelAllowed({ source: 'github', address: { repository: 'acme/widgets', number: '7' } })).toBe(
+      true,
+    )
+    expect(registry.channelAllowed({ source: 'github', address: { repository: 'ACME/WIDGETS', number: '7' } })).toBe(
+      true,
+    )
+    expect(registry.channelAllowed({ source: 'github', address: { repository: 'other/repo', number: '7' } })).toBe(
+      false,
+    )
   })
 })

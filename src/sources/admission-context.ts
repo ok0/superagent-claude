@@ -5,7 +5,8 @@ import type { ContextMessage, TriggerContext } from './kind.ts'
 /** Selects the first five thread messages plus five messages on either side of `sourceId`, recording omitted gap counts. */
 export function threadWindow(messages: ContextMessage[], sourceId: string) {
   const trigger = messages.findIndex(message => message.id === sourceId)
-  const selected = messages.map((message, index) => ({ message, index }))
+  const selected = messages
+    .map((message, index) => ({ message, index }))
     .filter(({ index }) => index < 5 || (trigger >= 0 && Math.abs(index - trigger) <= 5))
   let previous = -1
   const entries = selected.map(({ message, index }) => {
@@ -13,7 +14,12 @@ export function threadWindow(messages: ContextMessage[], sourceId: string) {
     previous = index
     return { message, position: index + 1, omitted_before }
   })
-  return { entries, source_found: trigger >= 0, loaded_messages: messages.length, omitted_after: messages.length - previous - 1 }
+  return {
+    entries,
+    source_found: trigger >= 0,
+    loaded_messages: messages.length,
+    omitted_after: messages.length - previous - 1,
+  }
 }
 /**
  * Reads up to `maxPages` of a trigger's thread and builds the bounded message window around the trigger; counts describe
@@ -28,15 +34,23 @@ export async function admissionContext(context: TriggerContext, maxPages: number
   let more = true
   for (let page = 0; more && page < maxPages; page++) {
     const result = await context.read('thread', next)
-    for (const message of result.messages) if (!seen.has(message.id)) {
-      seen.add(message.id); messages.push(message)
-    }
+    for (const message of result.messages)
+      if (!seen.has(message.id)) {
+        seen.add(message.id)
+        messages.push(message)
+      }
     status ??= result.status
     next = result.next
     more = next !== undefined
-    if (next !== undefined && cursors.has(next)) throw new Error('Thread pagination repeated a cursor; context is incomplete')
+    if (next !== undefined && cursors.has(next))
+      throw new Error('Thread pagination repeated a cursor; context is incomplete')
     if (next !== undefined) cursors.add(next)
   }
-  return { messages, window: threadWindow(messages, context.messageId), complete: !more, next: more ? next ?? null : null,
-    ...status ? { status } : {} }
+  return {
+    messages,
+    window: threadWindow(messages, context.messageId),
+    complete: !more,
+    next: more ? (next ?? null) : null,
+    ...(status ? { status } : {}),
+  }
 }

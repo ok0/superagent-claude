@@ -1,5 +1,10 @@
 /** MCP bridge: exposes the host ToolSpecs as an in-process SDK MCP server named `superagent`, so tool names and argument validation match the host tools exactly. */
-import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance, type SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk'
+import {
+  createSdkMcpServer,
+  tool,
+  type McpSdkServerConfigWithInstance,
+  type SdkMcpToolDefinition,
+} from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import type { ToolSpec } from '../../executor/contract.ts'
 
@@ -16,14 +21,32 @@ export function toolHandler(spec: ToolSpec, signal: AbortSignal): (args: unknown
     } catch (error) {
       return {
         isError: true,
-        content: [{ type: 'text', text: error instanceof z.ZodError ? z.prettifyError(error) : error instanceof Error ? error.message : String(error) }],
+        content: [
+          {
+            type: 'text',
+            text:
+              error instanceof z.ZodError
+                ? z.prettifyError(error)
+                : error instanceof Error
+                  ? error.message
+                  : String(error),
+          },
+        ],
       }
     }
   }
 }
 
 export function mcpTools(tools: readonly ToolSpec[], signal: AbortSignal): SdkMcpToolDefinition[] {
-  return tools.map(t => tool(t.name, t.description, t.schema.shape as never, toolHandler(t, signal) as never) as unknown as SdkMcpToolDefinition)
+  return tools.map(
+    t =>
+      tool(
+        t.name,
+        t.description,
+        t.schema.shape as never,
+        toolHandler(t, signal) as never,
+      ) as unknown as SdkMcpToolDefinition,
+  )
 }
 
 export function mcpServer(tools: readonly ToolSpec[], signal: AbortSignal): McpSdkServerConfigWithInstance {

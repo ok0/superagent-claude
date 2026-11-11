@@ -24,7 +24,10 @@ function setup() {
   const dir = mkdtempSync(join(tmpdir(), 'health-'))
   dirs.push(dir)
   const cfg = join(dir, 'superagent-claude.json')
-  writeFileSync(cfg, JSON.stringify({ repositories: ['owner/repo'], policy: { allowed: ['alice'] }, stateDir: join(dir, 'state') }))
+  writeFileSync(
+    cfg,
+    JSON.stringify({ repositories: ['owner/repo'], policy: { allowed: ['alice'] }, stateDir: join(dir, 'state') }),
+  )
   const c = cliIo(dir, cliEnv(dir))
   const boot = async (): Promise<Runtime> => {
     const runtime = new Runtime({ config: loadConfig(cfg, c.io.env), runtime: new FakeRuntime(() => ({})) })
@@ -32,7 +35,8 @@ function setup() {
     await runtime.start()
     return runtime
   }
-  const check = (mode: 'live' | 'ready', now?: () => number): number => healthCommand([`--${mode}`, '--config', cfg], c.io, now)
+  const check = (mode: 'live' | 'ready', now?: () => number): number =>
+    healthCommand([`--${mode}`, '--config', cfg], c.io, now)
   return { dir, cfg, c, boot, check }
 }
 

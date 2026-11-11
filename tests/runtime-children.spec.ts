@@ -13,7 +13,13 @@ const order = vi.hoisted(() => [] as string[])
 
 vi.mock('../src/executor/recovery.ts', async importOriginal => {
   const m = await importOriginal<typeof import('../src/executor/recovery.ts')>()
-  return { ...m, recover: (h: Parameters<typeof m.recover>[0]) => { order.push('recover'); return m.recover(h) } }
+  return {
+    ...m,
+    recover: (h: Parameters<typeof m.recover>[0]) => {
+      order.push('recover')
+      return m.recover(h)
+    },
+  }
 })
 
 const ENV: Record<string, string | undefined> = { HOME: '/home/test' }
@@ -36,12 +42,15 @@ afterEach(async () => {
 describe('runtime start', () => {
   it('stops recorded children before recovery and logs them', async () => {
     const path = join(dir, 'superagent-claude.json')
-    writeFileSync(path, JSON.stringify({
-      repositories: ['owner/repo'],
-      policy: { allowed: ['alice'], acceptMode: 'auto' },
-      security: { allowUnsandboxed: true },
-      stateDir: join(dir, 'state'),
-    }))
+    writeFileSync(
+      path,
+      JSON.stringify({
+        repositories: ['owner/repo'],
+        policy: { allowed: ['alice'], acceptMode: 'auto' },
+        security: { allowUnsandboxed: true },
+        stateDir: join(dir, 'state'),
+      }),
+    )
     const config = loadConfig(path, ENV)
     const chat = testSource()
     const records: LogRecord[] = []
@@ -55,8 +64,15 @@ describe('runtime start', () => {
       },
     })
     const r = new Runtime({
-      config, configPath: path, env: ENV, runtime: fake, kinds: [chat.kind], services: [chat.service],
-      log: record => { records.push(record) },
+      config,
+      configPath: path,
+      env: ENV,
+      runtime: fake,
+      kinds: [chat.kind],
+      services: [chat.service],
+      log: record => {
+        records.push(record)
+      },
     })
     runtime = r
     await r.start()

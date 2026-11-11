@@ -12,14 +12,20 @@ export type Family<V, A extends unknown[]> = ((...name: A) => Key<V>) & { readon
 /** Define a single typed KV key; external Source plugins use `record` and `family` to type their own keys. */
 export const record = <V>(key: string) => key as Key<V>
 /** Define a KV key family whose keys join `prefix` and name parts with `:` (or a custom `format`). */
-export function family<V, A extends unknown[] = [string]>(prefix: string, format = (...name: A) => name.join(':')): Family<V, A> {
+export function family<V, A extends unknown[] = [string]>(
+  prefix: string,
+  format = (...name: A) => name.join(':'),
+): Family<V, A> {
   return Object.assign((...name: A) => `${prefix}${format(...name)}` as Key<V>, { prefix })
 }
 
 import type { HealthSnapshot } from '../infra/health.ts'
 
 /** The readiness marker the daemon writes once started: its pid and when it became ready. */
-export interface RuntimeReady { pid: number; at: string }
+export interface RuntimeReady {
+  pid: number
+  at: string
+}
 
 export const KV = {
   /** Runtime health: the HealthBoard snapshot the daemon writes each pass (at most every 5s) and the status CLI reads. */
@@ -27,7 +33,11 @@ export const KV = {
   /** Store: current database schema version. */
   store: { schema: record<number>('schema') },
   /** Runtime: the Router session's ID and the prompt version it was opened under, and the readiness marker the daemon writes once started and deletes first on stop (health --ready). */
-  runtime: { masterId: record<string>('master-id'), routerPrompt: record<string>('router-prompt-version'), ready: record<RuntimeReady>('runtime-ready') },
+  runtime: {
+    masterId: record<string>('master-id'),
+    routerPrompt: record<string>('router-prompt-version'),
+    ready: record<RuntimeReady>('runtime-ready'),
+  },
   /** Sessions: prompt revisions each Session has worked under, ordered oldest first; the last entry (`.at(-1)`) is its active revision. */
   sessions: { prompts: family<number[], [session: string]>('session-prompts:') },
   /** Per-Source resolved display names mapping a named ID (such as a chat ID) to its display name. */

@@ -38,13 +38,16 @@ afterEach(async () => {
 })
 
 function writeConfig(over: Record<string, unknown> = {}): void {
-  writeFileSync(path, JSON.stringify({
-    repositories: ['owner/repo'],
-    policy: { allowed: ['alice'], acceptMode: 'auto' },
-    security: { allowUnsandboxed: true },
-    stateDir: join(dir, 'state'),
-    ...over,
-  }))
+  writeFileSync(
+    path,
+    JSON.stringify({
+      repositories: ['owner/repo'],
+      policy: { allowed: ['alice'], acceptMode: 'auto' },
+      security: { allowUnsandboxed: true },
+      stateDir: join(dir, 'state'),
+      ...over,
+    }),
+  )
 }
 
 async function boot(over: Record<string, unknown> = {}, agentLogin?: () => string | undefined) {
@@ -54,8 +57,16 @@ async function boot(over: Record<string, unknown> = {}, agentLogin?: () => strin
   const records: LogRecord[] = []
   const fake = new FakeRuntime(hold, { probe: { sandbox: true, version: 'x' } })
   const r = new Runtime({
-    config, configPath: path, env: ENV, runtime: fake, kinds: [chat.kind], services: [chat.service],
-    log: record => { records.push(record) }, ...(agentLogin ? { agentLogin } : {}),
+    config,
+    configPath: path,
+    env: ENV,
+    runtime: fake,
+    kinds: [chat.kind],
+    services: [chat.service],
+    log: record => {
+      records.push(record)
+    },
+    ...(agentLogin ? { agentLogin } : {}),
   })
   runtime = r
   await r.start()
@@ -66,8 +77,11 @@ async function boot(over: Record<string, unknown> = {}, agentLogin?: () => strin
 
 function from(id: string, actor: string, repository = 'owner/repo'): Trigger {
   return trigger(id, {
-    actor: { source: 'chat', id: actor }, addressed: 'mention', meta: { repository },
-    threads: [{ source: 'chat', id: `t${id}` }], channel: { source: 'chat', thread: `t${id}`, address: { message: id } },
+    actor: { source: 'chat', id: actor },
+    addressed: 'mention',
+    meta: { repository },
+    threads: [{ source: 'chat', id: `t${id}` }],
+    channel: { source: 'chat', thread: `t${id}`, address: { message: id } },
   })
 }
 
@@ -77,7 +91,9 @@ describe('policy reload', () => {
     const spy = vi.spyOn(r.engine, 'policyChanged')
     expect(chat.emit(from('2', 'bob'))).toBe('filtered')
 
-    const rules = SettingsSchema.parse({}).policy.rules.map(rule => rule.id === 'copy' ? { ...rule, enabled: false } : rule)
+    const rules = SettingsSchema.parse({}).policy.rules.map(rule =>
+      rule.id === 'copy' ? { ...rule, enabled: false } : rule,
+    )
     writeConfig({ policy: { allowed: ['alice', 'bob'], acceptMode: 'auto', rules } })
     expect(await r.reload()).toMatchObject({ applied: true, policyChanged: true })
     expect(spy).toHaveBeenCalledTimes(1)
@@ -134,20 +150,29 @@ describe('policy reload', () => {
 
   it('a subscription shared with others is refused without consent, and applied with consent, which is recorded', async () => {
     const { r, chat, records } = await boot({ auth: { mode: 'subscription', owner: 'alice' } })
-    writeConfig({ auth: { mode: 'subscription', owner: 'alice' }, policy: { allowed: ['alice', 'bob'], acceptMode: 'auto' } })
+    writeConfig({
+      auth: { mode: 'subscription', owner: 'alice' },
+      policy: { allowed: ['alice', 'bob'], acceptMode: 'auto' },
+    })
     const refused = await r.reload()
     expect(refused).toMatchObject({ applied: false })
     expect(refused.error).toContain('ToS risk')
     expect(chat.emit(from('2', 'bob'))).toBe('filtered')
 
-    writeConfig({ auth: { mode: 'subscription', owner: 'alice', acceptSubscriptionSharedUseRisk: true }, policy: { allowed: ['alice', 'bob'], acceptMode: 'auto' } })
+    writeConfig({
+      auth: { mode: 'subscription', owner: 'alice', acceptSubscriptionSharedUseRisk: true },
+      policy: { allowed: ['alice', 'bob'], acceptMode: 'auto' },
+    })
     expect(await r.reload()).toMatchObject({ applied: true })
     const first = records.filter(record => record.event === 'auth.consent')
     expect(first.at(-1)).toMatchObject({ allowedHash: allowedHash(['alice', 'bob']) })
     expect(r.board.all.auth?.values?.allowedHash).toBe(allowedHash(['alice', 'bob']))
     expect(r.board.all.auth?.values?.consentAt).toBeDefined()
 
-    writeConfig({ auth: { mode: 'subscription', owner: 'alice', acceptSubscriptionSharedUseRisk: true }, policy: { allowed: ['alice', 'bob', 'carol'], acceptMode: 'auto' } })
+    writeConfig({
+      auth: { mode: 'subscription', owner: 'alice', acceptSubscriptionSharedUseRisk: true },
+      policy: { allowed: ['alice', 'bob', 'carol'], acceptMode: 'auto' },
+    })
     expect(await r.reload()).toMatchObject({ applied: true })
     const second = records.filter(record => record.event === 'auth.consent')
     expect(second).toHaveLength(first.length + 1)
@@ -179,7 +204,9 @@ describe('policy reload', () => {
 
     writeConfig({ repositories: ['owner/repo', 'owner/other'] })
     const widened = await r.reload()
-    expect(widened.warnings).toContain('Repository list changes apply to admission now; polling targets change on restart')
+    expect(widened.warnings).toContain(
+      'Repository list changes apply to admission now; polling targets change on restart',
+    )
     expect(chat.emit(from('5', 'alice', 'owner/other'))).toBe('stored')
   })
 })
@@ -231,7 +258,9 @@ it('a reload that lowers the limits leaves existing reports alone', async () => 
   const kept = structuredClone(r.store.tickets.get(id)!.assignments)
   writeConfig({ workers: { max: 2, maxTurns: 1, maxBudgetUsd: 0.01 } })
   expect(await r.reload()).toMatchObject({ applied: true })
-  expect(records).toContainEqual(expect.objectContaining({ event: 'config.restart_required', keys: expect.arrayContaining(['workers']) }))
+  expect(records).toContainEqual(
+    expect.objectContaining({ event: 'config.restart_required', keys: expect.arrayContaining(['workers']) }),
+  )
   expect(r.store.tickets.get(id)!.assignments).toEqual(kept)
   expect(records.some(record => record.event === 'worker.limit')).toBe(false)
   expect(ticketStage(r.store.tickets.get(id)!)).toEqual({ stage: 'person', action: 'review' })

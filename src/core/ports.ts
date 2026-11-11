@@ -1,11 +1,24 @@
 // Ported from dsh-superagent-prototype (MIT) src/core/ports.ts
 /** Ports the core depends on. Sources, policies, assessors, executors, and channels are project-specific. */
-import type { Assignment, ChannelRef, Decision, DecisionKind, Mandate, MandateBasis, Strength, Thread, Ticket, TicketEndBy, TicketOutcome, Trigger }
-  from './model.ts'
+import type {
+  Assignment,
+  ChannelRef,
+  Decision,
+  DecisionKind,
+  Mandate,
+  MandateBasis,
+  Strength,
+  Thread,
+  Ticket,
+  TicketEndBy,
+  TicketOutcome,
+  Trigger,
+} from './model.ts'
 import type { Reason } from './reasons.ts'
 
 /** Gate admission result: either inadmissible with a reason code, or admissible with strength and MandateBasis. */
-export type GateResult = { admissible: false; reason: string } | { admissible: true; strength: Strength; basis: MandateBasis }
+export type GateResult =
+  { admissible: false; reason: string } | { admissible: true; strength: Strength; basis: MandateBasis }
 
 /** Whether a Source receives a Trigger; `observed` when it also receives messages not addressed to the agent, and `row` the receiving scope the Policy's admission table names, such as a chat. */
 export type ScopeResult = { listened: true; observed: boolean; row?: string } | { listened: false; reason: string }
@@ -44,8 +57,17 @@ export type AssessmentOutcome =
   | { kind: 'ignore'; reason: string | Reason; audit?: Record<string, unknown> }
   | { kind: 'unavailable'; reason: string | Reason; audit?: Record<string, unknown> }
   /** An accept: `rules` the assessment matched, `name` the ticket's requested short name, and `note` a routing note for its worker. */
-  | { kind: 'accept'; title: string; scope: string; reason: string | Reason; acknowledgement?: string; rules?: string[]; audit?: Record<string, unknown>;
-    name?: string; note?: string }
+  | {
+      kind: 'accept'
+      title: string
+      scope: string
+      reason: string | Reason
+      acknowledgement?: string
+      rules?: string[]
+      audit?: Record<string, unknown>
+      name?: string
+      note?: string
+    }
   | { kind: 'stop'; ticketId: string; reason: string | Reason; audit?: Record<string, unknown> }
 
 /** Semantic judgement. `request` queues the assessment, idempotently per `evalId`; the outcome returns through `Engine.decide`. */
@@ -72,7 +94,13 @@ export interface Executor {
 }
 
 /** A message for a Channel; `ticketId` names the Ticket it is for, when there is one. */
-export interface OutboundMessage { id: string; channel: ChannelRef; text: string; kind: 'acknowledgement' | 'reply' | 'notice'; ticketId?: string }
+export interface OutboundMessage {
+  id: string
+  channel: ChannelRef
+  text: string
+  kind: 'acknowledgement' | 'reply' | 'notice'
+  ticketId?: string
+}
 /** A queued message waits (`pending`), went out (`sent`), or was dropped because its conversation can never receive it (`dropped`). */
 export type ReplyStatus = 'pending' | 'sent' | 'dropped'
 /** The messages queued for Channels; the Engine queues them inside its commands, and a sender delivers them later. */
@@ -105,7 +133,9 @@ export interface DomainEvents {
   /** A worker's Session stopped at its turn or budget limit; `kept` when the ticket kept its `ready` report. */
   'worker.limit': { ticketId: string; assignmentId: string; limit: string; kept: boolean }
 }
-export type DomainEvent = { [K in keyof DomainEvents]: { type: K; at: string; data: DomainEvents[K] } }[keyof DomainEvents]
+export type DomainEvent = {
+  [K in keyof DomainEvents]: { type: K; at: string; data: DomainEvents[K] }
+}[keyof DomainEvents]
 
 /** Durable state. Every method is synchronous so `atomic` can wrap a unit of work. */
 export interface Repositories {

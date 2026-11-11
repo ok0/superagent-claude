@@ -21,12 +21,24 @@ describe.skipIf(!LIVE || !TOKEN)('live private workspace', () => {
     try {
       const home = join(dir, 'home')
       mkdirSync(home, { recursive: true })
-      const commands = new Commands({ apiProgram: 'gh', baseEnv: { PATH: process.env.PATH!, HOME: home, LANG: 'C' }, env: { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' } })
+      const commands = new Commands({
+        apiProgram: 'gh',
+        baseEnv: { PATH: process.env.PATH!, HOME: home, LANG: 'C' },
+        env: { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' },
+      })
       const access = repositoryAccess(process.env)
       const ticket = { id: 'd'.repeat(32) } as Ticket
 
-      const plain = new Workspaces({ stateDir: join(dir, 'plain'), commands, repositoryOf: () => REPO, access: { ...access, env: () => ({}) } })
-      const unauth = await plain.prepare(ticket, 'live-private').then(() => 'allowed', e => e instanceof RepositoryAccessError && !e.message.includes(TOKEN!) ? 'refused' : 'other')
+      const plain = new Workspaces({
+        stateDir: join(dir, 'plain'),
+        commands,
+        repositoryOf: () => REPO,
+        access: { ...access, env: () => ({}) },
+      })
+      const unauth = await plain.prepare(ticket, 'live-private').then(
+        () => 'allowed',
+        e => (e instanceof RepositoryAccessError && !e.message.includes(TOKEN!) ? 'refused' : 'other'),
+      )
       expect(unauth).not.toBe('other')
 
       const state = join(dir, 'state')
@@ -47,7 +59,9 @@ describe.skipIf(!LIVE || !TOKEN)('live private workspace', () => {
         expect(text).not.toContain(TOKEN!)
         expect(text).not.toContain(encoded)
       }
-      console.log(`[M12-PRIVATE] repository=${REPO} branch=${w.branch} worktree=<stateDir>/worktrees/${ticket.id} tokenInConfig=false unauthenticated=${unauth}`)
+      console.log(
+        `[M12-PRIVATE] repository=${REPO} branch=${w.branch} worktree=<stateDir>/worktrees/${ticket.id} tokenInConfig=false unauthenticated=${unauth}`,
+      )
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

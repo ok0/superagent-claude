@@ -9,8 +9,12 @@ import { TextCache } from '../src/app/cache.ts'
 import { Versions } from '../src/app/versions.ts'
 
 let directory: string
-beforeEach(() => { directory = mkdtempSync(join(tmpdir(), 'superagent-claude-kv-')) })
-afterEach(() => { rmSync(directory, { recursive: true, force: true }) })
+beforeEach(() => {
+  directory = mkdtempSync(join(tmpdir(), 'superagent-claude-kv-'))
+})
+afterEach(() => {
+  rmSync(directory, { recursive: true, force: true })
+})
 
 it('keeps KV records across a reopen, and holds only the reference keys without source-specific families', () => {
   const store = new Store(databasePath(directory))
@@ -24,13 +28,29 @@ it('keeps KV records across a reopen, and holds only the reference keys without 
   expect(reopened.get(KV.sessions.prompts('router'))).toEqual([1, 2])
   expect(reopened.keys(KV.sources.labels)).toEqual(['source-labels:chat'])
   expect(Object.keys(KV)).toEqual(['health', 'store', 'runtime', 'sessions', 'sources'])
-  expect(Object.values(KV).flatMap(group => Object.values(group).map(entry => typeof entry === 'string' ? entry : entry.prefix)))
-    .toEqual(['health', 'schema', 'master-id', 'router-prompt-version', 'runtime-ready', 'session-prompts:', 'source-labels:'])
+  expect(
+    Object.values(KV).flatMap(group =>
+      Object.values(group).map(entry => (typeof entry === 'string' ? entry : entry.prefix)),
+    ),
+  ).toEqual([
+    'health',
+    'schema',
+    'master-id',
+    'router-prompt-version',
+    'runtime-ready',
+    'session-prompts:',
+    'source-labels:',
+  ])
   reopened.close()
 })
 
 it('keeps versions across a reopen and never rewrites an earlier revision', () => {
-  const note = (store: Store) => new Versions<{ revision: number; value: string }>(store, record<number>('note-revision'), family<{ revision: number; value: string }, [revision: number]>('note-version:'))
+  const note = (store: Store) =>
+    new Versions<{ revision: number; value: string }>(
+      store,
+      record<number>('note-revision'),
+      family<{ revision: number; value: string }, [revision: number]>('note-version:'),
+    )
   const store = new Store(databasePath(directory))
   note(store).save(revision => ({ revision, value: 'a' }))
   note(store).save(revision => ({ revision, value: 'b' }))

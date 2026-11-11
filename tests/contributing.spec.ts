@@ -106,7 +106,7 @@ export function numberedItems(text: string, heading: string): number {
   const rest = text.slice(start + heading.length)
   const next = rest.search(/^#{2,3} /m)
   const section = next === -1 ? rest : rest.slice(0, next)
-  return section.split('\n').filter((line) => /^\d+\. /.test(line)).length
+  return section.split('\n').filter(line => /^\d+\. /.test(line)).length
 }
 
 export const REQUIRED_CONDUCT = [
@@ -115,12 +115,15 @@ export const REQUIRED_CONDUCT = [
   '## Reporting',
 ] as const
 
-export const REQUIRED_SECURITY = ['https://github.com/ok0/superagent-claude/security/advisories/new', 'public issue'] as const
+export const REQUIRED_SECURITY = [
+  'https://github.com/ok0/superagent-claude/security/advisories/new',
+  'public issue',
+] as const
 
 export const REQUIRED_PR_TEMPLATE = ['- [ ] `pnpm check:all`', 'Conventional Commits', 'No AI attribution'] as const
 
 export function missingMarkers(text: string, required: readonly string[]): string[] {
-  return required.filter((marker) => !text.includes(marker))
+  return required.filter(marker => !text.includes(marker))
 }
 
 export function wordingProblems(path: string, text: string): string[] {
@@ -190,7 +193,7 @@ describe('contributing docs', () => {
     expect(missingMarkers(real, REQUIRED_CONTRIBUTING)).toEqual([])
   })
 
-  it.each(REQUIRED_CONTRIBUTING)('a CONTRIBUTING without %s is rejected', (marker) => {
+  it.each(REQUIRED_CONTRIBUTING)('a CONTRIBUTING without %s is rejected', marker => {
     expect(missingMarkers(real.replaceAll(marker, ''), REQUIRED_CONTRIBUTING)).toContain(marker)
   })
 
@@ -198,15 +201,15 @@ describe('contributing docs', () => {
     expect(missingMarkers(read('docs/releasing.md'), REQUIRED_RELEASING)).toEqual([])
   })
 
-  it.each(REQUIRED_RELEASING)('a releasing guide without %s is rejected', (marker) => {
+  it.each(REQUIRED_RELEASING)('a releasing guide without %s is rejected', marker => {
     const text = read('docs/releasing.md')
     expect(missingMarkers(text.replaceAll(marker, ''), REQUIRED_RELEASING)).toContain(marker)
   })
 
   it('the releasing guide sections are in order', () => {
     const text = read('docs/releasing.md')
-    const positions = RELEASING_ORDER.map((heading) => text.indexOf('\n' + heading + '\n'))
-    positions.forEach((position) => expect(position).toBeGreaterThan(-1))
+    const positions = RELEASING_ORDER.map(heading => text.indexOf('\n' + heading + '\n'))
+    positions.forEach(position => expect(position).toBeGreaterThan(-1))
     for (let i = 1; i < positions.length; i++) {
       expect(positions[i]).toBeGreaterThan(positions[i - 1] ?? -1)
     }
@@ -222,13 +225,13 @@ describe('contributing docs', () => {
 
   it.each(['Set NPM_TOKEN first', 'the Bootstrap token', 'PUT E404', 'bypass 2FA', 'Manage Actions access'])(
     'releasing sample %j is rejected',
-    (sample) => {
+    sample => {
       expect(sample).toMatch(FORBIDDEN_RELEASING)
     },
   )
 
   it('CONTRIBUTING links the releasing guide on exactly one line', () => {
-    const lines = real.split('\n').filter((line) => line.includes('](docs/releasing.md)'))
+    const lines = real.split('\n').filter(line => line.includes('](docs/releasing.md)'))
     expect(lines.length).toBe(1)
   })
 
@@ -242,7 +245,7 @@ describe('contributing docs', () => {
     expect(security).toContain('](docs/security.md)')
   })
 
-  it.each(REQUIRED_SECURITY)('a SECURITY without %s is rejected', (marker) => {
+  it.each(REQUIRED_SECURITY)('a SECURITY without %s is rejected', marker => {
     expect(missingMarkers(read('SECURITY.md').replaceAll(marker, ''), REQUIRED_SECURITY)).toContain(marker)
   })
 
@@ -269,7 +272,7 @@ describe('contributing docs', () => {
     expect(section).toContain('](CONTRIBUTING.md#run-live-tests-against-your-own-playground)')
   })
 
-  it.each(PUBLIC_FILES)('%s passes the public wording rules', (path) => {
+  it.each(PUBLIC_FILES)('%s passes the public wording rules', path => {
     expect(existsSync(join(ROOT, path))).toBe(true)
     expect(wordingProblems(path, read(path))).toEqual([])
   })
@@ -282,10 +285,10 @@ describe('contributing docs', () => {
     ['built with Claude' + ' Code', 'branding'],
   ])('wording sample %j is rejected', (sample, reason) => {
     const problems = wordingProblems('CONTRIBUTING.md', sample)
-    expect(problems.some((problem) => problem.includes(reason))).toBe(true)
+    expect(problems.some(problem => problem.includes(reason))).toBe(true)
   })
 
-  it.each(['bug_report.yml', 'feature_request.yml'])('%s is a valid issue form', (file) => {
+  it.each(['bug_report.yml', 'feature_request.yml'])('%s is a valid issue form', file => {
     expect(issueFormProblems(read(`.github/ISSUE_TEMPLATE/${file}`))).toEqual([])
   })
 
@@ -303,10 +306,13 @@ describe('contributing docs', () => {
     })
   })
 
-  it.each(['CONTRIBUTING.md', 'CODE_OF_CONDUCT.md', '.github/pull_request_template.md', 'SECURITY.md', 'docs/releasing.md'])(
-    'relative links in %s resolve',
-    (file) => {
-      expect(relativeLinkProblems(file, read(file))).toEqual([])
-    },
-  )
+  it.each([
+    'CONTRIBUTING.md',
+    'CODE_OF_CONDUCT.md',
+    '.github/pull_request_template.md',
+    'SECURITY.md',
+    'docs/releasing.md',
+  ])('relative links in %s resolve', file => {
+    expect(relativeLinkProblems(file, read(file))).toEqual([])
+  })
 })

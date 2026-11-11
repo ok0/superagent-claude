@@ -35,7 +35,9 @@ function setup(opts: SetupOptions = {}) {
       5: pull(A, 5, { node_id: 'PR_acme/widgets_5', state: 'open' }),
     },
     reviewComments: {
-      2: [{ id: 70, body: 'x', user: { login: 'alice' }, pull_request_url: `https://api.github.com/repos/${A}/pulls/2` }],
+      2: [
+        { id: 70, body: 'x', user: { login: 'alice' }, pull_request_url: `https://api.github.com/repos/${A}/pulls/2` },
+      ],
     },
   }
   const gh = fakeGh({ repositories: { [A]: repo } }, { apiEnv: opts.apiEnv })
@@ -64,7 +66,8 @@ function setup(opts: SetupOptions = {}) {
   return { gh, tools, bindThread, push, report }
 }
 
-const prBodies = (gh: ReturnType<typeof fakeGh>): string[] => gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls').map(r => r.fields.body ?? '')
+const prBodies = (gh: ReturnType<typeof fakeGh>): string[] =>
+  gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls').map(r => r.fields.body ?? '')
 
 function find(tools: ToolSpec[], name: string): ToolSpec {
   const found = tools.find(item => item.name === name)
@@ -77,13 +80,18 @@ describe('worker delivery tools', () => {
     const { gh, tools, bindThread, push } = setup()
     const publish = find(tools, 'orchestrator_publish')
     const args = { title: 'Fix', body: 'Body', coAuthors: ['Ann <ann@example.com>'] }
-    const first = await publish.execute(args, signal()) as { pr: number; created: boolean }
+    const first = (await publish.execute(args, signal())) as { pr: number; created: boolean }
     expect(first).toMatchObject({ published: true })
-    const second = await publish.execute(args, signal()) as { pr: number; created: boolean }
+    const second = (await publish.execute(args, signal())) as { pr: number; created: boolean }
     expect(first.created).toBe(true)
     expect(second).toMatchObject({ pr: first.pr, created: false })
     expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')).toHaveLength(1)
-    expect(bindThread).toHaveBeenCalledWith('T1', { source: 'github', id: `acme/widgets#${first.pr}` }, true, expect.stringContaining(`/pull/${first.pr}`))
+    expect(bindThread).toHaveBeenCalledWith(
+      'T1',
+      { source: 'github', id: `acme/widgets#${first.pr}` },
+      true,
+      expect.stringContaining(`/pull/${first.pr}`),
+    )
     expect(push).toHaveBeenCalledWith('T1', { coAuthors: ['Ann <ann@example.com>'] })
   })
 
@@ -119,7 +127,9 @@ describe('worker delivery tools', () => {
 
   it('a failed push-time check is a failed report, not a push', async () => {
     const { tools, push, report } = setup({ access: { status: 502 } })
-    await expect(find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())).rejects.toThrow(/acme\/widgets[\s\S]*HTTP 502/)
+    await expect(find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())).rejects.toThrow(
+      /acme\/widgets[\s\S]*HTTP 502/,
+    )
     expect(report).toHaveBeenCalledTimes(1)
     expect(report).toHaveBeenCalledWith('T1', { state: 'failed', summary: expect.stringContaining('HTTP 502') })
     expect(push).not.toHaveBeenCalled()
@@ -127,7 +137,12 @@ describe('worker delivery tools', () => {
 
   it('a PR API 403 is a repository access error with the status and a failed report, without the token', async () => {
     const { tools, bindThread, report } = setup({ failures: { pulls: 403 }, apiEnv: { GH_TOKEN: 'tok-secret-1' } })
-    const error = await find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal()).then(() => undefined, (e: unknown) => e) as Error
+    const error = (await find(tools, 'orchestrator_publish')
+      .execute({ title: 'Fix', body: 'Body' }, signal())
+      .then(
+        () => undefined,
+        (e: unknown) => e,
+      )) as Error
     expect(error.message).toContain('acme/widgets')
     expect(error.message).toContain('HTTP 403')
     expect(error.message).not.toContain('tok-secret-1')
@@ -140,19 +155,27 @@ describe('worker delivery tools', () => {
 
   it('a push access error is reported failed', async () => {
     const { tools, report } = setup({ pushError: new RepositoryAccessError(A, 'denied', 403) })
-    await expect(find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())).rejects.toThrow(/HTTP 403/)
+    await expect(find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())).rejects.toThrow(
+      /HTTP 403/,
+    )
     expect(report).toHaveBeenCalledWith('T1', { state: 'failed', summary: expect.stringContaining('(HTTP 403)') })
   })
 
   it('a push that still fails after the host retries is a tool error without a failed report', async () => {
-    const { tools, report } = setup({ pushError: new Error('The push still failed after 3 attempts by the host: fatal error in commit_refs') })
-    await expect(find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())).rejects.toThrow(/3 attempts/)
+    const { tools, report } = setup({
+      pushError: new Error('The push still failed after 3 attempts by the host: fatal error in commit_refs'),
+    })
+    await expect(find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())).rejects.toThrow(
+      /3 attempts/,
+    )
     expect(report).not.toHaveBeenCalled()
   })
 
   it('a PR error that is not an access error stays a tool error', async () => {
     const { tools, report } = setup({ failures: { pulls: 422 } })
-    await expect(find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())).rejects.toThrow()
+    await expect(
+      find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal()),
+    ).rejects.toThrow()
     expect(report).not.toHaveBeenCalled()
   })
 
@@ -168,18 +191,24 @@ describe('worker delivery tools', () => {
     const { gh, tools } = setup()
     const reply = find(tools, 'orchestrator_review_reply')
     await reply.execute({ pr: 2, comment_id: 70, body: 'Done.', resolve: true }, signal())
-    expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls/2/comments/70/replies')).toHaveLength(1)
+    expect(
+      gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls/2/comments/70/replies'),
+    ).toHaveLength(1)
     expect(gh.graphql.filter(g => g.query.includes('resolveReviewThread'))).toHaveLength(1)
 
     const graphqlBefore = gh.graphql.length
     await reply.execute({ pr: 2, comment_id: 70, body: 'Noted.' }, signal())
-    expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls/2/comments/70/replies')).toHaveLength(2)
+    expect(
+      gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls/2/comments/70/replies'),
+    ).toHaveLength(2)
     expect(gh.graphql.length).toBe(graphqlBefore)
   })
 
   it('auto_merge is a tool error with no gh call while not allowed, and only enables auto-merge when allowed', async () => {
     const denied = setup({ allow: false })
-    await expect(find(denied.tools, 'orchestrator_pr_auto_merge').execute({ pr: 2, method: 'squash' }, signal())).rejects.toThrow(/not allowed/)
+    await expect(
+      find(denied.tools, 'orchestrator_pr_auto_merge').execute({ pr: 2, method: 'squash' }, signal()),
+    ).rejects.toThrow(/not allowed/)
     expect(denied.gh.calls).toHaveLength(0)
 
     const allowed = setup({ allow: true })
@@ -192,7 +221,11 @@ describe('worker delivery tools', () => {
   it('pr_close closes a bound PR without merging', async () => {
     const { gh, tools } = setup()
     await find(tools, 'orchestrator_pr_close').execute({ pr: 2, reason: 'Superseded.' }, signal())
-    expect(gh.requests.some(r => r.method === 'PATCH' && r.path === 'repos/acme/widgets/pulls/2' && r.fields.state === 'closed')).toBe(true)
+    expect(
+      gh.requests.some(
+        r => r.method === 'PATCH' && r.path === 'repos/acme/widgets/pulls/2' && r.fields.state === 'closed',
+      ),
+    ).toBe(true)
     expect(gh.requests.filter(r => r.path.includes('/merge'))).toHaveLength(0)
   })
 
@@ -209,12 +242,18 @@ describe('worker delivery tools', () => {
     for (const [name, args] of cases) await expect(find(tools, name).execute(args, signal())).rejects.toThrow()
 
     const context = setup({ allow: true, follows: [{ thread: 'github:acme/widgets#2', own: false }] })
-    await expect(find(context.tools, 'orchestrator_pr_auto_merge').execute({ pr: 2, method: 'merge' }, signal())).rejects.toThrow(/not bound/)
-    await expect(find(context.tools, 'orchestrator_pr_close').execute({ pr: 2, reason: 'x' }, signal())).rejects.toThrow(/not bound/)
+    await expect(
+      find(context.tools, 'orchestrator_pr_auto_merge').execute({ pr: 2, method: 'merge' }, signal()),
+    ).rejects.toThrow(/not bound/)
+    await expect(
+      find(context.tools, 'orchestrator_pr_close').execute({ pr: 2, reason: 'x' }, signal()),
+    ).rejects.toThrow(/not bound/)
     expect(context.gh.calls).toHaveLength(0)
 
     const other = setup({ repositoryOf: () => 'other/repo' })
-    await expect(find(other.tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())).rejects.toThrow(/not in the configured repositories/)
+    await expect(
+      find(other.tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal()),
+    ).rejects.toThrow(/not in the configured repositories/)
     expect(other.push).not.toHaveBeenCalled()
 
     expect(gh.calls).toHaveLength(0)
@@ -223,7 +262,9 @@ describe('worker delivery tools', () => {
 
   it('an ended ticket gets a tool error', async () => {
     const { gh, tools, push } = setup({ ended: true })
-    await expect(find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())).rejects.toThrow(/Ticket ended/)
+    await expect(find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())).rejects.toThrow(
+      /Ticket ended/,
+    )
     expect(push).not.toHaveBeenCalled()
     expect(gh.calls).toHaveLength(0)
   })
@@ -254,7 +295,10 @@ describe('worker delivery tools', () => {
   })
   it('publish strips AI attribution from the title and body before linking the issue', async () => {
     const { gh, tools } = setup({ issue: { repository: A, number: 9 } })
-    await find(tools, 'orchestrator_publish').execute({ title: 'Fix parser\n' + GEN, body: 'Summary\n\n' + GEN + '\n\n' + AI + '\n' + JANE }, signal())
+    await find(tools, 'orchestrator_publish').execute(
+      { title: 'Fix parser\n' + GEN, body: 'Summary\n\n' + GEN + '\n\n' + AI + '\n' + JANE },
+      signal(),
+    )
     const post = gh.requests.find(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')
     expect(post?.fields.title).toBe('Fix parser')
     expect(prBodies(gh)).toEqual(['Summary\n\n' + JANE + '\n\nCloses #9'])
@@ -267,7 +311,9 @@ describe('worker delivery tools', () => {
     const second = await publish.execute({ title: 'Fix', body: 'Body\n\n' + AI }, signal())
     expect(second).toMatchObject({ created: false })
     expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')).toHaveLength(1)
-    expect(gh.requests.some(r => r.method === 'PATCH' && (r.fields.title !== undefined || r.fields.body !== undefined))).toBe(false)
+    expect(
+      gh.requests.some(r => r.method === 'PATCH' && (r.fields.title !== undefined || r.fields.body !== undefined)),
+    ).toBe(false)
     expect(gh.requests.some(r => /anthropic\.com/i.test(JSON.stringify(r.fields ?? {})))).toBe(false)
   })
 
@@ -286,7 +332,8 @@ describe('worker delivery tools', () => {
     const { gh, tools } = setup()
     const reply = find(tools, 'orchestrator_review_reply')
     await reply.execute({ pr: 2, comment_id: 70, body: 'Fixed in abc.\n\n' + GEN }, signal())
-    const replies = () => gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls/2/comments/70/replies')
+    const replies = () =>
+      gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls/2/comments/70/replies')
     expect(replies()[0]?.fields.body).toBe('Fixed in abc.')
     const before = gh.calls.length
     await expect(reply.execute({ pr: 2, comment_id: 70, body: AI }, signal())).rejects.toThrow(/AI attribution/)
@@ -297,8 +344,14 @@ describe('worker delivery tools', () => {
 
 describe('issue link', () => {
   it('takes the issue from an issue or issue comment origin, not from a pull request, CI or an unknown origin', () => {
-    expect(issueOf({ meta: { repository: A, number: 3, isPr: false, kind: 'issue' } })).toEqual({ repository: A, number: 3 })
-    expect(issueOf({ meta: { repository: A, number: 3, isPr: false, commentId: 1, kind: 'conversation' } })).toEqual({ repository: A, number: 3 })
+    expect(issueOf({ meta: { repository: A, number: 3, isPr: false, kind: 'issue' } })).toEqual({
+      repository: A,
+      number: 3,
+    })
+    expect(issueOf({ meta: { repository: A, number: 3, isPr: false, commentId: 1, kind: 'conversation' } })).toEqual({
+      repository: A,
+      number: 3,
+    })
     expect(issueOf({ meta: { repository: A, number: 4, isPr: true, kind: 'pull' } })).toBeUndefined()
     expect(issueOf({ meta: { repository: A, number: 4, isPr: true, ci: true } })).toBeUndefined()
     expect(issueOf({ meta: {} })).toBeUndefined()

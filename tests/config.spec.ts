@@ -27,7 +27,12 @@ describe('config file', () => {
     const path = write({ repositories: ['owner/repo'], policy: { allowed: ['alice'] } })
     expect(loadConfig(path, ENV)).toEqual({
       repositories: ['owner/repo'],
-      policy: { allowed: ['alice'], acceptMode: 'observe', rules: SettingsSchema.parse({}).policy.rules, admission: {} },
+      policy: {
+        allowed: ['alice'],
+        acceptMode: 'observe',
+        rules: SettingsSchema.parse({}).policy.rules,
+        admission: {},
+      },
       auth: { mode: 'api-key', acceptSubscriptionSharedUseRisk: false },
       delivery: { allowAutoMerge: false },
       workers: { max: 2, maxTurns: 100, maxBudgetUsd: 5 },
@@ -42,7 +47,12 @@ describe('config file', () => {
   it('loads every key of the full schema', () => {
     const path = write({
       repositories: ['owner/repo'],
-      policy: { allowed: ['alice'], acceptMode: 'auto', rules: SettingsSchema.parse({}).policy.rules.slice(0, 1), admission: {} },
+      policy: {
+        allowed: ['alice'],
+        acceptMode: 'auto',
+        rules: SettingsSchema.parse({}).policy.rules.slice(0, 1),
+        admission: {},
+      },
       auth: { mode: 'subscription', owner: 'Alice', acceptSubscriptionSharedUseRisk: true },
       delivery: { allowAutoMerge: true },
       workers: { max: 3, maxTurns: 50, maxBudgetUsd: 2 },
@@ -65,11 +75,21 @@ describe('config file', () => {
   })
 
   it('rejects delivery.forkWhenNoPush, which was removed', () => {
-    expect(() => loadConfig(write({ repositories: ['owner/repo'], policy: { allowed: ['alice'] }, delivery: { forkWhenNoPush: true } }), ENV)).toThrow(ConfigError)
+    expect(() =>
+      loadConfig(
+        write({ repositories: ['owner/repo'], policy: { allowed: ['alice'] }, delivery: { forkWhenNoPush: true } }),
+        ENV,
+      ),
+    ).toThrow(ConfigError)
   })
 
   it('rejects an unknown delivery key', () => {
-    expect(() => loadConfig(write({ repositories: ['owner/repo'], policy: { allowed: ['alice'] }, delivery: { autoMerge: true } }), ENV)).toThrow(ConfigError)
+    expect(() =>
+      loadConfig(
+        write({ repositories: ['owner/repo'], policy: { allowed: ['alice'] }, delivery: { autoMerge: true } }),
+        ENV,
+      ),
+    ).toThrow(ConfigError)
   })
 
   it('refuses unknown nested keys and wrong types with the key path', () => {
@@ -84,7 +104,11 @@ describe('config file', () => {
     for (const [value, text] of cases) {
       const path = write(value)
       let caught: unknown
-      try { loadConfig(path, ENV) } catch (error) { caught = error }
+      try {
+        loadConfig(path, ENV)
+      } catch (error) {
+        caught = error
+      }
       expect(caught).toBeInstanceOf(StartupRefused)
       expect(caught).toBeInstanceOf(ConfigError)
       expect((caught as StartupRefused).rule).toBe('config')
@@ -93,14 +117,25 @@ describe('config file', () => {
   })
 
   it('policyVersion is stable for the same policy and changes with it', () => {
-    const load = (over: Record<string, unknown>, allowed: string[] = ['alice', 'Bob']) => settingsOf(loadConfig(write({
-      repositories: ['owner/repo'], policy: { allowed, ...(over.policy as object ?? {}) }, ...over.top as object,
-    }), ENV))
+    const load = (over: Record<string, unknown>, allowed: string[] = ['alice', 'Bob']) =>
+      settingsOf(
+        loadConfig(
+          write({
+            repositories: ['owner/repo'],
+            policy: { allowed, ...((over.policy as object) ?? {}) },
+            ...(over.top as object),
+          }),
+          ENV,
+        ),
+      )
     const version = policyVersion(load({}))
     expect(policyVersion(load({}, ['Bob', 'alice']))).toBe(version)
     expect(policyVersion(load({}, ['alice']))).not.toBe(version)
     expect(policyVersion(load({ policy: { acceptMode: 'auto' } }))).not.toBe(version)
-    const rules = SettingsSchema.parse({}).policy.rules.map(rule => ({ ...rule, enabled: rule.id === 'copy' ? false : rule.enabled }))
+    const rules = SettingsSchema.parse({}).policy.rules.map(rule => ({
+      ...rule,
+      enabled: rule.id === 'copy' ? false : rule.enabled,
+    }))
     expect(policyVersion(load({ policy: { rules } }))).not.toBe(version)
     expect(policyVersion(load({ top: { workers: { max: 4 } } }))).toBe(version)
     expect(policyVersion(load({ top: { stateDir: '/elsewhere' } }))).toBe(version)

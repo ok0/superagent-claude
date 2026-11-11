@@ -23,7 +23,9 @@ const FULL_ENV: Record<string, string> = {
 }
 
 function refusal(action: () => unknown): StartupRefused {
-  try { action() } catch (error) {
+  try {
+    action()
+  } catch (error) {
     if (error instanceof StartupRefused) return error
     throw error
   }
@@ -35,9 +37,15 @@ describe('credentials', () => {
     const env = runtimeEnv(resolveCredential(mode, FULL_ENV))
     const others = MODES.filter(other => other !== mode).flatMap(other => AUTH_ENV[other])
     for (const key of Object.keys(env)) expect(AUTH_ENV[mode]).toContain(key)
-    for (const key of [...others, 'SUPERAGENT_CLAUDE_GITHUB_TOKEN', 'GH_TOKEN', 'DAEMON_SECRET', 'PATH']) expect(env).not.toHaveProperty(key)
+    for (const key of [...others, 'SUPERAGENT_CLAUDE_GITHUB_TOKEN', 'GH_TOKEN', 'DAEMON_SECRET', 'PATH'])
+      expect(env).not.toHaveProperty(key)
     if (mode === 'bedrock') expect(env).toMatchObject({ CLAUDE_CODE_USE_BEDROCK: '1', AWS_REGION: 'r' })
-    if (mode === 'vertex') expect(env).toMatchObject({ CLAUDE_CODE_USE_VERTEX: '1', CLOUD_ML_REGION: 'r2', ANTHROPIC_VERTEX_PROJECT_ID: 'proj' })
+    if (mode === 'vertex')
+      expect(env).toMatchObject({
+        CLAUDE_CODE_USE_VERTEX: '1',
+        CLOUD_ML_REGION: 'r2',
+        ANTHROPIC_VERTEX_PROJECT_ID: 'proj',
+      })
   })
 
   it('refuses a missing variable with its name only', () => {

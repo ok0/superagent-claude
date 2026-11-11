@@ -16,10 +16,19 @@ export const TRIGGER_CHARS = 600
 /** Formats a trigger for a worker or the Router: author, thread, timestamp, text cut at TRIGGER_CHARS, and the message it replies to. */
 export function triggerMessage(trigger: Trigger, note?: string, repliesTo?: Trigger) {
   const cut = trigger.text.length > TRIGGER_CHARS ? `${trigger.text.slice(0, TRIGGER_CHARS)}…` : undefined
-  return { trigger_id: trigger.id, from: trigger.actor.id, thread: threadKey(trigger.threads[0]!), at: trigger.at,
-    text: external('trigger', cut ?? trigger.text), ...(cut ? { chars: trigger.text.length, read: `trigger/${trigger.id}` } : {}),
-    ...(trigger.url ? { source_url: trigger.url } : {}), ...(note ? { routing_note: note } : {}),
-    ...(repliesTo ? { replies_to: { trigger_id: repliesTo.id, preview: external('trigger', preview(repliesTo.text)) } } : {}) }
+  return {
+    trigger_id: trigger.id,
+    from: trigger.actor.id,
+    thread: threadKey(trigger.threads[0]!),
+    at: trigger.at,
+    text: external('trigger', cut ?? trigger.text),
+    ...(cut ? { chars: trigger.text.length, read: `trigger/${trigger.id}` } : {}),
+    ...(trigger.url ? { source_url: trigger.url } : {}),
+    ...(note ? { routing_note: note } : {}),
+    ...(repliesTo
+      ? { replies_to: { trigger_id: repliesTo.id, preview: external('trigger', preview(repliesTo.text)) } }
+      : {}),
+  }
 }
 
 export interface LinkHost {
@@ -29,13 +38,18 @@ export interface LinkHost {
 }
 
 /** The trigger a given trigger replies to, when its Source can tell and the store holds it. */
-export function repliedTo(host: { store: Pick<Store, 'triggers'>; sources: Pick<SourceRegistry, 'repliesTo'> }, trigger: Trigger): Trigger | undefined {
+export function repliedTo(
+  host: { store: Pick<Store, 'triggers'>; sources: Pick<SourceRegistry, 'repliesTo'> },
+  trigger: Trigger,
+): Trigger | undefined {
   const parent = host.sources.repliesTo(trigger)
   return parent === undefined ? undefined : host.store.triggers.get(parent)
 }
 /** Finds tickets subscribed to threads referenced in `trigger.text` (such as `#12` or URLs) that are not already in `known`. */
 function referencedTickets(host: LinkHost, trigger: Trigger, known: readonly Ticket[]): Ticket[] {
-  const threads = (trigger.text.match(/#\d+|https?:\/\/[^\s)>\]]+/g) ?? []).flatMap(reference => host.sources.find(reference).threads)
+  const threads = (trigger.text.match(/#\d+|https?:\/\/[^\s)>\]]+/g) ?? []).flatMap(
+    reference => host.sources.find(reference).threads,
+  )
   const ids = new Set(threads.flatMap(thread => host.store.threads.get(thread)?.subscriptions ?? []))
   for (const ticket of known) ids.delete(ticket.id)
   return [...ids].flatMap(id => host.store.tickets.get(id) ?? []).slice(0, 4)
@@ -46,14 +60,27 @@ export function candidateCard(host: LinkHost, candidate: Candidate): Record<stri
   const delivered = host.store.triggers.disposition(primary.id)?.fanout ?? []
   const referenced = referencedTickets(host, primary, candidate.tickets)
   // Triggers that a worker Session handed back as outside its ticket's scope, with the worker's reason.
-  const handedBack = candidate.triggers.flatMap(trigger => (host.store.triggers.disposition(trigger.id)?.handbacks ?? [])
-    .map(item => ({ trigger_id: trigger.id, ticket_id: item.ticketId, reason: item.reason })))
+  const handedBack = candidate.triggers.flatMap(trigger =>
+    (host.store.triggers.disposition(trigger.id)?.handbacks ?? []).map(item => ({
+      trigger_id: trigger.id,
+      ticket_id: item.ticketId,
+      reason: item.reason,
+    })),
+  )
   // Format the primary trigger like a worker input (including the message it replies to) and summarize earlier batch triggers as cards.
   const others = candidate.triggers.filter(trigger => trigger.id !== primary.id)
-  return { ...triggerMessage(primary, undefined, repliedTo(host, primary)), strength: candidate.strength,
-    mode: host.settings().policy.acceptMode, ...others.length ? { batch: others.map(trigger => triggerCard(trigger)) } : {},
-    ...handedBack.length ? { handed_back: handedBack } : {}, ...relatedTickets(candidate.tickets),
-    ...(delivered.length ? { delivered_to: delivered } : {}), ...(referenced.length ? { referenced_tickets: referenced.map(ticketCard) } : {}),
-    next_action: candidate.strength === 'explicit' ? 'Route it with orchestrator_route as dispatch says: accept, attach, stop or ignore.'
-      : 'Ignore it with orchestrator_route if the card shows it touches no enabled rule; else assess it with orchestrator_eval, orchestrator_eval_read, then orchestrator_eval_decide.' }
+  return {
+    ...triggerMessage(primary, undefined, repliedTo(host, primary)),
+    strength: candidate.strength,
+    mode: host.settings().policy.acceptMode,
+    ...(others.length ? { batch: others.map(trigger => triggerCard(trigger)) } : {}),
+    ...(handedBack.length ? { handed_back: handedBack } : {}),
+    ...relatedTickets(candidate.tickets),
+    ...(delivered.length ? { delivered_to: delivered } : {}),
+    ...(referenced.length ? { referenced_tickets: referenced.map(ticketCard) } : {}),
+    next_action:
+      candidate.strength === 'explicit'
+        ? 'Route it with orchestrator_route as dispatch says: accept, attach, stop or ignore.'
+        : 'Ignore it with orchestrator_route if the card shows it touches no enabled rule; else assess it with orchestrator_eval, orchestrator_eval_read, then orchestrator_eval_decide.',
+  }
 }

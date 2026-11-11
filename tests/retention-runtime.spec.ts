@@ -16,9 +16,10 @@ import { waitUntil } from './fixtures/async.ts'
 import { trigger } from './fixtures/engine.ts'
 import { testSource } from './fixtures/source.ts'
 
-const ready: FakeScript = ({ index }) => index === 0
-  ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'Done: the fake worker finished' } }] }
-  : {}
+const ready: FakeScript = ({ index }) =>
+  index === 0
+    ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'Done: the fake worker finished' } }] }
+    : {}
 const mention = trigger('1', { addressed: 'mention', meta: { repository: 'owner/repo' } })
 
 const dirs: string[] = []
@@ -36,7 +37,11 @@ function directory(): string {
 }
 
 function config(stateDir: string) {
-  return ConfigSchema.parse({ repositories: ['owner/repo'], policy: { allowed: ['alice'], acceptMode: 'auto' }, stateDir })
+  return ConfigSchema.parse({
+    repositories: ['owner/repo'],
+    policy: { allowed: ['alice'], acceptMode: 'auto' },
+    stateDir,
+  })
 }
 
 it('cleans an ended ticket after endedTicketDays and prepares a new workspace when a person resumes it', async () => {
@@ -46,8 +51,14 @@ it('cleans an ended ticket after endedTicketDays and prepares a new workspace wh
   const fake = new FakeRuntime(ready)
   const records: LogRecord[] = []
   const runtime = new Runtime({
-    config: config(stateDir), runtime: fake, kinds: [chat.kind], services: [chat.service],
-    now: () => Date.now() + offset, log: record => { records.push(record) },
+    config: config(stateDir),
+    runtime: fake,
+    kinds: [chat.kind],
+    services: [chat.service],
+    now: () => Date.now() + offset,
+    log: record => {
+      records.push(record)
+    },
   })
   runtimes.push(runtime)
   await runtime.start()
@@ -73,7 +84,11 @@ it('cleans an ended ticket after endedTicketDays and prepares a new workspace wh
 
 it('writes the health snapshot each pass', async () => {
   let offset = 0
-  const runtime = new Runtime({ config: config(directory()), runtime: new FakeRuntime(() => ({})), now: () => Date.now() + offset })
+  const runtime = new Runtime({
+    config: config(directory()),
+    runtime: new FakeRuntime(() => ({})),
+    now: () => Date.now() + offset,
+  })
   runtimes.push(runtime)
   await runtime.start()
   await runtime.passes.idle()
@@ -88,14 +103,22 @@ it('a reload applies a changed retention.endedTicketDays without asking for a re
   const path = join(dir, 'superagent-claude.json')
   const env = { HOME: '/home/test' }
   const write = (days: number): void => {
-    writeFileSync(path, JSON.stringify({
-      repositories: ['owner/repo'], policy: { allowed: ['alice'], acceptMode: 'auto' }, security: { allowUnsandboxed: true },
-      stateDir: join(dir, 'state'), retention: { endedTicketDays: days },
-    }))
+    writeFileSync(
+      path,
+      JSON.stringify({
+        repositories: ['owner/repo'],
+        policy: { allowed: ['alice'], acceptMode: 'auto' },
+        security: { allowUnsandboxed: true },
+        stateDir: join(dir, 'state'),
+        retention: { endedTicketDays: days },
+      }),
+    )
   }
   write(14)
   const runtime = new Runtime({
-    config: loadConfig(path, env), configPath: path, env,
+    config: loadConfig(path, env),
+    configPath: path,
+    env,
     runtime: new FakeRuntime(() => ({}), { probe: { sandbox: true, version: 'x' } }),
   })
   runtimes.push(runtime)
