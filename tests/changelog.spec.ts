@@ -231,11 +231,15 @@ describe('prepare and notes', () => {
 describe('root CHANGELOG.md', () => {
   const content = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8')
 
-  it('is a bare header with no release sections', () => {
+  it('has the header and well-formed release sections only', () => {
     const lines = content.split('\n')
     expect(lines[0]).toBe('# Changelog')
-    expect(lines.filter((l) => l.trim() !== '')).toHaveLength(2)
-    expect(content).not.toContain('## [')
+    for (const l of lines.filter((x) => x.startsWith('## ['))) {
+      expect(l).toMatch(/^## \[\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?\] - \d{4}-\d{2}-\d{2}$/)
+    }
+    for (const l of lines.filter((x) => x.startsWith('### '))) {
+      expect(l).toMatch(/^### (Features|Fixes|Breaking changes)$/)
+    }
   })
 
   it('passes branding and contains no milestone IDs or .docs links', () => {
