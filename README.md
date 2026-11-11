@@ -9,16 +9,20 @@ Take as little human attention as possible, and give as much value as possible. 
 ## Quick start
 
 ```sh
-pnpm install && pnpm build
+npm i -g superagent-claude
 export SUPERAGENT_CLAUDE_GITHUB_TOKEN=<agent account token>
 export ANTHROPIC_API_KEY=<API key>                     # either: API key
 export CLAUDE_CODE_OAUTH_TOKEN=<token>                 # or: Claude subscription (token from `claude setup-token`)
-node lib/cli.js start --config superagent-claude.json
+superagent-claude start --config superagent-claude.json
 ```
+
+It needs Node.js 22.19 or later. `npx superagent-claude start --config superagent-claude.json` runs it without a global install.
 
 `auth.mode` picks which one (`api-key` or `subscription`); Bedrock and Vertex also work. See [docs/authentication.md](docs/authentication.md) for both modes and the subscription terms warning.
 
-The config needs `repositories`, `policy.allowed` and `auth.mode`. See [docs/getting-started.md](docs/getting-started.md).
+The config needs `repositories`, `policy.allowed` and `auth.mode`. See [docs/getting-started.md](docs/getting-started.md), which also covers building from source.
+
+A container image is published as `ghcr.io/ok0/superagent-claude`. See [Docker](docs/deploy.md#docker) to run it.
 
 ## Documentation
 

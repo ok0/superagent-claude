@@ -2,16 +2,22 @@
 
 ## Install
 
-Requirements: Node.js 22.19 or later, pnpm, git 2.32 or later, and gh 2.48 or later.
+Requirements: Node.js 22.19 or later, git 2.32 or later, and gh 2.48 or later.
 
-From a checkout:
+```sh
+npm i -g superagent-claude
+```
+
+This installs the `superagent-claude` command. To run it without a global install, use `npx superagent-claude <command>`.
+
+To build from source instead, you also need pnpm. From a checkout:
 
 ```sh
 pnpm install
 pnpm build
 ```
 
-The binary is `lib/cli.js`. After `pnpm link --global` it runs as `superagent-claude`.
+The binary is then `lib/cli.js`, for example `node lib/cli.js start --config superagent-claude.json`. After `pnpm link --global` it runs as `superagent-claude`.
 
 ## Agent account
 

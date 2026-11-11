@@ -153,6 +153,26 @@ describe('README and public docs', () => {
     expect(readme).not.toMatch(/^### (api-key|bedrock|vertex|subscription)$/m)
   })
 
+  it('the quick start installs from npm and points to the published image', () => {
+    const quick = readme.slice(readme.indexOf('## Quick start'), readme.indexOf('\n## Documentation'))
+    for (const text of [
+      'npm i -g superagent-claude',
+      'superagent-claude start --config superagent-claude.json',
+      'ghcr.io/ok0/superagent-claude',
+      '](docs/deploy.md#docker)',
+      '](docs/authentication.md)',
+      '](docs/getting-started.md)',
+      'SUPERAGENT_CLAUDE_GITHUB_TOKEN',
+    ]) expect(quick).toContain(text)
+    expect(quick).not.toMatch(/pnpm install|pnpm build|node lib\/cli\.js/)
+  })
+
+  it('getting-started installs from npm first and keeps the source build', () => {
+    const install = gettingStarted.slice(gettingStarted.indexOf('## Install'), gettingStarted.indexOf('\n## Agent account'))
+    for (const text of ['npm i -g superagent-claude', 'pnpm install', 'pnpm build', 'lib/cli.js', 'pnpm link --global']) expect(install).toContain(text)
+    expect(install.indexOf('npm i -g superagent-claude')).toBeLessThan(install.indexOf('pnpm install'))
+  })
+
   it('every relative link in the README and docs resolves', () => {
     const files: [string, string][] = [['README.md', readme], ...DOCS.map((path): [string, string] => [path, read(path)])]
     expect(files.flatMap(([file, text]) => linkProblems(file, text))).toEqual([])
