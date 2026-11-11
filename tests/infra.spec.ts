@@ -10,7 +10,7 @@ it('finds the package root by its name', () => {
 })
 
 it('keeps word counting and templates, without the IM limit or a second sameName', async () => {
-  expect(Object.keys(await import('../src/infra/text.ts')).sort()).toEqual(['NOTE_WORDS', 'escapeRegExp', 'fill', 'wordCount'])
+  expect(Object.keys(await import('../src/infra/text.ts')).sort()).toEqual(['AI_ATTRIBUTION_PATTERNS', 'NOTE_WORDS', 'escapeRegExp', 'fill', 'isAiAttributionLine', 'stripAiAttribution', 'wordCount'])
   expect(wordCount('Fix the build, please.')).toBe(4)
   expect(fill('{a}-{b}', { a: 'x' })).toBe('x-')
   expect(escapeRegExp('a.b*')).toBe('a\\.b\\*')

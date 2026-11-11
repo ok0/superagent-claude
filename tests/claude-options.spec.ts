@@ -1,11 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
 import { existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sdk'
+import { query, type HookCallbackMatcher, type Options, type SpawnedProcess } from '@anthropic-ai/claude-agent-sdk'
 import type { SessionSpec, ToolSpec } from '../src/executor/contract.ts'
-import { AUTH_ENV, CLAUDE_INHERITED_ENV, ALWAYS_DISALLOWED, claudeEnv, builtinTools, guardDecision, sdkOptions, underProc, type AuthMode, type OptionsContext } from '../src/runtimes/claude/options.ts'
+import { AUTH_ENV, CLAUDE_INHERITED_ENV, ALWAYS_DISALLOWED, ATTRIBUTION_OFF, claudeEnv, builtinTools, guardDecision, sdkOptions, underProc, type AuthMode, type OptionsContext } from '../src/runtimes/claude/options.ts'
 import { mcpTools, mcpServer, toolHandler } from '../src/runtimes/claude/mcp.ts'
 import { WORKER_TOOLS } from '../src/app/tool-names.ts'
 
@@ -77,6 +78,7 @@ describe('fixed safety defaults', () => {
     for (const mode of MODES) for (const builtins of builtinsList) for (const role of ['worker', 'router'] as const) for (const allow of [[], ['example.com']]) for (const resume of [undefined, 'S1']) {
       const options: Options = sdkOptions(spec({ builtins, role, network: { allow }, resume }), ctx(mode))
       expect(options.settingSources).toEqual([])
+      expect(options.settings).toEqual(ATTRIBUTION_OFF)
       expect(options.permissionMode).toBe('dontAsk')
       expect(JSON.stringify(options)).not.toContain('bypassPermissions')
       expect('allowDangerouslySkipPermissions' in options).toBe(false)
@@ -304,4 +306,42 @@ describe('fixed safety defaults', () => {
     expect(untrusted.settingSources).toEqual([])
     expect(sdkOptions(spec(), ctx('subscription')).settingSources).toEqual([])
   })
+
+  it('keeps the attribution-off settings when the repository config is trusted', () => {
+    const trusted = sdkOptions(spec(), ctx('api-key', { trustRepoConfig: true }))
+    expect(trusted.settingSources).toEqual(['project'])
+    expect(trusted.settings).toEqual(ATTRIBUTION_OFF)
+  })
+
+  it('the SDK hands the attribution-off settings to the CLI as --settings with the sandbox and empty setting sources', async () => {
+    let resolve!: (args: string[]) => void
+    const captured = new Promise<string[]>(r => { resolve = r })
+    const abortController = new AbortController()
+    const children: ChildProcess[] = []
+    const options = sdkOptions(spec(), ctx('api-key', {
+      abortController,
+      sandbox: true,
+      spawn: o => {
+        resolve(o.args)
+        const child = nodeSpawn(process.execPath, ['-e', 'process.stdin.resume()'], { stdio: ['pipe', 'pipe', 'pipe'] })
+        children.push(child)
+        return child as unknown as SpawnedProcess
+      },
+    }))
+    try {
+      const q = query({ prompt: 'x', options })
+      void q.next().catch(() => {})
+      const args = await Promise.race([captured, new Promise<never>((_, r) => setTimeout(() => r(new Error('no spawn')), 10000))])
+      expect(args).toContain('--setting-sources=')
+      const i = args.indexOf('--settings')
+      expect(i).toBeGreaterThanOrEqual(0)
+      const parsed = JSON.parse(args[i + 1]!)
+      expect(parsed.attribution).toEqual({ commit: '', pr: '', sessionUrl: false })
+      expect(parsed.includeCoAuthoredBy).toBe(false)
+      expect(parsed.sandbox.enabled).toBe(true)
+    } finally {
+      abortController.abort()
+      for (const child of children) child.kill('SIGKILL')
+    }
+  }, 15000)
 })

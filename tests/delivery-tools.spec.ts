@@ -7,6 +7,10 @@ import { githubPullRequests } from '../src/sources/github/delivery.ts'
 import { fakeGh, pull, type FakeRepository } from './fixtures/fake-gh.ts'
 
 const A = 'acme/widgets'
+const PRODUCT = ['Claude', 'Code'].join(' ')
+const AI = 'Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>'
+const GEN = '🤖 Generated with [' + PRODUCT + '](https://claude.com/claude-code)'
+const JANE = 'Co-authored-by: Jane Doe <jane@example.com>'
 const signal = (): AbortSignal => new AbortController().signal
 
 interface SetupOptions {
@@ -247,6 +251,47 @@ describe('worker delivery tools', () => {
       await find(tools, 'orchestrator_publish').execute({ title: 'Fix', body }, signal())
       expect(prBodies(gh)).toEqual([expected])
     }
+  })
+  it('publish strips AI attribution from the title and body before linking the issue', async () => {
+    const { gh, tools } = setup({ issue: { repository: A, number: 9 } })
+    await find(tools, 'orchestrator_publish').execute({ title: 'Fix parser\n' + GEN, body: 'Summary\n\n' + GEN + '\n\n' + AI + '\n' + JANE }, signal())
+    const post = gh.requests.find(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')
+    expect(post?.fields.title).toBe('Fix parser')
+    expect(prBodies(gh)).toEqual(['Summary\n\n' + JANE + '\n\nCloses #9'])
+  })
+
+  it('publish reusing the open PR sends no title or body to GitHub', async () => {
+    const { gh, tools } = setup()
+    const publish = find(tools, 'orchestrator_publish')
+    await publish.execute({ title: 'Fix', body: 'Body' }, signal())
+    const second = await publish.execute({ title: 'Fix', body: 'Body\n\n' + AI }, signal())
+    expect(second).toMatchObject({ created: false })
+    expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')).toHaveLength(1)
+    expect(gh.requests.some(r => r.method === 'PATCH' && (r.fields.title !== undefined || r.fields.body !== undefined))).toBe(false)
+    expect(gh.requests.some(r => /anthropic\.com/i.test(JSON.stringify(r.fields ?? {})))).toBe(false)
+  })
+
+  it('publish with only AI attribution in the title or body is a tool error before any GitHub call', async () => {
+    const { gh, tools, push, report, bindThread } = setup({ issue: { repository: A, number: 9 } })
+    const publish = find(tools, 'orchestrator_publish')
+    await expect(publish.execute({ title: GEN, body: 'Body' }, signal())).rejects.toThrow(/AI attribution/)
+    await expect(publish.execute({ title: 'Fix', body: GEN + '\n\n' + AI }, signal())).rejects.toThrow(/AI attribution/)
+    expect(gh.calls).toHaveLength(0)
+    expect(push).not.toHaveBeenCalled()
+    expect(report).not.toHaveBeenCalled()
+    expect(bindThread).not.toHaveBeenCalled()
+  })
+
+  it('review_reply strips AI attribution and refuses an attribution-only reply', async () => {
+    const { gh, tools } = setup()
+    const reply = find(tools, 'orchestrator_review_reply')
+    await reply.execute({ pr: 2, comment_id: 70, body: 'Fixed in abc.\n\n' + GEN }, signal())
+    const replies = () => gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls/2/comments/70/replies')
+    expect(replies()[0]?.fields.body).toBe('Fixed in abc.')
+    const before = gh.calls.length
+    await expect(reply.execute({ pr: 2, comment_id: 70, body: AI }, signal())).rejects.toThrow(/AI attribution/)
+    expect(gh.calls.length).toBe(before)
+    expect(replies()).toHaveLength(1)
   })
 })
 

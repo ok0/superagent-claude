@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Ticket } from '../core/index.ts'
 import { CliError, type Commands } from '../infra/commands.ts'
+import { stripAiAttribution } from '../infra/text.ts'
 import type { Workspace } from './worker-executor.ts'
 
 export class RepositoryAccessError extends Error {
@@ -194,13 +195,13 @@ export class Workspaces implements WorkspaceProvider {
       const uncommitted = (await this.git(['status', '--porcelain'], cwd)).trim() !== ''
       const list = (await this.git(['rev-list', '--reverse', '--topo-order', 'HEAD', '--not', '--remotes=origin'], cwd)).split('\n').map(line => line.trim()).filter(Boolean)
       let rewritten = 0
-      if (coAuthors.length && list.length) {
+      if (list.length) {
         const map = new Map<string, string>()
         for (const sha of list) {
           const parents = (await this.git(['rev-list', '--parents', '-n', '1', sha], cwd)).trim().split(' ').slice(1)
           const [an, ae, ad, cn, ce, cd, tree] = (await this.git(['show', '-s', '--format=%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI%x00%T', sha], cwd)).trim().split('\u0000')
           const msg = await this.git(['show', '-s', '--format=%B', sha], cwd)
-          const next = coAuthorTrailers(msg, coAuthors)
+          const next = stripAiAttribution(coAuthorTrailers(msg, coAuthors))
           const np = parents.map(parent => map.get(parent) ?? parent)
           if (next === msg && np.length === parents.length && np.every((parent, i) => parent === parents[i])) {
             map.set(sha, sha)

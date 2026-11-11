@@ -1,5 +1,5 @@
 /** Maps a SessionSpec to the SDK Options: a whitelisted environment, the builtin tool sets, the fixed permission posture (dontAsk, never bypass), the guard and read hooks, the sandbox and the limits. */
-import type { Options, HookCallback, HookCallbackMatcher, McpServerConfig, SandboxSettings, SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk'
+import type { Options, HookCallback, HookCallbackMatcher, McpServerConfig, SandboxSettings, Settings, SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk'
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve, relative, isAbsolute, dirname, basename, join } from 'node:path'
 import type { SessionSpec } from '../../executor/contract.ts'
@@ -18,6 +18,9 @@ export const AUTH_ENV: Record<AuthMode, readonly string[]> = {
 export const CLAUDE_INHERITED_ENV = [...INHERITED_ENV, 'USER', 'LOGNAME', 'SHELL', 'TMPDIR'] as const
 
 export const ALWAYS_DISALLOWED = ['AskUserQuestion', 'WebFetch', 'WebSearch'] as const
+
+/** Turns off the CLI's commit and PR attribution in every session through the flag settings layer; settingSources stays as it is (ADR-34). */
+export const ATTRIBUTION_OFF = { attribution: { commit: '', pr: '', sessionUrl: false }, includeCoAuthoredBy: false } as const satisfies Settings
 
 export interface OptionsContext {
   mode: AuthMode
@@ -163,6 +166,7 @@ export function sdkOptions(spec: SessionSpec, ctx: OptionsContext): Options {
     cwd: spec.cwd,
     env: claudeEnv(spec, ctx),
     settingSources: ctx.trustRepoConfig ? ['project'] : [],
+    settings: { ...ATTRIBUTION_OFF, attribution: { ...ATTRIBUTION_OFF.attribution } },
     permissionMode: 'dontAsk',
     abortController: ctx.abortController,
     systemPrompt: spec.role === 'worker' ? { type: 'preset', preset: 'claude_code', append: spec.instructions } : spec.instructions,

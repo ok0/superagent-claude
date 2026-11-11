@@ -5,7 +5,7 @@ import { liveTicket, type Ticket, type Trigger } from '../../core/model.ts'
 import type { ToolSpec } from '../../executor/contract.ts'
 import { CO_AUTHOR, RepositoryAccessError, accessStatus, type PushOptions, type PushResult } from '../../executor/workspaces.ts'
 import { CliError } from '../../infra/commands.ts'
-import { escapeRegExp } from '../../infra/text.ts'
+import { escapeRegExp, stripAiAttribution } from '../../infra/text.ts'
 import type { PullRequests } from '../../sources/github/delivery.ts'
 import { configured, threadId, threadKeyOf } from '../../sources/github/trigger.ts'
 import { tool } from './tool.ts'
@@ -92,6 +92,9 @@ export function deliveryTools(host: DeliveryToolsHost, ticketId: string): ToolSp
         live()
         const pullRequests = pulls()
         const repository = repo(deliveryHost().repositoryOf(ticketId))
+        const title = stripAiAttribution(args.title).trim()
+        const body = stripAiAttribution(args.body).trim()
+        if (!title || !body) throw new Error(`The pull request ${!title ? 'title' : 'body'} has nothing left after removing AI attribution lines; write it without them`)
         const recorded = deliveryHost().recordedPush?.(repository)
         let allowed: boolean
         try { allowed = await pullRequests.pushPermission(repository, signal) } catch (error) { throw accessFailure(repository, error) }
@@ -111,7 +114,7 @@ export function deliveryTools(host: DeliveryToolsHost, ticketId: string): ToolSp
         }
         let pr: Awaited<ReturnType<PullRequests['open']>>
         try {
-          pr = await pullRequests.open(repository, { head: pushed.branch, base: pushed.base, title: args.title, body: linkIssue(args.body, repository, deliveryHost().originIssue?.(ticketId)), draft: args.draft ?? false }, signal)
+          pr = await pullRequests.open(repository, { head: pushed.branch, base: pushed.base, title, body: linkIssue(body, repository, deliveryHost().originIssue?.(ticketId)), draft: args.draft ?? false }, signal)
         } catch (error) {
           throw error instanceof CliError && error.code !== undefined && ACCESS.has(error.code) ? accessFailure(repository, error) : error
         }
@@ -137,7 +140,9 @@ export function deliveryTools(host: DeliveryToolsHost, ticketId: string): ToolSp
         const pullRequests = pulls()
         const repository = repo(args.repository ?? deliveryHost().repositoryOf(ticketId))
         bound(repository, args.pr, false)
-        const reply = await pullRequests.replyReviewThread(repository, args.pr, args.comment_id, args.body, args.resolve === true, signal)
+        const body = stripAiAttribution(args.body).trim()
+        if (!body) throw new Error('The reply has nothing left after removing AI attribution lines; write it without them')
+        const reply = await pullRequests.replyReviewThread(repository, args.pr, args.comment_id, body, args.resolve === true, signal)
         return { replied: true, reply_id: reply.replyId, resolved: reply.resolved }
       },
     }),

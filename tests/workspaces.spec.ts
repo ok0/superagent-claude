@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { Ticket } from '../src/core/index.ts'
 import { PUSH_BACKOFF_MS, RepositoryAccessError, Workspaces, accessStatus, coAuthorTrailers, pushFailure, worktreeName, type RepositoryAccess } from '../src/executor/workspaces.ts'
 import { CliError, Commands, commandError, execProgram } from '../src/infra/commands.ts'
+import { isAiAttributionLine } from '../src/infra/text.ts'
 import { waitUntil } from './fixtures/async.ts'
 import { accepted } from './fixtures/engine.ts'
 import { workerHarness } from './fixtures/executor.ts'
@@ -16,6 +17,9 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
+const PRODUCT = ['Claude', 'Code'].join(' ')
+const AI = 'Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>'
+const GEN = '🤖 Generated with [' + PRODUCT + '](https://claude.com/claude-code)'
 const COMMIT = ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false']
 const idA = 'a'.repeat(32)
 const idB = 'b'.repeat(32)
@@ -256,6 +260,54 @@ describe('git workspaces', () => {
     for (const call of calls.filter(c => c.args.includes('push'))) {
       expect(call.args.some(arg => ['--force', '-f', '--force-with-lease'].includes(arg) || arg.startsWith('+'))).toBe(false)
     }
+  })
+
+  it('strips AI attribution from unpushed commits, keeps human co-authors and pushed SHAs, and never force-pushes', async () => {
+    const { dir, sh, origin, state } = fixture()
+    const { commands, calls } = spy(dir)
+    const ws = new Workspaces({ stateDir: state, commands, repositoryOf: () => 'owner/repo', access: local(origin) })
+    const a = await ws.prepare(ticket(idA), 'alpha')
+    commit(sh, a.cwd, 'one.txt', '1', 'c1')
+    await ws.push(ticket(idA), {})
+    const sha1 = sh(['rev-parse', 'HEAD'], a.cwd).trim()
+    commit(sh, a.cwd, 'two.txt', '2', 'feat: two\n\nBody.\n\n' + AI + '\nCo-authored-by: Bea Kim <bea@example.com>')
+    commit(sh, a.cwd, 'three.txt', '3', 'feat: three\n\n' + GEN)
+    const result = await ws.push(ticket(idA), { coAuthors: ['Ann Lee <ann@example.com>'] })
+    expect(result.rewritten).toBe(2)
+    expect(result.pushed).toBe(2)
+    expect(sh(['rev-parse', 'agent/alpha~2'], origin).trim()).toBe(sha1)
+    for (const ref of ['agent/alpha~1', 'agent/alpha']) {
+      const body = sh(['log', '-1', '--format=%B', ref], origin)
+      expect(body.split('\n').some(isAiAttributionLine)).toBe(false)
+      expect(body.split('Co-authored-by: Ann Lee <ann@example.com>').length - 1).toBe(1)
+    }
+    expect(sh(['log', '-1', '--format=%B', 'agent/alpha~1'], origin)).toContain('Co-authored-by: Bea Kim <bea@example.com>')
+    expect(sh(['log', '-1', '--format=%B', 'agent/alpha~1'], origin)).toContain('Body.')
+    for (const call of calls.filter(c => c.args.includes('push'))) {
+      expect(call.args.some(arg => ['--force', '-f', '--force-with-lease'].includes(arg) || arg.startsWith('+'))).toBe(false)
+    }
+  })
+
+  it('keeps SHAs of commits without attribution when no co-authors are given', async () => {
+    const { sh, origin, ws } = fixture()
+    const a = await ws.prepare(ticket(idA), 'alpha')
+    commit(sh, a.cwd, 'one.txt', '1', 'c1')
+    commit(sh, a.cwd, 'two.txt', '2', 'c2')
+    const head = sh(['rev-parse', 'HEAD'], a.cwd).trim()
+    const parent = sh(['rev-parse', 'HEAD~1'], a.cwd).trim()
+    const result = await ws.push(ticket(idA), {})
+    expect(result.rewritten).toBe(0)
+    expect(sh(['rev-parse', 'agent/alpha'], origin).trim()).toBe(head)
+    expect(sh(['rev-parse', 'agent/alpha~1'], origin).trim()).toBe(parent)
+  })
+
+  it('strips attribution without co-authors', async () => {
+    const { sh, origin, ws } = fixture()
+    const a = await ws.prepare(ticket(idA), 'alpha')
+    commit(sh, a.cwd, 'one.txt', '1', 'fix: one\n\nWhy.\n\n' + AI)
+    const result = await ws.push(ticket(idA), {})
+    expect(result.rewritten).toBe(1)
+    expect(sh(['log', '-1', '--format=%B', 'agent/alpha'], origin).trim()).toBe('fix: one\n\nWhy.')
   })
 
   it('refuses to publish without commits and rejects a malformed co-author before any git call', async () => {
