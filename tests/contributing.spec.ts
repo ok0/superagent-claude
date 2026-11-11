@@ -70,18 +70,10 @@ export const REQUIRED_RELEASING = [
   'within 2 days',
   'right before you push the tag',
   '11.5.1',
-  'has no Settings tab',
-  '**Granular Access Token**',
-  '**Read and write**',
-  '**All packages**',
-  'shortest expiration',
-  'bypass two-factor authentication',
-  'gh secret set NPM_TOKEN',
-  'gh secret delete NPM_TOKEN',
-  'revoke the token',
-  'Do not leave the secret',
+  'with provenance',
+  'reads no repository secrets',
+  'next patch version',
   '`publish (oidc)`',
-  '`publish (bootstrap token)`',
   'docker login ghcr.io',
   '**Change visibility**',
   'org.opencontainers.image.source',
@@ -105,6 +97,8 @@ export const RELEASING_ORDER = [
   '## Check the release',
   '## Recovery',
 ] as const
+
+export const FORBIDDEN_RELEASING = /bootstrap|NPM_TOKEN|E404|bypass|Manage Actions access/i
 
 export function numberedItems(text: string, heading: string): number {
   const start = text.indexOf(heading)
@@ -217,15 +211,20 @@ describe('contributing docs', () => {
     }
   })
 
-  it('the trusted publisher and bootstrap steps are numbered lists', () => {
-    const text = read('docs/releasing.md')
-    expect(numberedItems(text, '### npm trusted publisher')).toBe(8)
-    expect(numberedItems(text, '### First publish with a bootstrap token')).toBe(6)
-    const bootstrap = text.slice(text.indexOf('### First publish with a bootstrap token'))
-    const lines = bootstrap.split('\n')
-    expect(lines.find((line) => line.startsWith('2. ')) ?? '').toContain('gh secret set NPM_TOKEN')
-    expect(lines.find((line) => line.startsWith('5. ')) ?? '').toContain('gh secret delete NPM_TOKEN')
+  it('the trusted publisher steps are a numbered list', () => {
+    expect(numberedItems(read('docs/releasing.md'), '### npm trusted publisher')).toBe(8)
   })
+
+  it('the releasing guide has no token or bootstrap path', () => {
+    expect(read('docs/releasing.md')).not.toMatch(FORBIDDEN_RELEASING)
+  })
+
+  it.each(['Set NPM_TOKEN first', 'the Bootstrap token', 'PUT E404', 'bypass 2FA', 'Manage Actions access'])(
+    'releasing sample %j is rejected',
+    (sample) => {
+      expect(sample).toMatch(FORBIDDEN_RELEASING)
+    },
+  )
 
   it('CONTRIBUTING links the releasing guide on exactly one line', () => {
     const lines = real.split('\n').filter((line) => line.includes('](docs/releasing.md)'))

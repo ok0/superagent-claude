@@ -30,11 +30,11 @@ The npm and GitHub menus below were checked in November 2026. The interface may 
 
 ### npm trusted publisher
 
-The workflow publishes to npm with trusted publishing (OpenID Connect). No long-lived npm token is stored in the repository. Requirements:
+The workflow publishes to npm only with trusted publishing (OpenID Connect), with provenance. No npm token is stored in the repository, and the workflow reads no repository secrets. Requirements:
 
 - npm CLI 11.5.1 or later. The workflow installs a fixed npm version that meets this.
 - The repository is public, and `repository` in `package.json` points to it.
-- The package already exists on npm. A package that was never published has no Settings tab, so the first version needs the [bootstrap token](#first-publish-with-a-bootstrap-token).
+- The trusted publisher below is registered on the `superagent-claude` package. Before each release, check on the package settings page on npmjs.com that it is still there.
 
 Register the trusted publisher:
 
@@ -48,17 +48,6 @@ Register the trusted publisher:
 8. Save the connection.
 
 npm does not check these values when you save them. The connection is kept only if a publish through it succeeds within 2 days, so register it right before you push the tag.
-
-### First publish with a bootstrap token
-
-Use this path only for the very first publish, while the package does not exist on npm. When the `NPM_TOKEN` repository secret is set, the workflow runs the `publish (bootstrap token)` step. When it is not set, it runs the `publish (oidc)` step. Do not leave the secret in place after the first publish.
-
-1. On npmjs.com, open your avatar menu, then **Access Tokens** → **Generate New Token** → **Granular Access Token**. Set the package permission to **Read and write** and choose **All packages**, because the package does not exist yet. Pick the shortest expiration. If your account uses two-factor authentication and the form offers an option to bypass two-factor authentication, turn it on: the workflow cannot answer a 2FA prompt.
-2. Store the token as a repository secret with `gh secret set NPM_TOKEN` and paste the value at the prompt. Do not print the token, write it to a file in the repository or commit it.
-3. Push a pre-release tag, for example `v0.1.0-rc.1`, as described in [Tag and push](#tag-and-push). This is the first publish.
-4. Register the [trusted publisher](#npm-trusted-publisher) on the now-published package.
-5. Delete the secret with `gh secret delete NPM_TOKEN`, then revoke the token on npmjs.com under **Access Tokens**.
-6. On the next release, open the `npm` job of the Actions run and confirm that `publish (oidc)` ran and `publish (bootstrap token)` was skipped.
 
 ### Container image visibility
 
@@ -91,7 +80,7 @@ Recommended, not enforced by the workflow: run `pnpm test:live` against your pla
 ## Tag and push
 
 1. Create an annotated tag on the release commit: `git tag -a v<version> -m v<version>`.
-2. If the trusted publisher is not registered yet and this is not the first publish, register it now (see [npm trusted publisher](#npm-trusted-publisher)).
+2. Check that the trusted publisher is still registered (see [npm trusted publisher](#npm-trusted-publisher)). If you have to register it again, do it now.
 3. Push the tag: `git push origin v<version>`.
 
 Pushing a `v*` tag is the only thing that starts the release workflow.
@@ -101,7 +90,7 @@ Pushing a `v*` tag is the only thing that starts the release workflow.
 The workflow has four jobs. Each job starts only after the jobs before it succeed, in this order:
 
 1. `verify` checks everything and publishes nothing: the tag matches `package.json`, the tagged commit is on `main`, CI succeeded for that commit (it waits up to 30 minutes for a CI run that is still going), `pnpm check:all` passes, the npm package contains only allowed files, the `CHANGELOG.md` section for the version is not empty, and the container image builds, runs as a non-root user and contains no secrets.
-2. `npm` publishes the package under the dist-tag for the version, then checks that the dist-tag points to the version. If the version is already on npm, it skips the publish and only checks the dist-tag.
+2. `npm` publishes the package with provenance under the dist-tag for the version, in the `publish (oidc)` step, then checks that the dist-tag points to the version. If the version is already on npm, it skips the publish and only checks the dist-tag.
 3. `image` builds the image and pushes each image tag to `ghcr.io/ok0/superagent-claude`.
 4. `release` creates the GitHub Release from the tag, with the `CHANGELOG.md` section as notes. A pre-release is marked as a pre-release and a stable release is marked as latest. If the Release already exists, it skips.
 
@@ -117,6 +106,6 @@ If `verify` fails, nothing is published anywhere. Fix the problem, delete the ta
 ## Recovery
 
 - **Wrong dist-tag.** If the `verify dist-tag` step fails, fix the tag from your machine while logged in to npm: `npm dist-tag add superagent-claude@<version> <tag>`. The workflow does not change dist-tags itself.
+- **The npm publish failed.** If `publish (oidc)` fails, for example because the trusted publisher is missing, nothing was published to npm and the later jobs did not run. The workflow has no other publish path. Fix the cause, then open the Actions run and choose **Re-run failed jobs**.
 - **A later job failed.** If `npm` succeeded but `image` or `release` failed, the channels disagree until you fix it. Open the Actions run and choose **Re-run failed jobs**. Each publish step skips what is already published, so a re-run does not publish twice.
-- **The OIDC publish failed.** If `publish (oidc)` cannot authenticate, nothing was published. Follow the [bootstrap token](#first-publish-with-a-bootstrap-token) steps and re-run the failed job.
-- **`latest` after the first pre-release.** When the very first npm publish is a pre-release, npm may also point `latest` at it. The first stable release moves `latest` to the stable version.
+- **A wrong version was published.** npm does not accept the same version twice, so do not try to publish it again. Fix the problem and release the next patch version, for example `0.1.1`.
