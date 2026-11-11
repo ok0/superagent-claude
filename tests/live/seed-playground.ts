@@ -1,11 +1,12 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { ghJson, ghLocalJson, ghRaw, ghStatus, localIdentity, type Runner } from './gh.ts'
+import { ghJson, ghLocalJson, ghRaw, ghStatus, localIdentity, tokenLogin, type Runner } from './gh.ts'
 import { assertAllowedRepo } from './guard.ts'
-import { assertClean, blobSha, ciBlockedLabel, commitProblems, preflight, SEED_VERSION_PATH, seedPlan, WORKFLOW_PATH, type PreflightMissing, type SeedFile } from './rules.ts'
+import { requireLiveTarget, liveTarget, TARGET_SKIP_LINE, type LiveEnv } from './target.ts'
+import { assertClean, blobSha, ciBlockedLabel, commitProblems, harnessMergesOnly, HARNESS_HISTORY_LIMIT, HARD_PREFLIGHT, preflight, SEED_MESSAGES, SEED_VERSION_PATH, seedCommitIndex, seedPlan, WORKFLOW_PATH, type HarnessPull, type HistoryCommit, type PreflightMissing, type SeedFile } from './rules.ts'
 
-export const PLAYGROUND = assertAllowedRepo('ok0/superagent-claude-playground')
+export function playgroundRepo(env: LiveEnv = process.env): string { return assertAllowedRepo(requireLiveTarget(env).repo, env) }
 
 const FIXTURE_DIR = join(import.meta.dirname, 'fixtures', 'playground-seed')
 const WORKFLOW_FIXTURE = join(import.meta.dirname, 'fixtures', 'playground-ci.yml')
@@ -29,6 +30,7 @@ export function loadSeed(withCi: boolean): SeedFile[] {
 
 export interface SeedOptions {
   token: string
+  agentToken?: string
   withoutCi: boolean
   upgrade?: boolean
   run?: Runner
@@ -69,7 +71,7 @@ async function reportCi(o: SeedOptions, sha: string): Promise<{ verdict: 'succes
   const pollMs = o.pollMs ?? 15_000
   const deadline = Date.now() + (o.ciTimeoutMs ?? 900_000)
   for (;;) {
-    const body = await ghJson<CiRuns>(o.token, ['repos/' + PLAYGROUND + '/actions/runs?head_sha=' + sha + '&per_page=20'], { run: o.run })
+    const body = await ghJson<CiRuns>(o.token, ['repos/' + playgroundRepo() + '/actions/runs?head_sha=' + sha + '&per_page=20'], { run: o.run })
     const runs = body.workflow_runs ?? []
     if (runs.length > 0 && runs.every(run => run.status === 'completed')) {
       return { verdict: runs.every(run => run.conclusion === 'success') ? 'success' : 'failure', runs: runs.length }
@@ -79,10 +81,28 @@ async function reportCi(o: SeedOptions, sha: string): Promise<{ verdict: 'succes
   }
 }
 
-const gitMessage = 'feat: add a task tracker with api and web workspaces'
-const workflowMessage = 'ci: add test workflow'
-const UPGRADE_MESSAGE = 'feat: update the task tracker seed with api and web workspaces'
-const WORKFLOW_UPDATE_MESSAGE = 'ci: install, typecheck and test every workspace'
+const gitMessage = SEED_MESSAGES.create
+const workflowMessage = SEED_MESSAGES.workflow
+const UPGRADE_MESSAGE = SEED_MESSAGES.upgrade
+const WORKFLOW_UPDATE_MESSAGE = SEED_MESSAGES.workflowUpdate
+const RESET_MESSAGE = SEED_MESSAGES.reset
+
+async function historyIsHarnessOnly(o: SeedOptions, head: string): Promise<boolean> {
+  const commits = await ghJson<HistoryCommit[]>(o.token, ['repos/' + playgroundRepo() + '/commits?sha=' + head + '&per_page=' + HARNESS_HISTORY_LIMIT], { run: o.run })
+  const at = seedCommitIndex(commits)
+  const pullsBySha = new Map<string, HarnessPull[]>()
+  for (const c of commits.slice(0, Math.max(at, 0))) {
+    const listed = await ghJson<{ number: number; merge_commit_sha: string | null }[]>(o.token, ['repos/' + playgroundRepo() + '/commits/' + c.sha + '/pulls'], { run: o.run })
+    const full: HarnessPull[] = []
+    for (const entry of listed) {
+      if (entry.merge_commit_sha !== c.sha) continue
+      full.push(await ghJson<HarnessPull>(o.token, ['repos/' + playgroundRepo() + '/pulls/' + entry.number], { run: o.run }))
+    }
+    pullsBySha.set(c.sha, full)
+  }
+  const t = requireLiveTarget()
+  return harnessMergesOnly(commits, pullsBySha, { agentLogin: t.agentLogin, ownerLogin: t.ownerLogin })
+}
 
 interface UpgradeContext {
   branch: string
@@ -97,17 +117,18 @@ interface UpgradeContext {
   localRecord: { login: string | null }
 }
 
-async function upgradeSeed(o: SeedOptions, ctx: UpgradeContext): Promise<number> {
-  const P = PLAYGROUND
+async function upgradeSeed(o: SeedOptions, ctx: UpgradeContext, mode: 'upgrade' | 'reset' = 'upgrade'): Promise<number> {
+  const P = playgroundRepo()
   const run = o.run
+  const message = mode === 'reset' ? RESET_MESSAGE : UPGRADE_MESSAGE
   const pkg = ctx.expected.filter(file => file.path !== WORKFLOW_PATH)
   for (const file of pkg) assertClean(file.path, file.content)
   const changed = pkg.filter(file => ctx.remote.get(file.path) !== blobSha(file.content))
   const removed = [...ctx.remote.keys()].filter(path => !path.startsWith('.github/workflows/') && !pkg.some(file => file.path === path)).sort()
   const workflow = ctx.expected.find(file => file.path === WORKFLOW_PATH)
-  const workflowChange = workflow !== undefined && ctx.remote.get(WORKFLOW_PATH) !== blobSha(workflow.content)
+  const workflowChange = mode === 'upgrade' && workflow !== undefined && ctx.remote.get(WORKFLOW_PATH) !== blobSha(workflow.content)
   const workflowCommitMessage = ctx.remote.has(WORKFLOW_PATH) ? WORKFLOW_UPDATE_MESSAGE : workflowMessage
-  const messages = [UPGRADE_MESSAGE, workflowChange ? workflowCommitMessage : undefined]
+  const messages = [message, workflowChange ? workflowCommitMessage : undefined]
   for (const message of messages) {
     if (message === undefined) continue
     const problems = commitProblems(message)
@@ -134,13 +155,13 @@ async function upgradeSeed(o: SeedOptions, ctx: UpgradeContext): Promise<number>
   })
   const commit = await ghJson<{ sha: string }>(o.token, ['repos/' + P + '/git/commits', '-X', 'POST', '--input', '-'], {
     run,
-    input: JSON.stringify({ message: UPGRADE_MESSAGE, tree: newTree.sha, parents: [ctx.head] }),
+    input: JSON.stringify({ message, tree: newTree.sha, parents: [ctx.head] }),
   })
   await ghJson(o.token, ['repos/' + P + '/git/refs/heads/' + ctx.branch, '-X', 'PATCH', '--input', '-'], {
     run,
     input: JSON.stringify({ sha: commit.sha, force: false }),
   })
-  const commits: SeedCommit[] = [{ sha: commit.sha, via: 'owner', paths: [...changed.map(file => file.path), ...removed], message: UPGRADE_MESSAGE }]
+  const commits: SeedCommit[] = [{ sha: commit.sha, via: 'owner', paths: [...changed.map(file => file.path), ...removed], message }]
   let current = commit.sha
 
   if (workflow && workflowChange) {
@@ -153,7 +174,8 @@ async function upgradeSeed(o: SeedOptions, ctx: UpgradeContext): Promise<number>
     commits.push({ sha: current, via: 'local-gh', paths: [WORKFLOW_PATH], message: workflowCommitMessage })
   }
 
-  o.out('STATUS: UPGRADED commits=' + commits.length + ' head=' + current)
+  const label = mode === 'reset' ? 'RESET' : 'UPGRADED'
+  o.out('STATUS: ' + label + ' commits=' + commits.length + ' head=' + current)
   for (const entry of commits) o.out('commit: ' + entry.sha + ' via=' + entry.via + ' files=' + entry.paths.length)
   for (const path of removed) o.out('removed: ' + path)
 
@@ -165,22 +187,26 @@ async function upgradeSeed(o: SeedOptions, ctx: UpgradeContext): Promise<number>
     ci = report.verdict
     code = report.verdict === 'success' ? 0 : 1
   }
-  writeRecord(o, { repo: P, status: 'UPGRADED', ci, missing: ctx.pfMissing, actions: ctx.pfActions, head: ctx.head, commit: current, files: changed.length, removed, commits, local: ctx.localRecord })
+  writeRecord(o, { repo: P, status: label, ci, missing: ctx.pfMissing, actions: ctx.pfActions, head: ctx.head, commit: current, files: changed.length, removed, commits, local: ctx.localRecord })
   return code
 }
 
 export async function runSeed(o: SeedOptions): Promise<number> {
-  const P = PLAYGROUND
+  const target = requireLiveTarget()
+  const P = playgroundRepo()
   const run = o.run
   const repoStatus = await ghStatus(o.token, 'repos/' + P, { run })
+  const archived = repoStatus === 200 ? (await ghJson<{ archived?: boolean }>(o.token, ['repos/' + P], { run })).archived === true : false
+  const ownerLogin = await tokenLogin(o.token, { run })
+  const agentLogin = o.agentToken ? await tokenLogin(o.agentToken, { run }) : undefined
   const actionsEnabled = repoStatus === 200 ? (await ghJson<{ enabled?: boolean }>(o.token, ['repos/' + P + '/actions/permissions'], { run })).enabled === true : true
   const local = await localIdentity({ run })
-  const pf = preflight({ repoStatus, localLogin: local.login, localScopes: local.scopes, actionsEnabled })
+  const pf = preflight({ target, repoStatus, archived, tokenLogin: ownerLogin, agentTokenLogin: agentLogin, localLogin: local.login, localScopes: local.scopes, actionsEnabled })
   const pfActions = pf.status === 'BLOCKED' ? pf.actions : []
   const pfMissing: PreflightMissing[] = pf.status === 'BLOCKED' ? pf.missing : []
   const localRecord = { login: local.login }
 
-  if (pf.status === 'BLOCKED' && (pfMissing.includes('repo-access') || !o.withoutCi)) {
+  if (pf.status === 'BLOCKED' && (pfMissing.some(m => HARD_PREFLIGHT.includes(m)) || !o.withoutCi)) {
     o.out('STATUS: BLOCKED')
     for (const m of pfMissing) o.out('missing: ' + m)
     for (const a of pfActions) o.out('action: ' + a)
@@ -224,7 +250,12 @@ export async function runSeed(o: SeedOptions): Promise<number> {
   if (o.upgrade && head !== null && treeSha !== null && !sameVersion) {
     return await upgradeSeed(o, { branch, head, treeSha, remote, expected, withCi, ci, pfMissing, pfActions, localRecord })
   }
-  const plan = seedPlan(expected.map(file => ({ path: file.path, content: blobSha(file.content) })), remote)
+  const hashed = expected.map(file => ({ path: file.path, content: blobSha(file.content) }))
+  let plan = seedPlan(hashed, remote)
+  if (head !== null && treeSha !== null && sameVersion && seedPlan(hashed, remote, { harnessMergesOnly: true }).kind === 'reset' && await historyIsHarnessOnly(o, head)) {
+    plan = seedPlan(hashed, remote, { harnessMergesOnly: true })
+  }
+  if (plan.kind === 'reset') return await upgradeSeed(o, { branch, head: head!, treeSha: treeSha!, remote, expected, withCi, ci, pfMissing, pfActions, localRecord }, 'reset')
 
   if (plan.kind === 'unchanged') {
     o.out('STATUS: UNCHANGED head=' + head)
@@ -331,21 +362,36 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (args.some(arg => !known.includes(arg))) {
     console.error('usage: node tests/live/seed-playground.ts [--without-ci] [--upgrade]')
     process.exitCode = 2
-  } else if (process.env.SUPERAGENT_CLAUDE_LIVE !== '1' || !process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN) {
-    console.log('STATUS: SKIP (set SUPERAGENT_CLAUDE_LIVE=1 and SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN)')
-    process.exitCode = 0
   } else {
+    let target: ReturnType<typeof liveTarget> | undefined
     try {
-      process.exitCode = await runSeed({
-        token: process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN,
-        withoutCi: args.includes('--without-ci'),
-        upgrade: args.includes('--upgrade'),
-        out: console.log,
-        recordDir: resolve('.docs/acceptance/raw'),
-      })
+      target = liveTarget()
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error))
       process.exitCode = 1
+    }
+    if (target === null) {
+      console.error(TARGET_SKIP_LINE)
+      process.exitCode = 0
+    } else if (target !== undefined) {
+      if (process.env.SUPERAGENT_CLAUDE_LIVE !== '1' || !process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN) {
+        console.log('STATUS: SKIP (set SUPERAGENT_CLAUDE_LIVE=1 and SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN)')
+        process.exitCode = 0
+      } else {
+        try {
+          process.exitCode = await runSeed({
+            token: process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN,
+            agentToken: process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim() || undefined,
+            withoutCi: args.includes('--without-ci'),
+            upgrade: args.includes('--upgrade'),
+            out: console.log,
+            recordDir: resolve('.docs/acceptance/raw'),
+          })
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : String(error))
+          process.exitCode = 1
+        }
+      }
     }
   }
 }

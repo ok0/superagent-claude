@@ -4,6 +4,7 @@ import { basename } from 'node:path'
 import { ATTRIBUTION_PATTERNS, checkMessage } from '../../scripts/check-commits.ts'
 import { isAiAttributionLine } from '../../src/infra/text.ts'
 import { assertAllowedRepo } from './guard.ts'
+import { requireLiveTarget, type LiveEnv, type LiveTarget } from './target.ts'
 
 export const MILESTONE_ID = /\bM\d+\b/
 export const MILESTONE_WORD = /milestone/i
@@ -39,6 +40,7 @@ export function closesIssue(body: string | null | undefined, repo: string, n: nu
 
 export const isTestFile = (p: string): boolean => /(^|\/)test\//.test(p) || /\.test\.[cm]?[jt]sx?$/.test(p)
 export const isSourceFile = (p: string): boolean => /(^|\/)src\/.+\.[cm]?[jt]sx?$/.test(p) && !isTestFile(p)
+export const isSourceOrStyle = (p: string): boolean => !isTestFile(p) && (isSourceFile(p) || /(^|\/)src\/.+\.css$/.test(p))
 const isDocFile = (p: string): boolean => /\.(md|markdown|txt)$/i.test(p) || /^docs\//.test(p)
 
 export interface ChangeVerdict { source: string[]; tests: string[]; other: string[]; pass: boolean; reason?: 'empty' | 'docs-only' | 'no-source' | 'no-test' }
@@ -57,21 +59,43 @@ export function changeVerdict(files: readonly string[]): ChangeVerdict {
   return { source, tests, other, pass, reason }
 }
 
-export const LOCAL_GH_ACCOUNT = 'ok0'
-
-export type PreflightMissing = 'repo-access' | 'local-gh-account' | 'workflow-scope' | 'actions-disabled'
+export type PreflightMissing = 'repo-access' | 'repo-archived' | 'token-login' | 'agent-token-login' | 'local-gh-account' | 'workflow-scope' | 'actions-disabled'
+export const HARD_PREFLIGHT: readonly PreflightMissing[] = ['repo-access', 'repo-archived', 'token-login', 'agent-token-login']
 export type Preflight = { status: 'ready' } | { status: 'BLOCKED'; missing: PreflightMissing[]; actions: string[] }
 
-export function preflight(input: { repoStatus: number; localLogin: string | null; localScopes: readonly string[]; actionsEnabled: boolean }): Preflight {
+export function preflight(input: {
+  target: LiveTarget
+  repoStatus: number
+  archived: boolean
+  tokenLogin: string | null
+  agentTokenLogin?: string | null
+  localLogin: string | null
+  localScopes: readonly string[]
+  actionsEnabled: boolean
+}): Preflight {
   const missing: PreflightMissing[] = []
   const actions: string[] = []
+  const eq = (a: string | null | undefined, b: string): boolean => (a ?? '').toLowerCase() === b.toLowerCase()
+  const t = input.target
   if (input.repoStatus !== 200) {
     missing.push('repo-access')
-    actions.push('Make sure the empty private repository ok0/superagent-claude-playground exists and that SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN can read and write it.')
+    actions.push('Make sure the empty private repository ' + t.repo + ' exists and that SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN can read and write it.')
   }
-  if ((input.localLogin ?? '').toLowerCase() !== LOCAL_GH_ACCOUNT) {
+  if (input.archived) {
+    missing.push('repo-archived')
+    actions.push(t.repo + ' is archived. Point SUPERAGENT_CLAUDE_LIVE_REPO at an active repository.')
+  }
+  if (!eq(input.tokenLogin, t.ownerLogin)) {
+    missing.push('token-login')
+    actions.push('SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN must belong to ' + t.ownerLogin + ' (SUPERAGENT_CLAUDE_LIVE_OWNER_LOGIN).')
+  }
+  if (input.agentTokenLogin !== undefined && !eq(input.agentTokenLogin, t.agentLogin)) {
+    missing.push('agent-token-login')
+    actions.push('SUPERAGENT_CLAUDE_GITHUB_TOKEN must belong to ' + t.agentLogin + ' (SUPERAGENT_CLAUDE_LIVE_AGENT_LOGIN).')
+  }
+  if (!eq(input.localLogin, t.ownerLogin)) {
     missing.push('local-gh-account')
-    actions.push('Log in the local gh CLI as ok0 (gh auth login, or gh auth switch --user ok0).')
+    actions.push('Log in the local gh CLI as ' + t.ownerLogin + ' (gh auth login, or gh auth switch --user ' + t.ownerLogin + ').')
   }
   if (!input.localScopes.some(scope => scope.toLowerCase() === 'workflow')) {
     missing.push('workflow-scope')
@@ -79,7 +103,7 @@ export function preflight(input: { repoStatus: number; localLogin: string | null
   }
   if (!input.actionsEnabled) {
     missing.push('actions-disabled')
-    actions.push('Enable GitHub Actions for ok0/superagent-claude-playground (Settings > Actions > General > Allow all actions).')
+    actions.push('Enable GitHub Actions for ' + t.repo + ' (Settings > Actions > General > Allow all actions).')
   }
   if (missing.length === 0) return { status: 'ready' }
   return { status: 'BLOCKED', missing, actions }
@@ -133,9 +157,45 @@ export function readmeProblems(text: string): string[] {
   return SEED_README_FACTS.filter(entry => !entry.pattern.test(first)).map(entry => 'README first paragraph does not say ' + entry.fact)
 }
 
-export type SeedPlan ={ kind: 'unchanged' } | { kind: 'create'; paths: string[] } | { kind: 'diff'; problems: string[] }
+export const SEED_MESSAGES = {
+  create: 'feat: add a task tracker with api and web workspaces',
+  workflow: 'ci: add test workflow',
+  upgrade: 'feat: update the task tracker seed with api and web workspaces',
+  workflowUpdate: 'ci: install, typecheck and test every workspace',
+  reset: 'chore: reset the playground to the test seed',
+} as const
+export const HARNESS_HISTORY_LIMIT = 50
+export interface HistoryCommit { sha: string; commit: { message: string } }
+export interface HarnessPull { number: number; merged_at: string | null; merge_commit_sha: string | null; head: { ref: string }; user: { login: string }; merged_by: { login: string } | null }
 
-export function seedPlan(expected: readonly SeedFile[], remote: ReadonlyMap<string, string>): SeedPlan {
+const SEED_MESSAGE_SET: ReadonlySet<string> = new Set<string>(Object.values(SEED_MESSAGES))
+
+export function seedCommitIndex(commits: readonly HistoryCommit[]): number {
+  return commits.slice(0, HARNESS_HISTORY_LIMIT).findIndex(commit => SEED_MESSAGE_SET.has((commit.commit.message.split('\n')[0] ?? '').trim()))
+}
+
+export function harnessMergesOnly(commits: readonly HistoryCommit[], pullsBySha: ReadonlyMap<string, readonly HarnessPull[]>, logins: { agentLogin: string; ownerLogin: string }): boolean {
+  const at = seedCommitIndex(commits)
+  if (at <= 0) return false
+  return commits.slice(0, at).every(commit =>
+    (pullsBySha.get(commit.sha) ?? []).some(pull =>
+      pull.merged_at !== null &&
+      pull.merge_commit_sha === commit.sha &&
+      AGENT_BRANCH.test(pull.head.ref) &&
+      pull.user.login.toLowerCase() === logins.agentLogin.toLowerCase() &&
+      pull.merged_by?.login.toLowerCase() === logins.ownerLogin.toLowerCase(),
+    ),
+  )
+}
+
+export type SeedPlan ={ kind: 'unchanged' } | { kind: 'create'; paths: string[] } | { kind: 'diff'; problems: string[] } | { kind: 'reset'; changed: string[]; removed: string[] }
+
+export function seedPlan(expected: readonly SeedFile[], remote: ReadonlyMap<string, string>, opts: { harnessMergesOnly?: boolean } = {}): SeedPlan {
+  if (opts.harnessMergesOnly === true && expected.some(f => remote.has(f.path))) {
+    const changed = expected.filter(f => f.path !== WORKFLOW_PATH && remote.get(f.path) !== f.content).map(f => f.path)
+    const removed = [...remote.keys()].filter(p => !p.startsWith('.github/workflows/') && !expected.some(f => f.path === p)).sort()
+    if (changed.length + removed.length > 0) return { kind: 'reset', changed, removed }
+  }
   const present = expected.filter(file => remote.has(file.path))
   const differing = present.filter(file => remote.get(file.path) !== file.content)
   if (differing.length > 0) return { kind: 'diff', problems: differing.map(file => file.path + ': content differs') }
@@ -218,17 +278,17 @@ export async function runNodeTests(dir: string, timeoutMs = 180_000, env: Readon
 }
 
 export const AGENT_BRANCH = /^agent\/[A-Za-z0-9._-]+$/
-export const PLAYGROUND_REPOS = ['ok0/superagent-claude-playground'] as const
 
 export interface RemoteIssue { number: number; state: string; user: { login: string }; pull_request?: unknown }
 export interface RemotePull { number: number; state: string; user: { login: string }; head: { ref: string } }
 export interface RemoteBranch { name: string; protected?: boolean }
 export interface CleanupTargets { repo: string; reportOnly: boolean; issues: number[]; pulls: number[]; branches: string[] }
 
-export function cleanupTargets(input: { repo: string; defaultBranch: string; issues: readonly RemoteIssue[]; pulls: readonly RemotePull[]; branches: readonly RemoteBranch[]; authors: readonly string[]; agent: string }): CleanupTargets {
-  assertAllowedRepo(input.repo)
+export function cleanupTargets(input: { repo: string; defaultBranch: string; issues: readonly RemoteIssue[]; pulls: readonly RemotePull[]; branches: readonly RemoteBranch[]; authors: readonly string[]; agent: string }, env: LiveEnv = process.env): CleanupTargets {
+  const target = requireLiveTarget(env)
+  assertAllowedRepo(input.repo, env)
   const repoLower = input.repo.toLowerCase()
-  const reportOnly = !PLAYGROUND_REPOS.some(repo => repo === repoLower)
+  const reportOnly = repoLower !== target.repo.toLowerCase()
   const authors = new Set(input.authors.map(author => author.toLowerCase()))
   const agent = input.agent.toLowerCase()
   const byNumber = (a: number, b: number): number => a - b
@@ -264,7 +324,7 @@ export function cleanupTargets(input: { repo: string; defaultBranch: string; iss
   return { repo: input.repo, reportOnly, issues, pulls, branches }
 }
 
-export interface DiffRule { requireSourceAndTest: boolean; allowedRoots?: readonly string[]; allowLockfile?: boolean; newTestFailsOnBase?: boolean }
+export interface DiffRule { requireSourceAndTest: boolean; allowedRoots?: readonly string[]; allowLockfile?: boolean; newTestFailsOnBase?: boolean; requireSource?: boolean }
 export interface DiffFile { filename: string; status: string; previous_filename?: string; patch?: string }
 export interface DiffVerdict { pass: boolean; reasons: string[] }
 export const LOCKFILES: readonly string[] = ['package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml']
@@ -339,5 +399,6 @@ export function checkDiff(files: readonly DiffFile[], patch: string, rule: DiffR
     const verdict = changeVerdict(files.map(f => f.filename))
     if (!verdict.pass) add('source and test not both changed: ' + verdict.reason)
   }
+  if (rule.requireSource === true && !files.some(f => f.status !== 'removed' && isSourceOrStyle(f.filename))) add('no source change')
   return { pass: reasons.length === 0, reasons }
 }

@@ -1,5 +1,5 @@
 /**
- * Live issue→reply run against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth, issues and comments written as the owner account, and evidence read from the logs, the store, GitHub and the session transcripts. Gated by SUPERAGENT_CLAUDE_LIVE=1 and the three tokens; never prints a token.
+ * Live issue→reply run against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth, issues and comments written as the owner account, and evidence read from the logs, the store, GitHub and the session transcripts. Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token.
  */
 import { EventEmitter } from 'node:events'
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -13,14 +13,17 @@ import { openReadOnly } from '../../src/app/store-read.ts'
 import { sleep } from '../fixtures/async.ts'
 import { ghJson } from './gh.ts'
 import { assertAllowedRepo } from './guard.ts'
+import { liveEnabled, liveTarget, renderLiveText } from './target.ts'
 
-const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
+const TARGET = liveTarget()
+const LIVE = liveEnabled()
 const AGENT_TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
 const OWNER_TOKEN = process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN?.trim()
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
-const REPO = assertAllowedRepo('ok0/superagent-claude-playground')
-const AGENT = 'ok0-worker'
-const OWNER = 'ok0'
+const REPO = TARGET ? assertAllowedRepo(TARGET.repo) : ''
+const AGENT = TARGET?.agentLogin ?? ''
+const OWNER = TARGET?.ownerLogin ?? ''
+const text = (value: string): string => (TARGET ? renderLiveText(value, TARGET) : value)
 const LIMITS = { max: 2, maxTurns: 40, maxBudgetUsd: 2 }
 const TIMELINE = ['ticket.created', 'assignment.started', 'assignment.ended', 'ticket.resumed', 'ticket.ended', 'trigger.requeued']
 const MARKER = /<!--\s*superagent-claude:(.+?)\s*-->/
@@ -229,7 +232,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live issue rep
 
   it('an owner issue that mentions the agent gets one acknowledgement and one result comment', async () => {
     const t0 = Date.now()
-    const issue = await createIssue('Question: what does this repository contain?', '@ok0-worker Could you take a look at this repository and briefly explain what it contains? No code changes are needed; an answer in this issue is enough.')
+    const issue = await createIssue('Question: what does this repository contain?', text('@{{agent}} Could you take a look at this repository and briefly explain what it contains? No code changes are needed; an answer in this issue is enough.'))
     const n = issue.number
     await until(async () => (await agentComments(n)).length >= 2 ? true : undefined, 1_200_000, 30_000, 'two agent comments')
     await sleep(150_000)
@@ -278,7 +281,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live issue rep
 
   it('a follow-up comment reaches the running ticket without an Eval, and an out-of-scope request is handed back once', async () => {
     const tickets0 = count('ticket.created')
-    const issue = await createIssue('Overview of the files in this repository', '@ok0-worker Please write a short overview of what each file in this repository is for, and check that the working tree stays stable while you look: run `git status --short` and `ls -la` five times, waiting one minute (`sleep 60`) between the checks, and say whether anything changed. Please do all five checks before answering. No code changes are needed; please answer in this issue.')
+    const issue = await createIssue('Overview of the files in this repository', text('@{{agent}} Please write a short overview of what each file in this repository is for, and check that the working tree stays stable while you look: run `git status --short` and `ls -la` five times, waiting one minute (`sleep 60`) between the checks, and say whether anything changed. Please do all five checks before answering. No code changes are needed; please answer in this issue.'))
     const n = issue.number
     const ticketB = await until(() => lines.filter(line => line.event === 'ticket.created')[tickets0]?.ticketId as string | undefined, 240_000, 5_000, 'ticket.created for the overview issue')
     await until(() => count('assignment.started', ticketB) > 0 ? true : undefined, 240_000, 5_000, 'assignment.started for ticketB')
@@ -286,7 +289,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live issue rep
     const evals0 = count('eval.started')
     const follow = await addComment(n, 'One more thing for the same overview: please also give the approximate line count of each file.')
     await sleep(5_000)
-    const outOfScope = await addComment(n, '@ok0-worker This is a separate task from the overview, and it should be tracked as its own ticket rather than inside this one: please investigate the full commit history of this repository and write a separate report on who changed what and when. Do not mix it into the overview.')
+    const outOfScope = await addComment(n, text('@{{agent}} This is a separate task from the overview, and it should be tracked as its own ticket rather than inside this one: please investigate the full commit history of this repository and write a separate report on who changed what and when. Do not mix it into the overview.'))
 
     let endedAtRead = false
     let evalsAtFollowup = -1
@@ -377,7 +380,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live issue rep
       '- /home/runner/work/playground/test/run.js',
       'npm error code 1',
     ]
-    const body = '@ok0-worker Our test job fails and I cannot tell why. What is the actual error in this log?\n\n```\n' + log.join('\n') + '\n```'
+    const body = text('@{{agent}} Our test job fails and I cannot tell why. What is the actual error in this log?\n\n```\n') + log.join('\n') + '\n```'
     const issue = await createIssue('Why does the test job fail?', body)
     const n = issue.number
     try {

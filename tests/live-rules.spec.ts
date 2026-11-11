@@ -3,12 +3,14 @@ import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, write
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ts from 'typescript'
 import { loadConfig } from '../src/app/config.ts'
 import { liveConfig } from './live/code-change-config.ts'
 import { loadSeed } from './live/seed-playground.ts'
-import { ALLOWED_REPOS, assertAllowedRepo, assertApiTarget } from './live/guard.ts'
+import { assertAllowedRepo, assertApiTarget, isAllowedRepo } from './live/guard.ts'
+import { requireLiveTarget } from './live/target.ts'
+import { EXAMPLE_TARGET_ENV, stubLiveTarget } from './fixtures/live-target.ts'
 import { downloadTree, ghJson, ghLocalJson, ghLocalRaw, ghStatus, localIdentity, tokenScopes, type RunResult, type Runner } from './live/gh.ts'
 import {
   AGENT_BRANCH,
@@ -24,12 +26,21 @@ import {
   closesIssue,
   commitProblems,
   contentProblems,
+  harnessMergesOnly,
   preflight,
   runNodeTests,
   runTag,
+  SEED_MESSAGES,
   seedPlan,
   seedWorkflowProblems,
+  type HarnessPull,
+  type HistoryCommit,
 } from './live/rules.ts'
+
+beforeEach(() => stubLiveTarget(EXAMPLE_TARGET_ENV))
+afterEach(() => vi.unstubAllEnvs())
+
+const LOGINS = { agentLogin: 'example-agent', ownerLogin: 'example-owner' }
 
 const FIXTURES = fileURLToPath(new URL('./live/fixtures', import.meta.url))
 const SEED = join(FIXTURES, 'playground-seed')
@@ -69,24 +80,26 @@ function scratch(): string {
 
 describe('guard', () => {
   it('allows exactly the two repositories in any case', () => {
-    expect(assertAllowedRepo('OK0/Superagent-Claude-Playground')).toBe('OK0/Superagent-Claude-Playground')
-    for (const repo of ALLOWED_REPOS) expect(() => assertAllowedRepo(repo)).not.toThrow()
-    expect([...ALLOWED_REPOS]).toEqual(['ok0/superagent-claude', 'ok0/superagent-claude-playground'])
+    expect(assertAllowedRepo('EXAMPLE/Playground')).toBe('EXAMPLE/Playground')
+    expect(assertAllowedRepo('example/main')).toBe('example/main')
+    expect(isAllowedRepo('example/playground')).toBe(true)
+    expect(isAllowedRepo('example/main')).toBe(true)
+    expect(isAllowedRepo('example/other')).toBe(false)
   })
 
   it('rejects anything else', () => {
     const bad: unknown[] = [
-      'ok0/superagent-claude-x',
-      'ok0/superagent-claude-playground' + '-readonly',
-      'ok0/superagent-claude-playground' + '-readonly2',
-      'ok0/superagent-claude-archived',
-      'ok0/superagent-claude-playground-archived',
+      'example/main-x',
+      'example/playground' + '-readonly',
+      'example/playground' + '-readonly2',
+      'example/main-archived',
+      'example/playground-archived',
       'OK0/Superagent-Claude-Playground-Archived',
       'other/superagent-claude',
       '',
-      ' ok0/superagent-claude',
-      'ok0/superagent-claude/extra',
-      'ok0',
+      ' example/main',
+      'example/main/extra',
+      'example-owner',
       undefined,
       42,
     ]
@@ -94,16 +107,16 @@ describe('guard', () => {
   })
 
   it('assertApiTarget accepts allowed targets', () => {
-    expect(() => assertApiTarget(['repos/ok0/superagent-claude-playground/issues', '-X', 'POST'])).not.toThrow()
+    expect(() => assertApiTarget(['repos/example/playground/issues', '-X', 'POST'])).not.toThrow()
     expect(() => assertApiTarget(['user', '-i'])).not.toThrow()
-    expect(() => assertApiTarget(['graphql', '-f', 'query=query { repository(owner: "ok0", name: "superagent-claude-playground") { id } }'])).not.toThrow()
+    expect(() => assertApiTarget(['graphql', '-f', 'query=query { repository(owner: "example", name: "playground") { id } }'])).not.toThrow()
   })
 
   it('assertApiTarget rejects everything else', () => {
     const bad: string[][] = [
       ['repos/other/x/issues'],
-      ['repos/ok0/superagent-claude-x'],
-      ['repos/ok0'],
+      ['repos/example/main-x'],
+      ['repos/example-owner'],
       [],
       ['search/issues?q=x'],
       ['user', '-X', 'PATCH'],
@@ -111,9 +124,9 @@ describe('guard', () => {
       ['graphql', '-f', 'query=mutation { x }'],
       ['graphql', '-f', 'query=query { repository(owner: "other", name: "x") { id } }'],
       ['graphql', '-f', 'query=query { viewer { login } }'],
-      ['repos/ok0/superagent-claude-playground', '--hostname', 'example.com'],
-      ['/repos/ok0/superagent-claude-playground' + '-readonly'],
-      ['repos/ok0/superagent-claude-playground-archived/issues'],
+      ['repos/example/playground', '--hostname', 'example.com'],
+      ['/repos/example/playground' + '-readonly'],
+      ['repos/example/playground-archived/issues'],
     ]
     for (const args of bad) expect(() => assertApiTarget(args)).toThrow()
   })
@@ -145,7 +158,7 @@ describe('gh helpers', () => {
 
   it('paginate flattens slurped pages', async () => {
     const run = vi.fn<Runner>(async () => ok('[[1,2],[3]]'))
-    const result = await ghJson<number[]>('t', ['repos/ok0/superagent-claude-playground/issues'], { paginate: true, run })
+    const result = await ghJson<number[]>('t', ['repos/example/playground/issues'], { paginate: true, run })
     expect(result).toEqual([1, 2, 3])
     const args = run.mock.calls[0]?.[0] ?? []
     expect(args).toContain('--paginate')
@@ -154,14 +167,14 @@ describe('gh helpers', () => {
 
   it('errors carry only the endpoint', async () => {
     const run = vi.fn<Runner>(async () => fail('HTTP 404 secret-value'))
-    await expect(ghJson('t', ['repos/ok0/superagent-claude-playground/issues'], { run })).rejects.toThrow(
-      new Error('gh api failed: repos/ok0/superagent-claude-playground/issues'),
+    await expect(ghJson('t', ['repos/example/playground/issues'], { run })).rejects.toThrow(
+      new Error('gh api failed: repos/example/playground/issues'),
     )
   })
 
   it('ghStatus reads the HTTP code', async () => {
     const run = vi.fn<Runner>(async () => fail('gh: Not Found (HTTP 404)'))
-    expect(await ghStatus('t', 'repos/ok0/superagent-claude-playground', { run })).toBe(404)
+    expect(await ghStatus('t', 'repos/example/playground', { run })).toBe(404)
   })
 
   it('tokenScopes parses the header', async () => {
@@ -173,7 +186,7 @@ describe('gh helpers', () => {
 
   it('ghLocalRaw refuses a disallowed repository before spawning', async () => {
     const run = vi.fn<Runner>(async () => ok())
-    await expect(ghLocalRaw(['repos/ok0/superagent-claude-archived'], { run })).rejects.toThrow(/repository not allowed/)
+    await expect(ghLocalRaw(['repos/example/main-archived'], { run })).rejects.toThrow(/repository not allowed/)
     expect(run).toHaveBeenCalledTimes(0)
   })
 
@@ -192,47 +205,49 @@ describe('gh helpers', () => {
   })
 
   it('localIdentity reads login and scopes', async () => {
-    const run = vi.fn<Runner>(async () => ok('HTTP/2.0 200 OK\r\nx-oauth-scopes: repo, workflow\r\n\r\n{"login":"ok0"}'))
-    expect(await localIdentity({ run })).toEqual({ login: 'ok0', scopes: ['repo', 'workflow'] })
+    const run = vi.fn<Runner>(async () => ok('HTTP/2.0 200 OK\r\nx-oauth-scopes: repo, workflow\r\n\r\n{"login":"example-owner"}'))
+    expect(await localIdentity({ run })).toEqual({ login: 'example-owner', scopes: ['repo', 'workflow'] })
     const broken = vi.fn<Runner>(async () => fail('HTTP 401'))
     expect(await localIdentity({ run: broken })).toEqual({ login: null, scopes: [] })
   })
 
   it('ghLocalJson reports the endpoint only', async () => {
     const run = vi.fn<Runner>(async () => fail('secret-text', 1))
-    await expect(ghLocalJson(['repos/ok0/superagent-claude-playground'], { run })).rejects.toThrow(
-      new Error('gh api failed (local gh): repos/ok0/superagent-claude-playground'),
+    await expect(ghLocalJson(['repos/example/playground'], { run })).rejects.toThrow(
+      new Error('gh api failed (local gh): repos/example/playground'),
     )
   })
 })
 
 describe('preflight', () => {
+  const ready = () => ({ target: requireLiveTarget(), repoStatus: 200, archived: false, tokenLogin: 'example-owner', localLogin: 'example-owner', localScopes: ['repo', 'workflow'], actionsEnabled: true })
+
   it('is ready when every check holds', () => {
-    expect(preflight({ repoStatus: 200, localLogin: 'OK0', localScopes: ['repo', 'Workflow'], actionsEnabled: true })).toEqual({ status: 'ready' })
+    expect(preflight({ ...ready(), localLogin: 'EXAMPLE-OWNER', localScopes: ['repo', 'Workflow'] })).toEqual({ status: 'ready' })
   })
 
   it('blocks on repository access', () => {
-    expect(preflight({ repoStatus: 404, localLogin: 'ok0', localScopes: ['repo', 'workflow'], actionsEnabled: true })).toMatchObject({ status: 'BLOCKED', missing: ['repo-access'] })
+    expect(preflight({ ...ready(), repoStatus: 404 })).toMatchObject({ status: 'BLOCKED', missing: ['repo-access'] })
   })
 
   it('blocks on another local gh account', () => {
-    expect(preflight({ repoStatus: 200, localLogin: 'someone', localScopes: ['repo', 'workflow'], actionsEnabled: true })).toMatchObject({ status: 'BLOCKED', missing: ['local-gh-account'] })
-    expect(preflight({ repoStatus: 200, localLogin: null, localScopes: ['repo', 'workflow'], actionsEnabled: true })).toMatchObject({ status: 'BLOCKED', missing: ['local-gh-account'] })
+    expect(preflight({ ...ready(), localLogin: 'someone' })).toMatchObject({ status: 'BLOCKED', missing: ['local-gh-account'] })
+    expect(preflight({ ...ready(), localLogin: null })).toMatchObject({ status: 'BLOCKED', missing: ['local-gh-account'] })
   })
 
   it('blocks without the workflow scope', () => {
-    const result = preflight({ repoStatus: 200, localLogin: 'ok0', localScopes: ['repo'], actionsEnabled: true })
+    const result = preflight({ ...ready(), localScopes: ['repo'] })
     expect(result).toMatchObject({ status: 'BLOCKED', missing: ['workflow-scope'] })
     if (result.status !== 'BLOCKED') return
     expect(result.actions[0]).toContain('gh auth refresh')
   })
 
   it('blocks with Actions disabled', () => {
-    expect(preflight({ repoStatus: 200, localLogin: 'ok0', localScopes: ['repo', 'workflow'], actionsEnabled: false })).toMatchObject({ status: 'BLOCKED', missing: ['actions-disabled'] })
+    expect(preflight({ ...ready(), actionsEnabled: false })).toMatchObject({ status: 'BLOCKED', missing: ['actions-disabled'] })
   })
 
   it('lists all four', () => {
-    const result = preflight({ repoStatus: 404, localLogin: null, localScopes: ['repo'], actionsEnabled: false })
+    const result = preflight({ ...ready(), repoStatus: 404, localLogin: null, localScopes: ['repo'], actionsEnabled: false })
     expect(result.status).toBe('BLOCKED')
     if (result.status !== 'BLOCKED') return
     expect(result.missing).toHaveLength(4)
@@ -242,6 +257,25 @@ describe('preflight', () => {
   it('labels the CI state', () => {
     expect(ciBlockedLabel(['workflow-scope'])).toBe('BLOCKED(no-workflow-scope)')
     expect(ciBlockedLabel(['actions-disabled'])).toBe('BLOCKED(actions-disabled)')
+  })
+
+  it('blocks an archived repository', () => {
+    expect(preflight({ ...ready(), archived: true })).toMatchObject({ status: 'BLOCKED', missing: ['repo-archived'] })
+  })
+
+  it('blocks a token of another account', () => {
+    expect(preflight({ ...ready(), tokenLogin: 'someone' })).toMatchObject({ status: 'BLOCKED', missing: ['token-login'] })
+    expect(preflight({ ...ready(), tokenLogin: null })).toMatchObject({ status: 'BLOCKED', missing: ['token-login'] })
+    expect(preflight({ ...ready(), agentTokenLogin: 'someone' })).toMatchObject({ status: 'BLOCKED', missing: ['agent-token-login'] })
+    expect(preflight({ ...ready(), agentTokenLogin: 'EXAMPLE-AGENT' })).toEqual({ status: 'ready' })
+  })
+
+  it('local gh account follows the setting', () => {
+    expect(preflight({ ...ready(), localLogin: 'example-owner' })).toEqual({ status: 'ready' })
+    const result = preflight({ ...ready(), localLogin: 'someone' })
+    expect(result.status).toBe('BLOCKED')
+    if (result.status !== 'BLOCKED') return
+    expect(result.actions.join('\n')).toContain('example-owner')
   })
 })
 
@@ -269,9 +303,9 @@ describe('content rules', () => {
   })
 
   it('closesIssue', () => {
-    expect(closesIssue('Fixes #12', 'ok0/superagent-claude-playground', 12)).toBe(true)
-    expect(closesIssue('Fixes #12', 'ok0/superagent-claude-playground', 123)).toBe(false)
-    expect(closesIssue('Closes https://github.com/ok0/superagent-claude-playground/issues/7', 'ok0/superagent-claude-playground', 7)).toBe(true)
+    expect(closesIssue('Fixes #12', 'example/playground', 12)).toBe(true)
+    expect(closesIssue('Fixes #12', 'example/playground', 123)).toBe(false)
+    expect(closesIssue('Closes https://github.com/example/playground/issues/7', 'example/playground', 7)).toBe(true)
   })
 })
 
@@ -307,6 +341,64 @@ describe('seed', () => {
     if (differs.kind === 'diff') expect(differs.problems).toContain('a.js: content differs')
     expect(seedPlan(expected, new Map([['a.js', 'A'], ['b.js', 'B']]))).toEqual({ kind: 'create', paths: [WORKFLOW_PATH] })
     expect(seedPlan(expected, new Map([['a.js', 'A']])).kind).toBe('diff')
+  })
+
+  it('harnessMergesOnly', () => {
+    const seed: HistoryCommit = { sha: 's0', commit: { message: SEED_MESSAGES.workflowUpdate } }
+    const merge = (sha: string): HistoryCommit => ({ sha, commit: { message: 'fix: x (#7)' } })
+    const pull = (sha: string, over: Partial<HarnessPull> = {}): HarnessPull => ({
+      number: 7,
+      merged_at: 't',
+      merge_commit_sha: sha,
+      head: { ref: 'agent/x' },
+      user: { login: 'example-agent' },
+      merged_by: { login: 'example-owner' },
+      ...over,
+    })
+    const byShas = (...pulls: HarnessPull[]): Map<string, HarnessPull[]> => new Map(pulls.map(p => [p.merge_commit_sha ?? '', [p]]))
+
+    expect(harnessMergesOnly([merge('m2'), merge('m1'), seed], byShas(pull('m2'), pull('m1')), LOGINS)).toBe(true)
+    const resetSeed: HistoryCommit = { sha: 's0', commit: { message: SEED_MESSAGES.reset } }
+    expect(harnessMergesOnly([merge('m1'), resetSeed], byShas(pull('m1')), LOGINS)).toBe(true)
+
+    expect(harnessMergesOnly([{ sha: 'h', commit: { message: 'docs: x' } }, seed], new Map(), LOGINS)).toBe(false)
+    expect(harnessMergesOnly([merge('m1'), seed], byShas(pull('m1', { merged_by: { login: 'someone' } })), LOGINS)).toBe(false)
+    expect(harnessMergesOnly([merge('m1'), seed], byShas(pull('m1', { user: { login: 'someone' } })), LOGINS)).toBe(false)
+    expect(harnessMergesOnly([merge('m1'), seed], byShas(pull('m1', { head: { ref: 'feature/x' } })), LOGINS)).toBe(false)
+    expect(harnessMergesOnly([merge('m1'), seed], byShas(pull('m1', { merge_commit_sha: 'other' })), LOGINS)).toBe(false)
+    expect(harnessMergesOnly([merge('m1'), seed], byShas(pull('m1', { merged_at: null })), LOGINS)).toBe(false)
+    const fifty = Array.from({ length: 50 }, (_, i) => merge('m' + i))
+    expect(harnessMergesOnly([...fifty, seed], byShas(...fifty.map(c => pull(c.sha))), LOGINS)).toBe(false)
+    expect(harnessMergesOnly([seed, merge('m1')], byShas(pull('m1')), LOGINS)).toBe(false)
+  })
+
+  it('harnessMergesOnly needs the configured logins', () => {
+    const seed: HistoryCommit = { sha: 's0', commit: { message: SEED_MESSAGES.workflowUpdate } }
+    const commits = [{ sha: 'm1', commit: { message: 'fix: x (#7)' } }, seed]
+    const pulls = new Map([['m1', [{ number: 7, merged_at: 't', merge_commit_sha: 'm1', head: { ref: 'agent/x' }, user: { login: 'example-agent' }, merged_by: { login: 'example-owner' } }]]])
+    expect(harnessMergesOnly(commits, pulls, LOGINS)).toBe(true)
+    expect(harnessMergesOnly(commits, pulls, { agentLogin: 'other-agent', ownerLogin: 'example-owner' })).toBe(false)
+    expect(harnessMergesOnly(commits, pulls, { agentLogin: 'example-agent', ownerLogin: 'other' })).toBe(false)
+  })
+
+  it('seedPlan reset option', () => {
+    const expected = [
+      { path: 'a.js', content: 'A' },
+      { path: 'b.js', content: 'B' },
+      { path: WORKFLOW_PATH, content: 'W' },
+    ]
+    const opt = { harnessMergesOnly: true }
+    expect(seedPlan(expected, new Map([['a.js', 'changed'], [WORKFLOW_PATH, 'W'], ['README.md', 'x']]), opt)).toEqual({ kind: 'reset', changed: ['a.js', 'b.js'], removed: ['README.md'] })
+    expect(seedPlan(expected, new Map([['a.js', 'A'], ['b.js', 'B'], [WORKFLOW_PATH, 'W'], ['.github/workflows/other.yml', 'o']]), opt)).toEqual({ kind: 'unchanged' })
+    expect(seedPlan(expected, new Map([['a.js', 'A'], ['b.js', 'B'], [WORKFLOW_PATH, 'W']]), opt)).toEqual({ kind: 'unchanged' })
+    expect(seedPlan(expected, new Map(), opt)).toEqual({ kind: 'create', paths: ['a.js', 'b.js', WORKFLOW_PATH] })
+    for (const o of [{}, { harnessMergesOnly: false }]) {
+      expect(seedPlan(expected, new Map(), o)).toEqual({ kind: 'create', paths: ['a.js', 'b.js', WORKFLOW_PATH] })
+      expect(seedPlan(expected, new Map([['a.js', 'A'], ['b.js', 'B'], [WORKFLOW_PATH, 'W'], ['README.md', 'x']]), o)).toEqual({ kind: 'unchanged' })
+      expect(seedPlan(expected, new Map([['a.js', 'A'], ['b.js', 'B']]), o)).toEqual({ kind: 'create', paths: [WORKFLOW_PATH] })
+      expect(seedPlan(expected, new Map([['a.js', 'A']]), o).kind).toBe('diff')
+    }
+    expect(seedPlan(expected, new Map([['a.js', 'changed'], ['b.js', 'B'], [WORKFLOW_PATH, 'W']])).kind).toBe('diff')
   })
 
   it('seedWorkflowProblems', () => {
@@ -468,7 +560,7 @@ describe('fixtures', () => {
     const dir = scratch()
     try {
       const path = join(dir, 'superagent-claude.json')
-      writeFileSync(path, JSON.stringify(liveConfig({ repo: 'ok0/superagent-claude-playground', owner: 'ok0', stateDir: join(dir, 'state') })))
+      writeFileSync(path, JSON.stringify(liveConfig({ repo: 'example/playground', owner: 'example-owner', stateDir: join(dir, 'state') })))
       const config = loadConfig(path, {})
       expect(config.network.allow).toContain('registry.npmjs.org')
       expect(config.workers.maxTurns).toBeGreaterThan(60)
@@ -513,15 +605,15 @@ describe('ci verdict', () => {
 
 describe('cleanup selection', () => {
   const issues = [
-    { number: 1, state: 'open', user: { login: 'ok0' } },
+    { number: 1, state: 'open', user: { login: 'example-owner' } },
     { number: 2, state: 'open', user: { login: 'stranger' } },
-    { number: 3, state: 'open', user: { login: 'ok0' }, pull_request: {} },
-    { number: 4, state: 'closed', user: { login: 'ok0' } },
+    { number: 3, state: 'open', user: { login: 'example-owner' }, pull_request: {} },
+    { number: 4, state: 'closed', user: { login: 'example-owner' } },
   ]
   const pulls = [
-    { number: 5, state: 'open', user: { login: 'ok0-worker' }, head: { ref: 'agent/abc' } },
+    { number: 5, state: 'open', user: { login: 'example-agent' }, head: { ref: 'agent/abc' } },
     { number: 6, state: 'open', user: { login: 'stranger' }, head: { ref: 'agent/keep' } },
-    { number: 7, state: 'open', user: { login: 'ok0' }, head: { ref: 'feature/x' } },
+    { number: 7, state: 'open', user: { login: 'example-owner' }, head: { ref: 'feature/x' } },
   ]
   const branches = [
     { name: 'main' },
@@ -533,17 +625,25 @@ describe('cleanup selection', () => {
   ]
 
   it('selects playground leftovers', () => {
-    const targets = cleanupTargets({ repo: 'ok0/superagent-claude-playground', defaultBranch: 'main', issues, pulls, branches, authors: ['ok0', 'ok0-worker'], agent: 'ok0-worker' })
-    expect(targets).toEqual({ repo: 'ok0/superagent-claude-playground', reportOnly: false, issues: [1], pulls: [5, 7], branches: ['agent/abc', 'agent/old'] })
+    const targets = cleanupTargets({ repo: 'example/playground', defaultBranch: 'main', issues, pulls, branches, authors: ['example-owner', 'example-agent'], agent: 'example-agent' })
+    expect(targets).toEqual({ repo: 'example/playground', reportOnly: false, issues: [1], pulls: [5, 7], branches: ['agent/abc', 'agent/old'] })
   })
 
   it('reports only for the main repository', () => {
-    const targets = cleanupTargets({ repo: 'ok0/superagent-claude', defaultBranch: 'main', issues, pulls, branches, authors: ['ok0', 'ok0-worker'], agent: 'ok0-worker' })
-    expect(targets).toEqual({ repo: 'ok0/superagent-claude', reportOnly: true, issues: [], pulls: [5, 6], branches: ['agent/abc', 'agent/keep', 'agent/old'] })
+    const targets = cleanupTargets({ repo: 'example/main', defaultBranch: 'main', issues, pulls, branches, authors: ['example-owner', 'example-agent'], agent: 'example-agent' })
+    expect(targets).toEqual({ repo: 'example/main', reportOnly: true, issues: [], pulls: [5, 6], branches: ['agent/abc', 'agent/keep', 'agent/old'] })
   })
 
   it('rejects other repositories', () => {
-    expect(() => cleanupTargets({ repo: 'evil/x', defaultBranch: 'main', issues, pulls, branches, authors: ['ok0'], agent: 'ok0-worker' })).toThrow()
+    expect(() => cleanupTargets({ repo: 'evil/x', defaultBranch: 'main', issues, pulls, branches, authors: ['example-owner'], agent: 'example-agent' })).toThrow()
+  })
+
+  it('report-only follows the setting', () => {
+    stubLiveTarget({ ...EXAMPLE_TARGET_ENV })
+    const base = { defaultBranch: 'main', issues, pulls, branches, authors: ['example-owner', 'example-agent'], agent: 'example-agent' }
+    expect(cleanupTargets({ ...base, repo: 'example/main' }).reportOnly).toBe(true)
+    expect(cleanupTargets({ ...base, repo: 'example/playground' }).reportOnly).toBe(false)
+    expect(() => cleanupTargets({ ...base, repo: 'someone/playground' })).toThrow()
   })
 
   it('agent branch pattern', () => {

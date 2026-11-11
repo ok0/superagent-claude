@@ -1,5 +1,5 @@
 /**
- * Live conversation quality run against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth. Checks that a steer which changes the request renames the ticket in status and needs and that its pull request carries only the requested files; that an acknowledgement does not assert a premise the request does not give; that an out-of-scope refusal has a readable reason, with the raw reason and the posted body recorded; and that no live content in the repository names a milestone. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1 and the three tokens; never prints a token.
+ * Live conversation quality run against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth. Checks that a steer which changes the request renames the ticket in status and needs and that its pull request carries only the requested files; that an acknowledgement does not assert a premise the request does not give; that an out-of-scope refusal has a readable reason, with the raw reason and the posted body recorded; and that no live content in the repository names a milestone. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token.
  */
 import { EventEmitter } from 'node:events'
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -13,14 +13,17 @@ import { openReadOnly } from '../../src/app/store-read.ts'
 import { sleep } from '../fixtures/async.ts'
 import { ghJson } from './gh.ts'
 import { assertAllowedRepo } from './guard.ts'
+import { liveEnabled, liveTarget, renderLiveText } from './target.ts'
 
-const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
+const TARGET = liveTarget()
+const LIVE = liveEnabled()
 const AGENT_TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
 const OWNER_TOKEN = process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN?.trim()
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
-const REPO = assertAllowedRepo('ok0/superagent-claude-playground')
-const AGENT = 'ok0-worker'
-const OWNER = 'ok0'
+const REPO = TARGET ? assertAllowedRepo(TARGET.repo) : ''
+const AGENT = TARGET?.agentLogin ?? ''
+const OWNER = TARGET?.ownerLogin ?? ''
+const text = (value: string): string => (TARGET ? renderLiveText(value, TARGET) : value)
 const LIMITS = { max: 1, maxTurns: 40, maxBudgetUsd: 1 }
 const MARKER = /<!--\s*superagent-claude:(.+?)\s*-->/
 const STRIP = /<!--\s*superagent-claude:.*?-->/g
@@ -29,12 +32,12 @@ const FALLBACK_BODY = REFUSAL_PREFIX + 'it is outside what I can do.'
 const INTERNAL_TERMS = /\b(?:tickets?|workers?|hand(?:ed|s|ing)?[\s-]?backs?|evals?|triggers?|orchestrator|assignments?)\b|\b[0-9a-f]{16,}\b/i
 const AGREED_NAME = /\b(?:to|as) the agreed (?:new )?name\b/i
 const STEER_TITLE = 'Add a greeting file'
-const STEER_BODY = '@ok0-worker please add a file GREETING.md containing the single line "hello" and open a pull request.'
-const STEER_COMMENT = '@ok0-worker change of plan: name the file WELCOME.md instead, with the single line "welcome", and do not add GREETING.md.'
+const STEER_BODY = text('@{{agent}} please add a file GREETING.md containing the single line "hello" and open a pull request.')
+const STEER_COMMENT = text('@{{agent}} change of plan: name the file WELCOME.md instead, with the single line "welcome", and do not add GREETING.md.')
 const RENAME_TITLE = 'Rename the helper'
-const RENAME_BODY = '@ok0-worker please rename the helper to the name we agreed on.'
+const RENAME_BODY = text('@{{agent}} please rename the helper to the name we agreed on.')
 const WEEKEND_TITLE = 'Weekend plans'
-const WEEKEND_BODY = '@ok0-worker could you suggest a good hiking trail for this weekend?'
+const WEEKEND_BODY = text('@{{agent}} could you suggest a good hiking trail for this weekend?')
 
 type Line = Record<string, unknown>
 interface Comment { id: number; body: string; html_url: string; created_at: string; user: { login: string } }

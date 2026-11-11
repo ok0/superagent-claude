@@ -1,20 +1,39 @@
-export const ALLOWED_REPOS = ['ok0/superagent-claude', 'ok0/superagent-claude-playground'] as const
-
-export function isAllowedRepo(repo: unknown): boolean {
-  if (typeof repo !== 'string') return false
-  const lower = repo.toLowerCase()
-  return ALLOWED_REPOS.some(allowed => allowed === lower)
-}
-
-export function assertAllowedRepo(repo: unknown): string {
-  if (isAllowedRepo(repo)) return repo as string
-  throw new Error('repository not allowed: ' + JSON.stringify(String(repo)))
-}
+import { liveTarget, TARGET_NOT_CONFIGURED, type LiveEnv } from './target.ts'
 
 const WRITE_FLAGS = ['-f', '-F', '--field', '--raw-field', '--input']
 
-export function assertApiTarget(args: readonly string[]): void {
+function roleOf(repo: unknown, env: LiveEnv): 'target' | 'report' | null {
+  if (typeof repo !== 'string') return null
+  const t = liveTarget(env)
+  if (t === null) return null
+  const lower = repo.toLowerCase()
+  if (lower === t.repo.toLowerCase()) return 'target'
+  if (t.reportRepo && lower === t.reportRepo.toLowerCase()) return 'report'
+  return null
+}
+
+export function isAllowedRepo(repo: unknown, env: LiveEnv = process.env): boolean {
+  return roleOf(repo, env) !== null
+}
+
+export function assertAllowedRepo(repo: unknown, env: LiveEnv = process.env): string {
+  if (liveTarget(env) === null) throw new Error(TARGET_NOT_CONFIGURED)
+  if (isAllowedRepo(repo, env)) return repo as string
+  throw new Error('repository not allowed: ' + JSON.stringify(String(repo)))
+}
+
+function methodOf(args: readonly string[]): string {
+  for (let i = 0; i < args.length; i++) {
+    const flag = args[i]
+    if (flag === '-X' || flag === '--method') return (args[i + 1] ?? '').toUpperCase()
+    if (flag !== undefined && flag.startsWith('--method=')) return flag.slice('--method='.length).toUpperCase()
+  }
+  return 'GET'
+}
+
+export function assertApiTarget(args: readonly string[], env: LiveEnv = process.env): void {
   if (args.some(arg => arg === '--hostname' || arg.startsWith('--hostname='))) throw new Error('GitHub host override not allowed')
+  if (liveTarget(env) === null) throw new Error(TARGET_NOT_CONFIGURED)
   const endpoint = (args[0] ?? '').replace(/^\/+/, '')
   const path = endpoint.split('?')[0] ?? ''
   if (path === '') throw new Error('GitHub endpoint not allowed: ""')
@@ -23,7 +42,16 @@ export function assertApiTarget(args: readonly string[]): void {
     const owner = segments[1]
     const name = segments[2]
     if (!owner || !name) throw new Error('GitHub endpoint not allowed: ' + path)
-    assertAllowedRepo(owner + '/' + name)
+    assertAllowedRepo(owner + '/' + name, env)
+    const role = roleOf(owner + '/' + name, env)
+    if (role === 'report') {
+      if (methodOf(args) !== 'GET' || args.some(a => WRITE_FLAGS.includes(a))) throw new Error('GitHub endpoint not allowed: read-only repository ' + path)
+      return
+    }
+    if (segments[3] === 'pulls' && methodOf(args) === 'PUT') {
+      const isMerge = segments.length === 6 && /^\d+$/.test(segments[4] ?? '') && segments[5] === 'merge'
+      if (!isMerge) throw new Error('GitHub endpoint not allowed: PUT ' + path)
+    }
     return
   }
   if (path === 'graphql') {
@@ -38,7 +66,7 @@ export function assertApiTarget(args: readonly string[]): void {
     const opened = query.match(/repository\s*\(/g)?.length ?? 0
     const matches = [...query.matchAll(/repository\s*\(\s*owner:\s*"([^"]*)"\s*,\s*name:\s*"([^"]*)"\s*\)/g)]
     if (opened === 0 || opened !== matches.length) throw new Error('GitHub graphql repository not allowed')
-    for (const match of matches) assertAllowedRepo(match[1] + '/' + match[2])
+    for (const match of matches) assertAllowedRepo(match[1] + '/' + match[2], env)
     return
   }
   if (path === 'user') {

@@ -91,6 +91,15 @@ export async function ghStatus(token: string, path: string, options: { run?: Run
   return Number(/HTTP (\d{3})/.exec(result.stderr)?.[1]) || 0
 }
 
+export async function tokenLogin(token: string, options: { run?: Runner } = {}): Promise<string | null> {
+  try {
+    const body = await ghJson<{ login?: unknown }>(token, ['user'], options)
+    return typeof body.login === 'string' ? body.login : null
+  } catch {
+    return null
+  }
+}
+
 export async function tokenScopes(token: string, options: { run?: Runner } = {}): Promise<string[]> {
   const result = await ghRaw(token, ['user', '-i'], options)
   if (result.code !== 0) throw new Error('gh api failed: user')

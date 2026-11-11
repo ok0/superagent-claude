@@ -1,12 +1,18 @@
-import { mkdtempSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RunResult, Runner } from './live/gh.ts'
 import { runCleanup } from './live/cleanup-playground.ts'
-import { PLAYGROUND, loadSeed, runSeed } from './live/seed-playground.ts'
-import { WORKFLOW_PATH, blobSha, commitProblems } from './live/rules.ts'
+import { loadSeed, runSeed } from './live/seed-playground.ts'
+import { SEED_MESSAGES, SEED_VERSION_PATH, WORKFLOW_PATH, blobSha, commitProblems, seedPlan } from './live/rules.ts'
 import { assertApiTarget } from './live/guard.ts'
+import { clearLiveTarget, EXAMPLE_TARGET_ENV, stubLiveTarget } from './fixtures/live-target.ts'
+
+beforeEach(() => stubLiveTarget(EXAMPLE_TARGET_ENV))
+afterEach(() => vi.unstubAllEnvs())
 
 interface Call { endpoint: string; method: string; input?: string; args: readonly string[]; local: boolean }
 
@@ -45,26 +51,34 @@ interface SeedRoute {
   localScopes: string[]
   remote: { path: string; type: string; sha: string }[] | 'empty'
   actionsEnabled?: boolean
+  history?: { sha: string; commit: { message: string } }[]
+  commitPulls?: Record<string, unknown[]>
+  pulls?: Record<string, unknown>
+  archived?: boolean
+  tokenLogin?: string | null
 }
 
 function seedRunner(opts: SeedRoute) {
   const calls: Call[] = []
   let blobCount = 0
   let putCount = 0
-  const P = PLAYGROUND
+  const P = EXAMPLE_TARGET_ENV.SUPERAGENT_CLAUDE_LIVE_REPO
   const repoStatus = opts.repoStatus ?? 200
-  const localLogin = opts.localLogin === undefined ? 'ok0' : opts.localLogin
+  const localLogin = opts.localLogin === undefined ? 'example-owner' : opts.localLogin
   const run = makeRunner(call => {
     const { endpoint, method } = call
     if (endpoint === 'user') {
-      if (!call.local) throw new Error('unexpected call: ' + method + ' ' + endpoint)
+      if (!call.local) {
+        if (opts.tokenLogin === null) return failure('HTTP 401')
+        return result({ login: opts.tokenLogin === undefined ? 'example-owner' : opts.tokenLogin })
+      }
       if (localLogin === null) return failure('gh: not logged in')
       return { code: 0, stdout: Buffer.from('HTTP/2 200\r\nx-oauth-scopes: ' + opts.localScopes.join(', ') + '\r\n\r\n{"login":"' + localLogin + '"}'), stderr: '' }
     }
     if (endpoint === 'repos/' + P && call.args.includes('--silent')) return repoStatus === 200 ? result({}) : failure('gh: Not Found (HTTP ' + repoStatus + ')')
     if (endpoint === 'repos/' + P + '/actions/permissions') return result({ enabled: opts.actionsEnabled ?? true })
     if (endpoint.startsWith('repos/' + P + '/actions/runs')) return result({ workflow_runs: [{ status: 'completed', conclusion: 'success' }] })
-    if (endpoint === 'repos/' + P) return result({ default_branch: 'main' })
+    if (endpoint === 'repos/' + P) return result({ default_branch: 'main', archived: opts.archived ?? false })
     if (endpoint === 'repos/' + P + '/git/ref/heads/main') {
       if (opts.remote === 'empty') return failure('gh: Git Repository is empty. (HTTP 409)')
       return result({ object: { sha: 'h1' } })
@@ -82,6 +96,15 @@ function seedRunner(opts: SeedRoute) {
     if (endpoint === 'repos/' + P + '/git/trees' && method === 'POST') return result({ sha: 't2' })
     if (endpoint === 'repos/' + P + '/git/commits' && method === 'POST') return result({ sha: 'c1' })
     if (endpoint === 'repos/' + P + '/git/refs/heads/main' && method === 'PATCH') return result({})
+    if (endpoint === 'repos/' + P + '/commits?sha=h1&per_page=50') return result(opts.history ?? [{ sha: 'h1', commit: { message: 'docs: edit the notes by hand' } }])
+    const commitPulls = /^repos\/example\/playground\/commits\/([^/]+)\/pulls$/.exec(endpoint)
+    if (commitPulls) return result(opts.commitPulls?.[commitPulls[1] ?? ''] ?? [])
+    const pullRead = /^repos\/example\/playground\/pulls\/(\d+)$/.exec(endpoint)
+    if (pullRead) {
+      const body = opts.pulls?.[pullRead[1] ?? '']
+      if (body === undefined) throw new Error('unexpected pull: ' + endpoint)
+      return result(body)
+    }
     throw new Error('unexpected call: ' + method + ' ' + endpoint)
   }, calls)
   return { run, calls }
@@ -109,7 +132,7 @@ function seedOptions(overrides: SeedRoute & { withoutCi: boolean; upgrade?: bool
   }
 }
 
-const P = PLAYGROUND
+const P = EXAMPLE_TARGET_ENV.SUPERAGENT_CLAUDE_LIVE_REPO
 
 function emptyRepositoryWrites(): string[] {
   const expected = loadSeed(false)
@@ -356,7 +379,7 @@ describe('live seed upgrade', () => {
         expect(call.endpoint.startsWith('repos/' + P)).toBe(true)
       }
     }
-    expect(() => assertApiTarget(['repos/ok0/other/git/trees', '-X', 'POST'])).toThrow()
+    expect(() => assertApiTarget(['repos/example-owner/other/git/trees', '-X', 'POST'])).toThrow()
   })
 })
 
@@ -404,18 +427,18 @@ function cleanupRunner(repos: Record<string, FakeRepo>, calls: Call[]): Runner {
 
 function cleanupFixture(): Record<string, FakeRepo> {
   return {
-    'ok0/superagent-claude': {
+    'example/main': {
       defaultBranch: 'main',
       head: 'main-head',
       issues: [],
-      pulls: [{ number: 9, state: 'open', user: { login: 'ok0-worker' }, head: { ref: 'agent/x' } }],
+      pulls: [{ number: 9, state: 'open', user: { login: 'example-agent' }, head: { ref: 'agent/x' } }],
       branches: [{ name: 'main' }, { name: 'agent/x' }],
     },
-    'ok0/superagent-claude-playground': {
+    'example/playground': {
       defaultBranch: 'main',
       head: 'playground-head',
-      issues: [{ number: 1, state: 'open', user: { login: 'ok0' } }],
-      pulls: [{ number: 2, state: 'open', user: { login: 'ok0-worker' }, head: { ref: 'agent/abc' } }],
+      issues: [{ number: 1, state: 'open', user: { login: 'example-owner' } }],
+      pulls: [{ number: 2, state: 'open', user: { login: 'example-agent' }, head: { ref: 'agent/abc' } }],
       branches: [{ name: 'main' }, { name: 'agent/abc' }],
     },
   }
@@ -433,8 +456,8 @@ describe('live cleanup', () => {
     })
     expect(code).toBe(0)
     expect(calls.filter(isWrite)).toHaveLength(0)
-    expect(lines).toContain('ok0/superagent-claude-playground issues=1 pulls=1 branches=1')
-    expect(lines.some(line => line.startsWith('ok0/superagent-claude issues=') && line.endsWith('report-only'))).toBe(true)
+    expect(lines).toContain('example/playground issues=1 pulls=1 branches=1')
+    expect(lines.some(line => line.startsWith('example/main issues=') && line.endsWith('report-only'))).toBe(true)
     expect(lines.filter(line => / issues=/.test(line))).toHaveLength(2)
   })
 
@@ -450,13 +473,187 @@ describe('live cleanup', () => {
     expect(code).toBe(0)
 
     const writes = calls.filter(isWrite)
-    const playground = 'repos/ok0/superagent-claude-playground'
+    const playground = 'repos/example/playground'
     expect(writes.map(call => call.method + ' ' + call.endpoint)).toEqual([
       'PATCH ' + playground + '/pulls/2',
       'DELETE ' + playground + '/git/refs/heads/agent/abc',
       'PATCH ' + playground + '/issues/1',
     ])
-    expect(writes.filter(call => call.endpoint.startsWith('repos/ok0/superagent-claude/') || call.endpoint === 'repos/ok0/superagent-claude')).toHaveLength(0)
+    expect(writes.filter(call => call.endpoint.startsWith('repos/example/main/') || call.endpoint === 'repos/example/main')).toHaveLength(0)
     expect(writes.some(call => call.endpoint.endsWith('/git/refs/heads/main'))).toBe(false)
   })
+})
+
+describe('live seed reset', () => {
+  const full = loadSeed(true).map(file => ({ path: file.path, sha: blobSha(file.content) }))
+  const target = loadSeed(true).find(file => file.path !== SEED_VERSION_PATH && file.path !== WORKFLOW_PATH)!.path
+  const remoteWithDrift = (): { path: string; type: string; sha: string }[] =>
+    seedRemote([...full.map(file => (file.path === target ? { ...file, sha: 'merged' } : file)), { path: 'api/test/added.test.ts', sha: 'x' }])
+  const history = [
+    { sha: 'h1', commit: { message: 'fix: correct paging (#7)' } },
+    { sha: 's0', commit: { message: SEED_MESSAGES.workflowUpdate } },
+  ]
+  const harnessPull = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    number: 7,
+    merged_at: '2026-01-01T00:00:00Z',
+    merge_commit_sha: 'h1',
+    head: { ref: 'agent/fix-paging' },
+    user: { login: 'example-agent' },
+    merged_by: { login: 'example-owner' },
+    ...over,
+  })
+
+  it('harness merges since the seed are reset in one plain commit', async () => {
+    const { options, calls, lines } = seedOptions({
+      localScopes: ['repo', 'workflow'],
+      remote: remoteWithDrift(),
+      withoutCi: true,
+      history,
+      commitPulls: { h1: [{ number: 7, merge_commit_sha: 'h1' }] },
+      pulls: { '7': harnessPull() },
+    })
+    const code = await runSeed(options)
+    expect(code).toBe(0)
+    expect(lines).toContain('STATUS: RESET commits=1 head=c1')
+
+    const writes = calls.filter(isWrite)
+    expect(writes.map(call => call.method + ' ' + call.endpoint)).toEqual([
+      'POST repos/' + P + '/git/blobs',
+      'POST repos/' + P + '/git/trees',
+      'POST repos/' + P + '/git/commits',
+      'PATCH repos/' + P + '/git/refs/heads/main',
+    ])
+    expect(writes.some(call => call.local)).toBe(false)
+    expect(writes.some(call => call.input?.includes('"force":true'))).toBe(false)
+    expect(JSON.parse(writes[3]?.input ?? '{}')).toEqual({ sha: 'c1', force: false })
+
+    const commit = JSON.parse(writes[2]?.input ?? '{}') as { message: string }
+    expect(commit.message).toBe('chore: reset the playground to the test seed')
+    expect(commitProblems(commit.message)).toEqual([])
+
+    const tree = JSON.parse(writes[1]?.input ?? '{}') as { tree: { path: string; sha: string | null }[] }
+    expect(tree.tree).toContainEqual({ path: 'api/test/added.test.ts', mode: '100644', type: 'blob', sha: null })
+    expect(tree.tree.some(entry => entry.path.startsWith('.github/workflows/'))).toBe(false)
+
+    const after = new Map(full.map(file => [file.path, file.sha] as const))
+    const hashedExpected = loadSeed(true).map(file => ({ path: file.path, content: blobSha(file.content) }))
+    expect(seedPlan(hashedExpected, after)).toEqual({ kind: 'unchanged' })
+    for (const call of calls) {
+      if (call.endpoint === 'user') continue
+      expect(() => assertApiTarget(call.args.slice(1))).not.toThrow()
+      expect(call.endpoint.includes('example/main/')).toBe(false)
+    }
+  })
+
+  it('a human commit since the seed is not reset', async () => {
+    const { options, calls, lines } = seedOptions({
+      localScopes: ['repo', 'workflow'],
+      remote: remoteWithDrift(),
+      withoutCi: true,
+      history,
+      commitPulls: { h1: [{ number: 7, merge_commit_sha: 'h1' }] },
+      pulls: { '7': harnessPull({ merged_by: { login: 'someone' } }) },
+    })
+    const code = await runSeed(options)
+    expect(code).toBe(1)
+    expect(lines).toContain('STATUS: DIFF')
+    expect(calls.filter(isWrite)).toHaveLength(0)
+  })
+
+  it('a seed that already matches reads no history and writes nothing', async () => {
+    const { options, calls, lines } = seedOptions({ localScopes: ['repo', 'workflow'], remote: seedRemote(full), withoutCi: true })
+    const code = await runSeed(options)
+    expect(code).toBe(0)
+    expect(lines).toContain('STATUS: UNCHANGED head=h1')
+    expect(calls.some(call => call.endpoint.includes('/commits?sha='))).toBe(false)
+    expect(calls.filter(isWrite)).toHaveLength(0)
+  })
+})
+
+describe('live seed target gates', () => {
+  const ROOT_DIR = fileURLToPath(new URL('../', import.meta.url))
+  const SCRIPTS = ['tests/live/seed-playground.ts', 'tests/live/cleanup-playground.ts']
+  const TARGET_NAMES = ['SUPERAGENT_CLAUDE_LIVE_REPO', 'SUPERAGENT_CLAUDE_LIVE_REPORT_REPO', 'SUPERAGENT_CLAUDE_LIVE_OWNER_LOGIN', 'SUPERAGENT_CLAUDE_LIVE_AGENT_LOGIN']
+
+  function runScript(script: string, extra: Record<string, string>) {
+    const dir = mkdtempSync(join(tmpdir(), 'live-fake-gh-'))
+    const marker = join(dir, 'gh-called')
+    writeFileSync(join(dir, 'gh'), '#!/bin/sh\necho called >> "$GH_MARKER"\nexit 1\n', { mode: 0o755 })
+    const env: Record<string, string> = {}
+    for (const [key, value] of Object.entries(process.env)) if (value !== undefined && !TARGET_NAMES.includes(key)) env[key] = value
+    const result = spawnSync(process.execPath, [join(ROOT_DIR, script)], {
+      cwd: ROOT_DIR,
+      encoding: 'utf8',
+      timeout: 30_000,
+      env: { ...env, SUPERAGENT_CLAUDE_LIVE: '1', SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN: 'fake', NODE_NO_WARNINGS: '1', GH_MARKER: marker, PATH: dir + ':' + (process.env.PATH ?? ''), ...extra },
+    })
+    return { result, marker, dir }
+  }
+
+  it('seed refuses without a live target', async () => {
+    const { options, calls } = seedOptions({ localScopes: ['repo', 'workflow'], remote: [], withoutCi: true })
+    clearLiveTarget()
+    await expect(runSeed(options)).rejects.toThrow(/live target not configured/)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('cleanup refuses without a live target', async () => {
+    const calls: Call[] = []
+    clearLiveTarget()
+    await expect(runCleanup({ token: 'token-under-test', apply: false, run: cleanupRunner(cleanupFixture(), calls), out: () => {} })).rejects.toThrow(/live target not configured/)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('cleanup without a report repository touches one repository', async () => {
+    stubLiveTarget({ ...EXAMPLE_TARGET_ENV, SUPERAGENT_CLAUDE_LIVE_REPORT_REPO: undefined })
+    const calls: Call[] = []
+    const lines: string[] = []
+    await runCleanup({ token: 'token-under-test', apply: false, run: cleanupRunner(cleanupFixture(), calls), out: line => lines.push(line) })
+    expect(lines.filter(line => / issues=/.test(line))).toHaveLength(1)
+    expect(lines.some(line => line.endsWith('report-only'))).toBe(false)
+    expect(calls.some(call => call.endpoint.startsWith('repos/example/main/'))).toBe(false)
+  })
+
+  it('archived repository blocks before any write', async () => {
+    const { options, calls, lines } = seedOptions({ archived: true, localScopes: ['repo', 'workflow'], remote: [], withoutCi: true })
+    const code = await runSeed(options)
+    expect(code).toBe(3)
+    expect(lines).toContain('STATUS: BLOCKED')
+    expect(lines).toContain('missing: repo-archived')
+    expect(calls.filter(isWrite)).toHaveLength(0)
+  })
+
+  it('owner token of another account blocks', async () => {
+    const { options, calls, lines } = seedOptions({ tokenLogin: 'someone', localScopes: ['repo', 'workflow'], remote: [], withoutCi: true })
+    const code = await runSeed(options)
+    expect(code).toBe(3)
+    expect(lines).toContain('missing: token-login')
+    expect(calls.filter(isWrite)).toHaveLength(0)
+  })
+
+  it('scripts skip without a target', () => {
+    for (const script of SCRIPTS) {
+      const { result, marker, dir } = runScript(script, {})
+      try {
+        expect(result.status, script).toBe(0)
+        expect(result.stderr.trim(), script).toBe('skipped: SUPERAGENT_CLAUDE_LIVE_REPO is not set')
+        expect(existsSync(marker), script).toBe(false)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    }
+  }, 60_000)
+
+  it('scripts fail fast on a bad target', () => {
+    for (const script of SCRIPTS) {
+      const { result, marker, dir } = runScript(script, { SUPERAGENT_CLAUDE_LIVE_REPO: 'bad' })
+      try {
+        expect(result.status, script).toBe(1)
+        expect(result.stderr, script).toContain('SUPERAGENT_CLAUDE_LIVE_REPO must be owner/name')
+        expect(existsSync(marker), script).toBe(false)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    }
+  }, 60_000)
 })

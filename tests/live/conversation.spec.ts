@@ -1,5 +1,5 @@
 /**
- * Live conversation run against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth. A mention that asks for something outside the repository gets one refusal on its issue, also after a daemon restart. A pull request whose ticket is ready keeps that report when a CI event arrives after a handed-back comment. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1 and the three tokens; never prints a token.
+ * Live conversation run against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth. A mention that asks for something outside the repository gets one refusal on its issue, also after a daemon restart. A pull request whose ticket is ready keeps that report when a CI event arrives after a handed-back comment. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token.
  */
 import { EventEmitter } from 'node:events'
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -13,23 +13,26 @@ import { openReadOnly } from '../../src/app/store-read.ts'
 import { sleep } from '../fixtures/async.ts'
 import { ghJson } from './gh.ts'
 import { assertAllowedRepo } from './guard.ts'
+import { liveEnabled, liveTarget, renderLiveText } from './target.ts'
 
-const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
+const TARGET = liveTarget()
+const LIVE = liveEnabled()
 const AGENT_TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
 const OWNER_TOKEN = process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN?.trim()
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
-const REPO = assertAllowedRepo('ok0/superagent-claude-playground')
-const AGENT = 'ok0-worker'
-const OWNER = 'ok0'
+const REPO = TARGET ? assertAllowedRepo(TARGET.repo) : ''
+const AGENT = TARGET?.agentLogin ?? ''
+const OWNER = TARGET?.ownerLogin ?? ''
+const text = (value: string): string => (TARGET ? renderLiveText(value, TARGET) : value)
 const LIMITS = { max: 1, maxTurns: 40, maxBudgetUsd: 1 }
 const MARKER = /<!--\s*superagent-claude:(.+?)\s*-->/
 const STRIP = /<!--\s*superagent-claude:.*?-->/g
 const REFUSAL_PREFIX = "I can't take this on here: "
 const DINNER_TITLE = 'Dinner reservation for Friday'
-const DINNER_BODY = '@ok0-worker please book a table for two at a restaurant near the office for Friday evening.'
+const DINNER_BODY = text('@{{agent}} please book a table for two at a restaurant near the office for Friday evening.')
 const NOTES_TITLE = 'Add a notes file'
-const NOTES_BODY = '@ok0-worker please add a file NOTES.md containing the single line "notes" and open a pull request.'
-const PR_COMMENT = '@ok0-worker also, could you book a table for Friday dinner?'
+const NOTES_BODY = text('@{{agent}} please add a file NOTES.md containing the single line "notes" and open a pull request.')
+const PR_COMMENT = text('@{{agent}} also, could you book a table for Friday dinner?')
 
 type Line = Record<string, unknown>
 interface Comment { id: number; body: string; html_url: string; created_at: string; user: { login: string } }

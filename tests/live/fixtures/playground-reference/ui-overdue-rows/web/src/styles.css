@@ -1,0 +1,9 @@
+body { font-family: system-ui, sans-serif; margin: 2rem; color: #1f2933; }
+.task-list { list-style: none; padding: 0; margin: 1rem 0; }
+.task-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0; }
+.badge { display: inline-block; padding: 0.125rem 0.6rem; border-radius: 999px; font-size: 0.85rem; color: #ffffff; }
+.badge-todo { background: #6b7280; }
+.badge-doing { background: #2563eb; }
+.badge-done { background: #15803d; }
+[role="alert"] { color: #b91c1c; }
+.task-row-overdue { color: #b91c1c; font-weight: 600; }

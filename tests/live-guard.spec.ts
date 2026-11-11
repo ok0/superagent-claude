@@ -1,7 +1,11 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isAllowedRepo } from './live/guard.ts'
+import { stubLiveTarget } from './fixtures/live-target.ts'
+
+beforeEach(() => stubLiveTarget())
+afterEach(() => vi.unstubAllEnvs())
 
 const LIVE_DIR = join(import.meta.dirname, 'live')
 const LOCAL_ONLY = ['repo-config.spec.ts']
@@ -80,7 +84,7 @@ describe('live guard static scan', () => {
         deleteFiles.push(name)
       }
     }
-    for (const name of new Set(deleteFiles)) expect(['cleanup-playground.ts', 'code-change.spec.ts']).toContain(name)
+    for (const name of new Set(deleteFiles)) expect(['cleanup-playground.ts', 'code-change.spec.ts', 'owner-merge.ts']).toContain(name)
   })
 
   it('milestone scans use the full pattern', () => {
@@ -100,6 +104,8 @@ describe('live guard static scan', () => {
     for (const [name, body] of contents) {
       for (const line of body.split('\n')) {
         if (!line.includes("'PUT'")) continue
+        if (name === 'guard.ts') continue
+        if (name === 'owner-merge.ts' && line.includes("/merge'")) continue
         expect(line, name).toContain('/contents/')
         expect(name, line.trim()).toBe('seed-playground.ts')
       }

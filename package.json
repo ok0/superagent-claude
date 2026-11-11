@@ -20,6 +20,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:live": "vitest run --config vitest.live.config.ts",
+    "test:seed": "SUPERAGENT_CLAUDE_SEED_INSTALL=1 vitest run tests/live-ui-scenarios.spec.ts tests/live-extended-scenarios.spec.ts",
     "check": "pnpm typecheck && pnpm test && pnpm build",
     "check:all": "pnpm check && pnpm check:branding && pnpm check:commits",
     "check:commits": "node scripts/check-commits.ts",

@@ -1,5 +1,5 @@
 /**
- * Live forced-stop run against the playground repository: the daemon is started as a child process through the CLI entry with subscription OAuth, SIGKILLed while a ticket's Assignment runs, restarted on the same stateDir, and checked through the store and the GitHub comment list. Gated by SUPERAGENT_CLAUDE_LIVE=1 and the three tokens; never prints a token.
+ * Live forced-stop run against the playground repository: the daemon is started as a child process through the CLI entry with subscription OAuth, SIGKILLed while a ticket's Assignment runs, restarted on the same stateDir, and checked through the store and the GitHub comment list. Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token.
  */
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -13,14 +13,17 @@ import { openReadOnly } from '../../src/app/store-read.ts'
 import { sleep } from '../fixtures/async.ts'
 import { ghJson } from './gh.ts'
 import { assertAllowedRepo } from './guard.ts'
+import { liveEnabled, liveTarget, renderLiveText } from './target.ts'
 
-const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
+const TARGET = liveTarget()
+const LIVE = liveEnabled()
 const AGENT_TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
 const OWNER_TOKEN = process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN?.trim()
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
-const REPO = assertAllowedRepo('ok0/superagent-claude-playground')
-const AGENT = 'ok0-worker'
-const OWNER = 'ok0'
+const REPO = TARGET ? assertAllowedRepo(TARGET.repo) : ''
+const AGENT = TARGET?.agentLogin ?? ''
+const OWNER = TARGET?.ownerLogin ?? ''
+const text = (value: string): string => (TARGET ? renderLiveText(value, TARGET) : value)
 const LIMITS = { max: 2, maxTurns: 40, maxBudgetUsd: 2 }
 const TIMELINE = ['ticket.created', 'assignment.started', 'assignment.ended', 'ticket.ended']
 const MARKER = /<!--\s*superagent-claude:(.+?)\s*-->/
@@ -180,7 +183,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live forced st
   }, 120_000)
 
   it('an issue whose daemon is killed mid-work resumes with the recovery note and gets no duplicate comment', async () => {
-    const issue = await createIssue('Question: how is this repository organized?', '@ok0-worker Could you look through the files in this repository and briefly explain how it is organized? No code changes are needed; an answer in this issue is enough.')
+    const issue = await createIssue('Question: how is this repository organized?', text('@{{agent}} Could you look through the files in this repository and briefly explain how it is organized? No code changes are needed; an answer in this issue is enough.'))
     const n = issue.number
     issueNumber = n
 

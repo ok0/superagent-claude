@@ -1,0 +1,21 @@
+{
+  "seedVersion": "70d58b4b88eeaeb283587f78f33a1c82e5e081de49ea4244b25c6419a6378663",
+  "rows": {
+    "overdue": "<li class=\"task-row\"><span class=\"task-title\">Pay the invoice</span><span class=\"badge badge-todo\">To do</span><span class=\"task-due\">Due 2000-01-01</span></li>",
+    "future": "<li class=\"task-row\"><span class=\"task-title\">Plan the trip</span><span class=\"badge badge-doing\">In progress</span><span class=\"task-due\">Due 2999-12-31</span></li>",
+    "none": "<li class=\"task-row\"><span class=\"task-title\">Read a book</span><span class=\"badge badge-todo\">To do</span><span class=\"task-due\">No due date</span></li>",
+    "doneFuture": "<li class=\"task-row\"><span class=\"task-title\">Water the plants</span><span class=\"badge badge-done\">Done</span><span class=\"task-due\">Due 2999-12-31</span></li>"
+  },
+  "components": {
+    "heading": "<h1>Tasks</h1>",
+    "form": "<form aria-label=\"New task\"><label>Title <input value=\"\" name=\"title\"></label><label>Due date <input type=\"date\" value=\"\" name=\"dueDate\"></label><button type=\"submit\" disabled=\"\">Add task</button></form>",
+    "filter": "<label class=\"status-filter\">Show <select><option value=\"all\">All</option><option value=\"todo\">To do</option><option value=\"doing\">In progress</option><option value=\"done\">Done</option></select></label>",
+    "errorBanner": "<p role=\"alert\">Request failed</p>",
+    "emptyList": "<p class=\"empty\">No tasks</p>",
+    "statusBadge": {
+      "todo": "<span class=\"badge badge-todo\">To do</span>",
+      "doing": "<span class=\"badge badge-doing\">In progress</span>",
+      "done": "<span class=\"badge badge-done\">Done</span>"
+    }
+  }
+}

@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { checkDiff, contentProblems, patchSections, pullPatch } from './live/rules.ts'
 import type { DiffFile, DiffRule } from './live/rules.ts'
 import { FIXTURES_DIR, SEED_DIR, runHidden, testsFailOnBase, type Install } from './live/hidden.ts'
-import { SCENARIO_ENV, judgeScenario, loadScenarios, scenarioFlows, scenarioProblems } from './live/scenarios.ts'
+import { SCENARIO_ENV, judgeScenario, loadAllScenarios, loadScenarios, renderScenario, scenarioFlows, scenarioProblems, scenarioTexts } from './live/scenarios.ts'
+import { EXAMPLE_TARGET } from './fixtures/live-target.ts'
 import type { HiddenSpec, LiveScenario } from './live/scenarios.ts'
 import { loadSeed } from './live/seed-playground.ts'
 
@@ -162,27 +163,44 @@ describe('scenario registry', () => {
     for (const value of broken) expect(scenarioProblems(value).length).toBeGreaterThan(0)
   })
 
-  it('the core scenarios are the three code-change cases', async () => {
+  it('the code-change core scenarios keep their rules', async () => {
     const core = await loadScenarios({})
-    expect(core.map(s => s.id)).toEqual(['bug-paging', 'feature-partial-update', 'review-limit-validation'])
+    expect(core.map(s => s.id)).toEqual(expect.arrayContaining(['bug-paging', 'feature-partial-update', 'review-limit-validation']))
     for (const s of core) {
       expect(s.tier).toBe('core')
       expect(scenarioProblems(s)).toEqual([])
       expect(contentProblems('title', s.issue.title)).toEqual([])
       expect(contentProblems('body', s.issue.body)).toEqual([])
       if (s.review) expect(contentProblems('review', s.review.body)).toEqual([])
-      expect(s.issue.body.startsWith('@ok0-worker ')).toBe(true)
-      expect(s.diff.allowedRoots).toEqual(['api/'])
+      expect(s.issue.body.startsWith('@{{agent}} ')).toBe(true)
+      expect(s.diff.allowedRoots?.length).toBe(1)
+      expect(['api/', 'web/']).toContain(s.diff.allowedRoots?.[0])
+      if (['bug-paging', 'feature-partial-update', 'review-limit-validation'].includes(s.id)) expect(s.diff.allowedRoots).toEqual(['api/'])
       expect(s.diff.allowLockfile).toBe(false)
     }
     expect(byId(core, 'bug-paging').diff.newTestFailsOnBase).toBe(true)
     expect(byId(core, 'review-limit-validation').hidden).toEqual(byId(core, 'bug-paging').hidden)
   })
 
+  it('registry texts render for any target', async () => {
+    for (const s of await loadAllScenarios()) {
+      const before = scenarioTexts(s)
+      for (const t of before) expect(t).not.toMatch(/\bok0\b/)
+      const rendered = scenarioTexts(renderScenario(s, EXAMPLE_TARGET))
+      expect(scenarioTexts(s)).toEqual(before)
+      rendered.forEach((x, i) => {
+        expect(x).not.toContain('{{')
+        expect(x).not.toMatch(/\bok0\b/)
+        expect(contentProblems('text', x)).toEqual([])
+        if (before[i]?.includes('@{{agent}}')) expect(x).toContain('@' + EXAMPLE_TARGET.agentLogin)
+      })
+    }
+  })
+
   it('flows pair the review with the bug issue', async () => {
     const core = await loadScenarios({})
     const flows = scenarioFlows(core)
-    expect(flows).toHaveLength(2)
+    expect(flows).toHaveLength(core.filter(s => s.review === undefined).length)
     const bugFlow = flows.find(f => f.initial.id === 'bug-paging')
     expect(bugFlow?.followUps.map(s => s.id)).toEqual(['review-limit-validation'])
     expect(() => scenarioFlows([byId(core, 'review-limit-validation')])).toThrow(/follow-up without an initial/)
@@ -302,10 +320,11 @@ describe('hidden acceptance', () => {
   }, HIDDEN_TIMEOUT)
 
   it('reference overlays with hidden tests typecheck', async () => {
-    const core = await loadScenarios({})
+    const all = await loadAllScenarios()
     for (const id of readdirSync(REFERENCE)) {
-      const s = byId(core, id)
+      const s = byId(all, id)
       if (!s.hidden) throw new Error('reference without hidden tests: ' + id)
+      if (s.hidden?.workspace !== 'api') continue
       const d = tmp()
       copySeed(d, id)
       cpSync(join(FIXTURES_DIR, s.hidden.dir), join(d, s.hidden.dest), { recursive: true })
@@ -316,20 +335,22 @@ describe('hidden acceptance', () => {
   }, HIDDEN_TIMEOUT)
 
   it('hidden files stay out of the playground', async () => {
-    const core = await loadScenarios({})
-    for (const s of core) {
+    const all = await loadAllScenarios()
+    for (const s of all) {
       if (!s.hidden) continue
       const dir = resolve(FIXTURES_DIR, s.hidden.dir)
       expect(existsSync(dir)).toBe(true)
       expect(dir.startsWith(SEED_DIR + sep)).toBe(false)
     }
     expect(REFERENCE.startsWith(SEED_DIR + sep)).toBe(false)
+    expect(join(FIXTURES_DIR, 'playground-prepared').startsWith(SEED_DIR + sep)).toBe(false)
     const files = loadSeed(true)
-    const dests = core.flatMap(s => (s.hidden ? [s.hidden.dest] : []))
+    const dests = all.flatMap(s => (s.hidden ? [s.hidden.dest] : []))
     for (const f of files) {
       for (const dest of dests) expect(f.path === dest || f.path.startsWith(dest + '/')).toBe(false)
       expect(f.path.includes('playground-hidden')).toBe(false)
       expect(f.path.includes('playground-reference')).toBe(false)
+      expect(f.path.includes('playground-prepared')).toBe(false)
     }
   }, HIDDEN_TIMEOUT)
 

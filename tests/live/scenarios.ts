@@ -1,11 +1,15 @@
 import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { contentProblems } from './rules.ts'
+import { commitProblems, contentProblems, isTestFile } from './rules.ts'
 import type { DiffRule } from './rules.ts'
+import type { PrepareSpec } from './prepare-pr.ts'
+import { renderLiveText, type LiveTarget } from './target.ts'
 
 export interface HiddenSpec { dir: string; dest: string; workspace: 'api' | 'web'; command: readonly string[]; envMatrix?: readonly Readonly<Record<string, string>>[]; repeat?: number }
-export interface LiveScenario { id: string; tier: 'core' | 'extended'; issue: { title: string; body: string }; review?: { body: string }; hidden?: HiddenSpec; diff: DiffRule; ambiguity?: 'clarify-or-state'; answer?: string }
+export type ScenarioKind = 'bug' | 'feature' | 'ui'
+export const SCENARIO_KINDS: readonly ScenarioKind[] = ['bug', 'feature', 'ui']
+export interface LiveScenario { id: string; tier: 'core' | 'extended'; kind?: ScenarioKind; issue: { title: string; body: string }; review?: { body: string }; hidden?: HiddenSpec; diff: DiffRule; ambiguity?: 'clarify-or-state'; answer?: string; prepare?: PrepareSpec }
 
 export const SCENARIO_DIR = join(import.meta.dirname, 'scenarios')
 export const SCENARIO_ENV = 'SUPERAGENT_CLAUDE_LIVE_SCENARIOS'
@@ -19,6 +23,7 @@ export function scenarioProblems(value: unknown): string[] {
   const problems: string[] = []
   if (typeof value.id !== 'string' || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(value.id)) problems.push('id must be lowercase words joined by dashes')
   if (value.tier !== 'core' && value.tier !== 'extended') problems.push('tier must be core or extended')
+  if (value.kind !== undefined && !SCENARIO_KINDS.includes(value.kind as ScenarioKind)) problems.push('kind must be bug, feature or ui')
   const issue = isObject(value.issue) ? value.issue : {}
   if (!nonEmpty(issue.title)) problems.push('issue.title must be a non-empty string')
   if (!nonEmpty(issue.body)) problems.push('issue.body must be a non-empty string')
@@ -54,13 +59,31 @@ export function scenarioProblems(value: unknown): string[] {
     if (diff.allowLockfile !== undefined && typeof diff.allowLockfile !== 'boolean') problems.push('diff.allowLockfile must be a boolean')
     if (diff.newTestFailsOnBase !== undefined && typeof diff.newTestFailsOnBase !== 'boolean') problems.push('diff.newTestFailsOnBase must be a boolean')
     if (diff.newTestFailsOnBase === true && hidden === undefined) problems.push('diff.newTestFailsOnBase requires hidden')
+    if (diff.requireSource !== undefined && typeof diff.requireSource !== 'boolean') problems.push('diff.requireSource must be a boolean')
   }
   if (value.ambiguity !== undefined && value.ambiguity !== 'clarify-or-state') problems.push("ambiguity must be 'clarify-or-state'")
-  if (value.answer !== undefined && typeof value.answer !== 'string') problems.push('answer must be a string')
+  if (value.answer !== undefined) {
+    if (!nonEmpty(value.answer)) problems.push('answer must be a non-empty string')
+    if (typeof value.answer === 'string') problems.push(...contentProblems('answer', value.answer))
+  }
+  const prepare = value.prepare
+  if (prepare !== undefined) {
+    if (!isObject(prepare)) {
+      problems.push('prepare must be an object')
+    } else {
+      const path = typeof prepare.path === 'string' ? prepare.path : ''
+      if (!relativePath(path) || !isTestFile(path) || !/^api\/test\/[A-Za-z0-9._-]+\.test\.ts$/.test(path)) problems.push('prepare.path must be one test file under api/test')
+      if (!relativePath(prepare.fixture)) problems.push('prepare.fixture must be a relative path without ..')
+      if (!nonEmpty(prepare.commitMessage)) problems.push('prepare.commitMessage must be a non-empty string')
+      else problems.push(...commitProblems(prepare.commitMessage))
+      if (!nonEmpty(prepare.comment)) problems.push('prepare.comment must be a non-empty string')
+      else problems.push(...contentProblems('prepare comment', prepare.comment))
+    }
+  }
   return problems
 }
 
-export async function loadScenarios(env: Readonly<Record<string, string | undefined>>, dir: string = SCENARIO_DIR): Promise<LiveScenario[]> {
+export async function loadAllScenarios(dir: string = SCENARIO_DIR): Promise<LiveScenario[]> {
   const files = readdirSync(dir).filter(n => n.endsWith('.ts') && !n.endsWith('.d.ts')).sort()
   const loaded: LiveScenario[] = []
   for (const n of files) {
@@ -72,6 +95,11 @@ export async function loadScenarios(env: Readonly<Record<string, string | undefi
     if (loaded.some(s => s.id === scenario.id)) throw new Error('duplicate scenario id: ' + scenario.id)
     loaded.push(scenario)
   }
+  return loaded
+}
+
+export async function loadScenarios(env: Readonly<Record<string, string | undefined>>, dir: string = SCENARIO_DIR): Promise<LiveScenario[]> {
+  const loaded = await loadAllScenarios(dir)
   const raw = (env[SCENARIO_ENV] ?? '').split(',').map(s => s.trim()).filter(Boolean)
   for (const id of raw) {
     if (!loaded.some(s => s.id === id)) throw new Error('unknown scenario: ' + id)
@@ -96,13 +124,29 @@ export function scenarioFlows(scenarios: readonly LiveScenario[]): ScenarioFlow[
   })
 }
 
-export type VerdictPart = 'checks' | 'hidden' | 'diff' | 'base-failure'
+export function scenarioTexts(s: LiveScenario): string[] {
+  const values = [s.issue.title, s.issue.body, s.review?.body, s.answer, s.prepare?.comment]
+  return values.filter((v): v is string => v !== undefined)
+}
 
-export function judgeScenario(scenario: LiveScenario, input: { checks: string; hidden: { passed: boolean } | null; diff: { pass: boolean }; base: { passed: boolean } | null }): { passed: boolean; failed: VerdictPart[] } {
+export function renderScenario(s: LiveScenario, target: LiveTarget): LiveScenario {
+  const rendered: LiveScenario = { ...s }
+  rendered.issue = { ...s.issue, title: renderLiveText(s.issue.title, target), body: renderLiveText(s.issue.body, target) }
+  if (s.review !== undefined) rendered.review = { ...s.review, body: renderLiveText(s.review.body, target) }
+  if (s.answer !== undefined) rendered.answer = renderLiveText(s.answer, target)
+  if (s.prepare !== undefined) rendered.prepare = { ...s.prepare, comment: renderLiveText(s.prepare.comment, target) }
+  return rendered
+}
+
+export type VerdictPart ='checks' | 'hidden' | 'diff' | 'base-failure' | 'ambiguity' | 'prepared'
+
+export function judgeScenario(scenario: LiveScenario, input: { checks: string; hidden: { passed: boolean } | null; diff: { pass: boolean }; base: { passed: boolean } | null; ambiguity?: { passed: boolean } | null; prepared?: { passed: boolean } | null }): { passed: boolean; failed: VerdictPart[] } {
   const failed: VerdictPart[] = []
   if (input.checks !== 'success') failed.push('checks')
   if (scenario.hidden && input.hidden?.passed !== true) failed.push('hidden')
   if (!input.diff.pass) failed.push('diff')
   if (scenario.diff.newTestFailsOnBase === true && input.base?.passed !== true) failed.push('base-failure')
+  if (scenario.ambiguity === 'clarify-or-state' && input.ambiguity?.passed !== true) failed.push('ambiguity')
+  if (scenario.prepare && input.prepared?.passed !== true) failed.push('prepared')
   return { passed: failed.length === 0, failed }
 }

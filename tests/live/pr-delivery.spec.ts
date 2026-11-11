@@ -1,5 +1,5 @@
 /**
- * Live PR delivery run against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth, an owner issue becomes one pull request by the agent account, and a follow-up PR comment adds a commit in the same ticket, worktree and session. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1 and the three tokens; never prints a token; the PR body closes the issue, `status` shows the idle session as idle, and the follow-up result goes to the PR, not the issue.
+ * Live PR delivery run against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth, an owner issue becomes one pull request by the agent account, and a follow-up PR comment adds a commit in the same ticket, worktree and session. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token; the PR body closes the issue, `status` shows the idle session as idle, and the follow-up result goes to the PR, not the issue.
  */
 import { EventEmitter } from 'node:events'
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -13,19 +13,22 @@ import { openReadOnly } from '../../src/app/store-read.ts'
 import { sleep } from '../fixtures/async.ts'
 import { ghJson } from './gh.ts'
 import { assertAllowedRepo } from './guard.ts'
+import { liveEnabled, liveTarget, renderLiveText } from './target.ts'
 
-const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
+const TARGET = liveTarget()
+const LIVE = liveEnabled()
 const AGENT_TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
 const OWNER_TOKEN = process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN?.trim()
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
-const REPO = assertAllowedRepo('ok0/superagent-claude-playground')
-const AGENT = 'ok0-worker'
-const OWNER = 'ok0'
+const REPO = TARGET ? assertAllowedRepo(TARGET.repo) : ''
+const AGENT = TARGET?.agentLogin ?? ''
+const OWNER = TARGET?.ownerLogin ?? ''
+const text = (value: string): string => (TARGET ? renderLiveText(value, TARGET) : value)
 const LIMITS = { max: 1, maxTurns: 60, maxBudgetUsd: 3 }
 const MARKER = /<!--\s*superagent-claude:(.+?)\s*-->/
 const STRIP = /<!--\s*superagent-claude:.*?-->/g
 const ISSUE_TITLE = 'Add a USAGE file'
-const ISSUE_BODY = '@ok0-worker Please add a file named USAGE.md with one sentence saying this repository is a playground for automated agent tests, and open a pull request with the change.'
+const ISSUE_BODY = text('@{{agent}} Please add a file named USAGE.md with one sentence saying this repository is a playground for automated agent tests, and open a pull request with the change.')
 const FOLLOW_UP = 'Please also add a second sentence to USAGE.md saying the file is kept up to date by the automation.'
 
 type Line = Record<string, unknown>
@@ -256,7 +259,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live pr delive
     expect(pull.body ?? '').toMatch(closing(issue.number))
     expect(((pull.body ?? '').match(new RegExp(`Closes #${issue.number}(?![0-9])`, 'g')) ?? []).length).toBeLessThanOrEqual(1)
     await until(async () => {
-      const r = await owner(['graphql', '-f', `query=query { repository(owner: "ok0", name: "superagent-claude-playground") { pullRequest(number: ${prNumber}) { closingIssuesReferences(first: 10) { nodes { number } } } } }`]) as { data: { repository: { pullRequest: { closingIssuesReferences: { nodes: { number: number }[] } } } } }
+      const r = await owner(['graphql', '-f', `query=query { repository(owner: ${JSON.stringify(TARGET!.owner)}, name: ${JSON.stringify(TARGET!.name)}) { pullRequest(number: ${prNumber}) { closingIssuesReferences(first: 10) { nodes { number } } } } }`]) as { data: { repository: { pullRequest: { closingIssuesReferences: { nodes: { number: number }[] } } } } }
       return r.data.repository.pullRequest.closingIssuesReferences.nodes.some(n => n.number === issue.number) ? true : undefined
     }, 120_000, 10_000, 'PR closes the issue')
 
