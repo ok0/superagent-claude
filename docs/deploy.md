@@ -81,7 +81,7 @@ Load it with `launchctl load ~/Library/LaunchAgents/dev.superagent-claude.plist`
 
 ## Docker
 
-Build the image locally. No image is published.
+The image is published as `ghcr.io/ok0/superagent-claude`. A stable release is tagged with its version (for example `0.1.0`), `MAJOR.MINOR` and `latest`, and a pre-release only with its version. Pull it with `docker pull ghcr.io/ok0/superagent-claude:<version>` and use that name in place of `superagent-claude:local` below, or build the image locally:
 
 ```sh
 docker build -t superagent-claude:local .
@@ -130,7 +130,7 @@ Running the container with full host privileges is not recommended.
 
 ## Kubernetes
 
-`deploy/k8s/superagent-claude.yaml` runs the image as one pod. It sets no namespace, so apply it to the namespace you choose. Make the image available to the cluster yourself, for example with `kind load docker-image superagent-claude:local`. With a registry, replace `superagent-claude:local` with `<registry>/superagent-claude:<tag>`. No image is published.
+`deploy/k8s/superagent-claude.yaml` runs the image as one pod. It sets no namespace, so apply it to the namespace you choose. Make the image available to the cluster: replace `superagent-claude:local` with the published image `ghcr.io/ok0/superagent-claude:<version>`, or load a local build, for example with `kind load docker-image superagent-claude:local`.
 
 ```yaml
 # superagent-claude on Kubernetes: one replica, state on a ReadWriteOnce volume.
