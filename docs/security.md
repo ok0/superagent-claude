@@ -2,6 +2,8 @@
 
 Text from the hosting service is untrusted. The agent works in a git worktree per ticket, with tool, network and permission limits.
 
+To report a vulnerability, see [SECURITY.md](../SECURITY.md).
+
 ## Repository settings that run code
 
 Sessions use `settingSources: []`: the repository's `.claude/settings.json` and `settings.local.json` hooks, permission rules and CLAUDE.md are not loaded. `.mcp.json` is ignored (`strictMcpConfig`); the only MCP server is the host-provided `superagent` server.

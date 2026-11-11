@@ -10,6 +10,7 @@ export const PUBLIC_FILES = [
   'README.md',
   'CONTRIBUTING.md',
   'CODE_OF_CONDUCT.md',
+  'SECURITY.md',
   '.github/ISSUE_TEMPLATE/bug_report.yml',
   '.github/ISSUE_TEMPLATE/feature_request.yml',
   '.github/pull_request_template.md',
@@ -49,6 +50,8 @@ export const REQUIRED_CONDUCT = [
   'https://www.contributor-covenant.org/version/2/1/code_of_conduct/',
   '## Reporting',
 ] as const
+
+export const REQUIRED_SECURITY = ['https://github.com/ok0/superagent-claude/security/advisories/new', 'public issue'] as const
 
 export const REQUIRED_PR_TEMPLATE = ['- [ ] `pnpm check:all`', 'Conventional Commits', 'No AI attribution'] as const
 
@@ -131,6 +134,16 @@ describe('contributing docs', () => {
     expect(missingMarkers(read('CODE_OF_CONDUCT.md'), REQUIRED_CONDUCT)).toEqual([])
   })
 
+  it('SECURITY names private vulnerability reporting and links the trust policy', () => {
+    const security = read('SECURITY.md')
+    expect(missingMarkers(security, REQUIRED_SECURITY)).toEqual([])
+    expect(security).toContain('](docs/security.md)')
+  })
+
+  it.each(REQUIRED_SECURITY)('a SECURITY without %s is rejected', (marker) => {
+    expect(missingMarkers(read('SECURITY.md').replaceAll(marker, ''), REQUIRED_SECURITY)).toContain(marker)
+  })
+
   it('the pull request template has the checklist', () => {
     expect(missingMarkers(read('.github/pull_request_template.md'), REQUIRED_PR_TEMPLATE)).toEqual([])
   })
@@ -188,7 +201,7 @@ describe('contributing docs', () => {
     })
   })
 
-  it.each(['CONTRIBUTING.md', 'CODE_OF_CONDUCT.md', '.github/pull_request_template.md'])(
+  it.each(['CONTRIBUTING.md', 'CODE_OF_CONDUCT.md', '.github/pull_request_template.md', 'SECURITY.md'])(
     'relative links in %s resolve',
     (file) => {
       expect(relativeLinkProblems(file, read(file))).toEqual([])

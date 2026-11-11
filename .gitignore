@@ -8,3 +8,6 @@ coverage/
 *.log
 .DS_Store
 .docs/
+.env
+.env.*
+!.env.example
