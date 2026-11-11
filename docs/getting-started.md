@@ -46,5 +46,3 @@ The default `policy.acceptMode` is `observe`. `auto` must be set explicitly.
 ## Next
 
 - [configuration.md](configuration.md)
-- [authentication.md](authentication.md)
-- [security.md](security.md)

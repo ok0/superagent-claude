@@ -51,3 +51,7 @@ A minimal config:
 ```
 
 See [security.md](security.md) for the trust policy behind the `security.*` and `network.allow` settings.
+
+## Next
+
+- [authentication.md](authentication.md)

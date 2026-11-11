@@ -34,3 +34,7 @@ superagent-claude refuses to start when:
 - `auto` is set without a sandbox, unless `security.allowUnsandboxed` is set
 - no repository is accessible
 - `SUPERAGENT_CLAUDE_GITHUB_TOKEN` is missing
+
+## Next
+
+- [deploy.md](deploy.md)

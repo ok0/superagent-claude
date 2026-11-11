@@ -1,5 +1,18 @@
 # Deploy
 
+**Contents**
+
+- [Service setup](#service-setup)
+- [Docker](#docker)
+- [Sandbox in containers](#sandbox-in-containers)
+- [Kubernetes](#kubernetes)
+  - [One replica](#one-replica)
+  - [Probes and stopping](#probes-and-stopping)
+  - [JSON logs](#json-logs)
+  - [Sandbox on Kubernetes](#sandbox-on-kubernetes)
+
+## Service setup
+
 To run superagent-claude as a service, run `superagent-claude start` in the foreground under a service manager. On SIGTERM it cleans up for at most 10 seconds and exits with code 0 within 15 seconds, and SIGHUP reloads the config. Keep the secrets in an env file that only the service user can read, with `chmod 600`.
 
 Env file `~/.config/superagent-claude/env`:
@@ -270,3 +283,7 @@ The pod runs as uid 10001 with every capability dropped, no privilege escalation
 2. Set `security.allowUnsandboxed: true` and restrict egress with a NetworkPolicy. Commands then run without the sandbox; see [security.md](security.md#containers).
 
 An `Unconfined` seccomp or AppArmor profile is rejected at `baseline` and `restricted`. It needs a namespace at the `privileged` Pod Security level or an exemption from Pod Security admission. The manifest does not use it, and it is not recommended.
+
+## Next
+
+- [security.md](security.md)
