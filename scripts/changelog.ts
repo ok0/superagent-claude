@@ -128,10 +128,11 @@ export function insertSection(changelog: string, version: string, section: strin
   const idx = lines.findIndex((line) => line.startsWith('## ['))
   let result: string
   if (idx === -1) {
-    result = changelog.trimEnd() + '\n\n' + section
+    const head = changelog.trimEnd()
+    result = head === '' ? section : head + '\n\n' + section
   } else {
     const before = lines.slice(0, idx).join('\n').trimEnd()
-    const parts = before === '' ? [] : [before]
+    const parts = before === '' ? [] : [before, '']
     result = [...parts, section.trimEnd(), '', ...lines.slice(idx)].join('\n')
   }
   return result.replace(/\n*$/, '\n')

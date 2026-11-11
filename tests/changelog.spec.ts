@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { CATEGORIES, collectCommits, extractNotes, previousTag, renderSection } from '../scripts/changelog.ts'
+import { CATEGORIES, collectCommits, extractNotes, insertSection, previousTag, renderSection } from '../scripts/changelog.ts'
 import { checkText } from '../scripts/check-branding.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -196,6 +196,39 @@ describe('previous tag selection', () => {
   })
 })
 
+describe('insertSection', () => {
+  const SECTION = '## [0.2.0] - 2026-02-01\n\n### Features\n\n- b (bbbbbbb)\n'
+  const OLD = '## [0.1.0] - 2026-01-01\n\n### Fixes\n\n- a (aaaaaaa)\n'
+
+  it('adds one blank line before and after the new section when sections exist', () => {
+    for (const input of ['# Changelog\n\ndesc\n' + OLD, '# Changelog\n\ndesc\n\n' + OLD]) {
+      const result = insertSection(input, '0.2.0', SECTION)
+      expect(result).toBe('# Changelog\n\ndesc\n\n' + SECTION + '\n' + OLD)
+      expect(result).toContain('desc\n\n## [0.2.0]')
+      expect(result).toContain('\n\n## [0.1.0]')
+      expect(result).not.toContain('\n\n\n')
+    }
+  })
+
+  it('adds one blank line before the new section when no section exists', () => {
+    for (const input of ['# Changelog\n\ndesc\n', '# Changelog\n\ndesc\n\n\n']) {
+      const result = insertSection(input, '0.2.0', SECTION)
+      expect(result).toBe('# Changelog\n\ndesc\n\n' + SECTION)
+      expect(result).toContain('\n\n## [')
+      expect(result).not.toContain('\n\n\n')
+    }
+    expect(insertSection('', '0.2.0', SECTION)).toBe(SECTION)
+  })
+
+  it('keeps single blank lines over repeated inserts', () => {
+    const once = insertSection('# Changelog\n\ndesc\n', '0.2.0', SECTION)
+    const twice = insertSection(once, '0.3.0', SECTION.replace('0.2.0', '0.3.0'))
+    expect(twice).toContain('desc\n\n## [0.3.0]')
+    expect(twice).toContain('\n\n## [0.2.0]')
+    expect(twice).not.toContain('\n\n\n')
+  })
+})
+
 describe('prepare and notes', () => {
   it('writes version and section without tagging or committing', () => {
     const dir = repo()
@@ -275,5 +308,18 @@ describe('root CHANGELOG.md', () => {
     expect(checkText('CHANGELOG.md', content)).toEqual([])
     expect(content).not.toMatch(/\bM\d+\b/)
     expect(content).not.toContain('.docs/')
+  })
+
+  it('separates the description and sections with exactly one blank line', () => {
+    const lines = content.split('\n')
+    expect(content).not.toContain('\n\n\n')
+    expect(lines[3]).toBe('')
+    expect(lines[4]?.startsWith('## [')).toBe(true)
+    for (let i = 5; i < lines.length; i++) {
+      if (lines[i]?.startsWith('## [')) {
+        expect(lines[i - 1]).toBe('')
+        expect(lines[i - 2]).not.toBe('')
+      }
+    }
   })
 })
