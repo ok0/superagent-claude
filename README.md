@@ -29,7 +29,7 @@ The config needs `repositories`, `policy.allowed` and `auth.mode`. See [docs/get
 
 ## Test repositories
 
-Live tests touch only this repository and the private ok0/superagent-claude-playground repository. The playground is seeded with `pnpm live:seed` and cleaned with `pnpm live:cleanup`.
+Live tests touch only this repository and the private ok0/superagent-claude-playground repository. The playground is seeded with `pnpm live:seed` (`pnpm live:seed --upgrade` replaces an older seed in one commit) and cleaned with `pnpm live:cleanup`.
 
 ## License
 

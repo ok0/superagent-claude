@@ -6,9 +6,11 @@ import { isAllowedRepo } from './live/guard.ts'
 const LIVE_DIR = join(import.meta.dirname, 'live')
 const LOCAL_ONLY = ['repo-config.spec.ts']
 
+const SEED_PREFIX = 'fixtures/playground-seed/'
 const files = readdirSync(LIVE_DIR, { recursive: true })
-  .map(String)
+  .map(name => String(name).replace(/\\/g, '/'))
   .filter(name => name.endsWith('.ts'))
+  .filter(name => !name.startsWith(SEED_PREFIX))
   .sort()
 const text = (name: string): string => readFileSync(join(LIVE_DIR, name), 'utf8')
 const contents = files.map(name => [name, text(name)] as const)
@@ -107,5 +109,16 @@ describe('live guard static scan', () => {
   it('local gh credential only in the seed script and read-only checks', () => {
     expect(withPattern(/\bghLocal(?:Json|Raw)\b/)).toEqual(['gh.ts', 'seed-playground.ts'])
     for (const name of withPattern(/localIdentity\(/)) expect(['gh.ts', 'seed-playground.ts', 'code-change.spec.ts']).toContain(name)
+  })
+
+  it('seed fixture is data, not harness code', () => {
+    const all = readdirSync(LIVE_DIR, { recursive: true }).map(name => String(name).replace(/\\/g, '/'))
+    const seedTs = all.filter(name => name.startsWith(SEED_PREFIX) && name.endsWith('.ts'))
+    expect(seedTs.length).toBeGreaterThan(0)
+    for (const [name, body] of contents) {
+      expect(body, name).not.toMatch(/\bimport\b[^\n]*['"][^'"]*fixtures\/playground-seed\//)
+      expect(body, name).not.toMatch(/\bimport\(\s*['"][^'"]*fixtures\/playground-seed\//)
+    }
+    for (const name of seedTs) expect(text(name), name).not.toMatch(/api\.github\.com|github\.com\/[^\s'"]*superagent|child_process/)
   })
 })

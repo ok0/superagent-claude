@@ -1,13 +1,21 @@
+import { spawnSync } from 'node:child_process'
 import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { pathToFileURL, fileURLToPath } from 'node:url'
+import { basename, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
+import ts from 'typescript'
+import { loadConfig } from '../src/app/config.ts'
+import { liveConfig } from './live/code-change-config.ts'
+import { loadSeed } from './live/seed-playground.ts'
 import { ALLOWED_REPOS, assertAllowedRepo, assertApiTarget } from './live/guard.ts'
 import { downloadTree, ghJson, ghLocalJson, ghLocalRaw, ghStatus, localIdentity, tokenScopes, type RunResult, type Runner } from './live/gh.ts'
 import {
   AGENT_BRANCH,
   WORKFLOW_PATH,
+  attributionProblems,
+  readmeProblems,
+  seedVersion,
   blobSha,
   changeVerdict,
   ciBlockedLabel,
@@ -26,6 +34,31 @@ import {
 const FIXTURES = fileURLToPath(new URL('./live/fixtures', import.meta.url))
 const SEED = join(FIXTURES, 'playground-seed')
 const WORKFLOW_FIXTURE = join(FIXTURES, 'playground-ci.yml')
+const ROOT = fileURLToPath(new URL('../', import.meta.url))
+const LOCK_NAMES = ['package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml']
+const ALL_PAGES_TEST = `import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { createTaskService } from '../src/services/task-service.ts'
+import { createIdGenerator } from '../src/store/ids.ts'
+import { createMemoryStore } from '../src/store/memory-store.ts'
+
+test('every task is listed across pages', () => {
+  const service = createTaskService({ store: createMemoryStore(), nextId: createIdGenerator() })
+  for (let i = 0; i < 5; i++) service.create({ title: 'task ' + i }, 'alice')
+  let total = 0
+  let next: number | null = 0
+  while (next !== null) {
+    const page = service.list({ start: next, limit: 2 })
+    total += page.items.length
+    next = page.next
+  }
+  assert.equal(total, 5)
+})
+`
+
+function readJson(path: string): Record<string, unknown> {
+  return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+}
 
 const ok = (stdout = '', stderr = ''): RunResult => ({ code: 0, stdout: Buffer.from(stdout), stderr })
 const fail = (stderr: string, code = 1): RunResult => ({ code, stdout: Buffer.alloc(0), stderr })
@@ -250,6 +283,9 @@ describe('change verdict', () => {
     expect(changeVerdict(['src/text.js'])).toMatchObject({ pass: false, reason: 'no-test' })
     expect(changeVerdict(['test/text.test.js'])).toMatchObject({ pass: false, reason: 'no-source' })
     expect(changeVerdict([])).toMatchObject({ pass: false, reason: 'empty' })
+    expect(changeVerdict(['api/src/http/cursor.ts', 'api/test/cursor.test.ts']).pass).toBe(true)
+    expect(changeVerdict(['api/src/store/memory-store.ts'])).toMatchObject({ pass: false, reason: 'no-test' })
+    expect(changeVerdict(['api/test/helpers.ts'])).toMatchObject({ pass: false, reason: 'no-source' })
   })
 })
 
@@ -283,12 +319,18 @@ describe('seed', () => {
       fixture.replace('  pull_request:\n', ''),
       fixture.replace('on:\n', 'on:\n  pull_request_target:\n'),
     ]
+    mutations.push(
+      fixture.replace('      - run: npm ci\n', ''),
+      fixture.replace('      - run: npm run typecheck\n      - run: npm test', '      - run: npm test\n      - run: npm run typecheck'),
+      fixture.replace('node-version: 24', 'node-version: 22'),
+    )
     for (const mutated of mutations) expect(seedWorkflowProblems(mutated).length).toBeGreaterThan(0)
   })
 })
 
 describe('fixtures', () => {
   const seedFiles = (): string[] => readdirSync(SEED, { recursive: true }).map(String).filter(entry => statSync(join(SEED, entry)).isFile())
+  const apiFiles = (dir: string, ext: string): string[] => seedFiles().filter(entry => entry.startsWith('api/' + dir + '/') && entry.endsWith(ext))
 
   it('seed files are clean', () => {
     for (const file of [...seedFiles().map(entry => join(SEED, entry)), WORKFLOW_FIXTURE]) {
@@ -296,40 +338,168 @@ describe('fixtures', () => {
     }
   })
 
-  it('the package needs no install', () => {
-    const pkg = JSON.parse(readFileSync(join(SEED, 'package.json'), 'utf8')) as Record<string, unknown>
-    for (const key of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) expect(pkg[key]).toBeUndefined()
-    expect((pkg.scripts as Record<string, string>).test).toBe('node --test')
-    expect(pkg.type).toBe('module')
+  it('workspace layout', () => {
+    const root = readJson(join(SEED, 'package.json'))
+    const rootScripts = root.scripts as Record<string, string>
+    expect(root.private).toBe(true)
+    expect(root.workspaces).toEqual(['api'])
+    expect((root.engines as Record<string, string>).node).toBe('^24.15.0')
+    expect(rootScripts.typecheck).toBe('npm run typecheck --workspaces --if-present')
+    expect(rootScripts.test).toBe('npm test --workspaces --if-present')
+    for (const key of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) expect(root[key]).toBeUndefined()
+
+    const api = readJson(join(SEED, 'api', 'package.json'))
+    for (const key of ['dependencies', 'peerDependencies', 'optionalDependencies']) expect(api[key]).toBeUndefined()
+    expect(api.devDependencies).toEqual({ '@types/node': '22.20.5', typescript: '6.0.3' })
+    expect((api.scripts as Record<string, string>).typecheck).toBe('tsc --noEmit')
+    expect((api.scripts as Record<string, string>).test).toBe('node --test')
+
+    const lockNames = [...new Set(seedFiles().map(entry => basename(entry)).filter(name => LOCK_NAMES.includes(name)))]
+    expect(lockNames).toEqual(['package-lock.json'])
+    const lock = readJson(join(SEED, 'package-lock.json'))
+    expect(lock.lockfileVersion).toBe(3)
+    const packages = lock.packages as Record<string, { workspaces?: string[]; version?: string; optional?: boolean }>
+    expect(packages['']?.workspaces).toEqual(['api'])
+    expect(packages['node_modules/typescript']?.version).toBe('6.0.3')
+    expect(packages['node_modules/@types/node']?.version).toBe('22.20.5')
+    expect(Object.values(packages).some(entry => entry.optional === true)).toBe(false)
+
+    expect(loadSeed(false).length).toBeGreaterThanOrEqual(38)
+    expect(loadSeed(false).length).toBeLessThanOrEqual(46)
+    expect(apiFiles('src', '.ts').length).toBeGreaterThanOrEqual(22)
+    expect(apiFiles('src', '.ts').length).toBeLessThanOrEqual(28)
+    expect(apiFiles('test', '.ts').length).toBeGreaterThanOrEqual(10)
+    expect(apiFiles('test', '.ts').length).toBeLessThanOrEqual(12)
+  })
+
+  it('seed version matches the fixture', () => {
+    const files = loadSeed(false)
+    const recorded = readFileSync(join(SEED, '.seed-version'), 'utf8').trim()
+    expect(recorded).toBe(seedVersion(files))
+    const changed = files.map(file => (file.path === 'README.md' ? { ...file, content: file.content + '\n' } : file))
+    expect(seedVersion(changed)).not.toBe(recorded)
+  })
+
+  it('seed README states what the repository is', () => {
+    expect(readmeProblems(readFileSync(join(SEED, 'README.md'), 'utf8'))).toEqual([])
+  })
+
+  it('seed typechecks with the pinned types', () => {
+    const apiDev = (readJson(join(SEED, 'api', 'package.json')).devDependencies ?? {}) as Record<string, string>
+    const rootTypescript = readJson(join(ROOT, 'node_modules', 'typescript', 'package.json')).version
+    const rootTypes = readJson(join(ROOT, 'node_modules', '@types', 'node', 'package.json')).version
+    if (rootTypescript !== apiDev.typescript || rootTypes !== apiDev['@types/node']) throw new Error('root and seed pins differ')
+    const result = spawnSync(process.execPath, [join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(SEED, 'api', 'tsconfig.json'), '--noEmit'], { encoding: 'utf8' })
+    expect(result.status, result.stdout + result.stderr).toBe(0)
+  })
+
+  it('exactly one deprecated API in the seed source', () => {
+    const parsed = ts.getParsedCommandLineOfConfigFile(join(SEED, 'api', 'tsconfig.json'), {}, { ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => {} })
+    if (!parsed) throw new Error('seed tsconfig not readable')
+    const sources = parsed.fileNames.filter(file => /[\\/]api[\\/]src[\\/].+\.ts$/.test(file))
+    const host: ts.LanguageServiceHost = {
+      getScriptFileNames: () => parsed.fileNames,
+      getScriptVersion: () => '1',
+      getScriptSnapshot: file => (ts.sys.fileExists(file) ? ts.ScriptSnapshot.fromString(ts.sys.readFile(file) ?? '') : undefined),
+      getCurrentDirectory: () => join(SEED, 'api'),
+      getCompilationSettings: () => parsed.options,
+      getDefaultLibFileName: options => ts.getDefaultLibFilePath(options),
+      fileExists: ts.sys.fileExists,
+      readFile: ts.sys.readFile,
+      readDirectory: ts.sys.readDirectory,
+      directoryExists: ts.sys.directoryExists,
+      getDirectories: ts.sys.getDirectories,
+    }
+    const service = ts.createLanguageService(host)
+    const deprecated = sources.flatMap(file =>
+      service
+        .getSuggestionDiagnostics(file)
+        .filter(diagnostic => diagnostic.reportsDeprecated)
+        .map(diagnostic => ({ file, text: ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })),
+    )
+    expect(deprecated.length).toBeGreaterThanOrEqual(1)
+    expect(new Set(deprecated.map(entry => entry.file)).size).toBe(1)
+    expect(deprecated.every(entry => entry.file.endsWith(join('api', 'src', 'log', 'line-buffer.ts')) && entry.text.includes('SlowBuffer'))).toBe(true)
+    const occurrences = sources.reduce((count, file) => count + [...readFileSync(file, 'utf8').matchAll(/new SlowBuffer\(/g)].length, 0)
+    expect(occurrences).toBe(1)
   })
 
   it('seed tests pass', async () => {
     const dir = scratch()
     try {
       cpSync(SEED, dir, { recursive: true })
-      expect((await runNodeTests(dir)).code).toBe(0)
+      const result = await runNodeTests(dir)
+      expect(result.code).toBe(0)
+      expect(result.output).toMatch(/^(# |ℹ )fail 0$/m)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
   })
 
-  it('the planted bug is reproducible', async () => {
+  it('the paging defect is reproducible', async () => {
     const dir = scratch()
     try {
       cpSync(SEED, dir, { recursive: true })
-      writeFileSync(
-        join(dir, 'test', 'fits.test.js'),
-        "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { truncate } from '../src/text.js'\n\ntest('text that fits stays', () => assert.equal(truncate('hello', 5), 'hello'))\n",
-      )
+      writeFileSync(join(dir, 'api', 'test', 'all-pages.test.ts'), ALL_PAGES_TEST)
       expect((await runNodeTests(dir)).code).not.toBe(0)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
   })
 
-  it('titleCase is not there yet', async () => {
-    const mod = (await import(pathToFileURL(join(SEED, 'src', 'text.js')).href)) as Record<string, unknown>
-    expect(Object.keys(mod)).not.toContain('titleCase')
+  it('the date test fails only with a pinned clock', async () => {
+    const dir = scratch()
+    try {
+      cpSync(SEED, dir, { recursive: true })
+      const result = await runNodeTests(dir, 180_000, { FAKE_NOW: '2001-01-01T12:00:00Z' })
+      expect(result.code).not.toBe(0)
+      expect(result.output).toMatch(/^(# |ℹ )fail 1$/m)
+      expect(result.output).toContain('a task due today counts as due today')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('partial update is not there yet', () => {
+    expect(readFileSync(join(SEED, 'api', 'src', 'http', 'routes', 'tasks.ts'), 'utf8')).not.toContain('PATCH')
+    expect(readFileSync(join(SEED, 'api', 'src', 'services', 'task-service.ts'), 'utf8')).not.toMatch(/\bupdate\s*\(/)
+  })
+
+  it('live config allows the npm registry and raises the limits', () => {
+    const dir = scratch()
+    try {
+      const path = join(dir, 'superagent-claude.json')
+      writeFileSync(path, JSON.stringify(liveConfig({ repo: 'ok0/superagent-claude-playground', owner: 'ok0', stateDir: join(dir, 'state') })))
+      const config = loadConfig(path, {})
+      expect(config.network.allow).toContain('registry.npmjs.org')
+      expect(config.workers.maxTurns).toBeGreaterThan(60)
+      expect(config.workers.maxBudgetUsd).toBeGreaterThan(3)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('seed rules', () => {
+  const README = readFileSync(join(SEED, 'README.md'), 'utf8')
+
+  it('README rules reject a sample without each clause', () => {
+    expect(readmeProblems(README)).toEqual([])
+    expect(readmeProblems(README.replace('test playground for superagent-claude', 'sample repository')).length).toBeGreaterThan(0)
+    expect(readmeProblems(README.replace('It is not a real project:', 'Note:')).length).toBeGreaterThan(0)
+    expect(readmeProblems(README.replace('opened and closed by automated tests', 'welcome')).length).toBeGreaterThan(0)
+  })
+
+  it('seedVersion is stable under file order and changes with content', () => {
+    const files = loadSeed(false)
+    expect(seedVersion([...files].reverse())).toBe(seedVersion(files))
+    const edited = files.map(file => (file.path === 'README.md' ? { ...file, content: file.content + 'x' } : file))
+    expect(seedVersion(edited)).not.toBe(seedVersion(files))
+  })
+
+  it('attribution lines are rejected', () => {
+    expect(attributionProblems('b', 'text\nCo-Authored-By: Claude <noreply@anthropic.com>').length).toBeGreaterThan(0)
+    expect(attributionProblems('b', 'plain')).toEqual([])
   })
 })
 

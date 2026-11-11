@@ -5,5 +5,6 @@
     "verbatimModuleSyntax": true, "allowImportingTsExtensions": true, "erasableSyntaxOnly": true,
     "resolveJsonModule": true, "noEmit": true, "types": ["node"]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts", "tsdown.config.ts", "vitest.config.ts", "spikes/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts", "tsdown.config.ts", "vitest.config.ts", "spikes/**/*.ts"],
+  "exclude": ["tests/live/fixtures/**"]
 }

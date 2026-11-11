@@ -1,14 +1,14 @@
 {
-  "name": "text-utils",
-  "version": "0.1.0",
-  "description": "Small string helpers used as a sandbox for automated changes.",
+  "name": "task-tracker",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "scripts": {
-    "test": "node --test"
-  },
+  "workspaces": ["api"],
   "engines": {
-    "node": ">=20"
+    "node": "^24.15.0"
   },
-  "license": "MIT"
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm test --workspaces --if-present"
+  }
 }

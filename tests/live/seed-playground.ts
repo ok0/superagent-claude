@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ghJson, ghLocalJson, ghRaw, ghStatus, localIdentity, type Runner } from './gh.ts'
 import { assertAllowedRepo } from './guard.ts'
-import { assertClean, blobSha, ciBlockedLabel, commitProblems, preflight, seedPlan, WORKFLOW_PATH, type PreflightMissing, type SeedFile } from './rules.ts'
+import { assertClean, blobSha, ciBlockedLabel, commitProblems, preflight, SEED_VERSION_PATH, seedPlan, WORKFLOW_PATH, type PreflightMissing, type SeedFile } from './rules.ts'
 
 export const PLAYGROUND = assertAllowedRepo('ok0/superagent-claude-playground')
 
@@ -30,6 +30,7 @@ export function loadSeed(withCi: boolean): SeedFile[] {
 export interface SeedOptions {
   token: string
   withoutCi: boolean
+  upgrade?: boolean
   run?: Runner
   out: (line: string) => void
   recordDir?: string
@@ -50,6 +51,7 @@ interface SeedRecord {
   files?: number
   problems?: string[]
   commits?: SeedCommit[]
+  removed?: string[]
   local?: { login: string | null }
 }
 
@@ -75,6 +77,96 @@ async function reportCi(o: SeedOptions, sha: string): Promise<{ verdict: 'succes
     if (Date.now() >= deadline) return { verdict: 'timeout', runs: runs.length }
     await new Promise(resolveSleep => setTimeout(resolveSleep, pollMs))
   }
+}
+
+const gitMessage = 'feat: add a task tracker api workspace'
+const workflowMessage = 'ci: add test workflow'
+const UPGRADE_MESSAGE = 'feat: replace the seed with a task tracker api workspace'
+const WORKFLOW_UPDATE_MESSAGE = 'ci: install, typecheck and test every workspace'
+
+interface UpgradeContext {
+  branch: string
+  head: string
+  treeSha: string
+  remote: Map<string, string>
+  expected: SeedFile[]
+  withCi: boolean
+  ci: string
+  pfMissing: PreflightMissing[]
+  pfActions: string[]
+  localRecord: { login: string | null }
+}
+
+async function upgradeSeed(o: SeedOptions, ctx: UpgradeContext): Promise<number> {
+  const P = PLAYGROUND
+  const run = o.run
+  const pkg = ctx.expected.filter(file => file.path !== WORKFLOW_PATH)
+  for (const file of pkg) assertClean(file.path, file.content)
+  const changed = pkg.filter(file => ctx.remote.get(file.path) !== blobSha(file.content))
+  const removed = [...ctx.remote.keys()].filter(path => !path.startsWith('.github/workflows/') && !pkg.some(file => file.path === path)).sort()
+  const workflow = ctx.expected.find(file => file.path === WORKFLOW_PATH)
+  const workflowChange = workflow !== undefined && ctx.remote.get(WORKFLOW_PATH) !== blobSha(workflow.content)
+  const workflowCommitMessage = ctx.remote.has(WORKFLOW_PATH) ? WORKFLOW_UPDATE_MESSAGE : workflowMessage
+  const messages = [UPGRADE_MESSAGE, workflowChange ? workflowCommitMessage : undefined]
+  for (const message of messages) {
+    if (message === undefined) continue
+    const problems = commitProblems(message)
+    if (problems.length > 0) throw new Error(problems.join('; '))
+  }
+
+  const blobs: { path: string; sha: string }[] = []
+  for (const file of changed) {
+    const blob = await ghJson<{ sha: string }>(o.token, ['repos/' + P + '/git/blobs', '-X', 'POST', '--input', '-'], {
+      run,
+      input: JSON.stringify({ content: Buffer.from(file.content, 'utf8').toString('base64'), encoding: 'base64' }),
+    })
+    blobs.push({ path: file.path, sha: blob.sha })
+  }
+  const newTree = await ghJson<{ sha: string }>(o.token, ['repos/' + P + '/git/trees', '-X', 'POST', '--input', '-'], {
+    run,
+    input: JSON.stringify({
+      base_tree: ctx.treeSha,
+      tree: [
+        ...blobs.map(blob => ({ path: blob.path, mode: '100644', type: 'blob', sha: blob.sha })),
+        ...removed.map(path => ({ path, mode: '100644', type: 'blob', sha: null })),
+      ],
+    }),
+  })
+  const commit = await ghJson<{ sha: string }>(o.token, ['repos/' + P + '/git/commits', '-X', 'POST', '--input', '-'], {
+    run,
+    input: JSON.stringify({ message: UPGRADE_MESSAGE, tree: newTree.sha, parents: [ctx.head] }),
+  })
+  await ghJson(o.token, ['repos/' + P + '/git/refs/heads/' + ctx.branch, '-X', 'PATCH', '--input', '-'], {
+    run,
+    input: JSON.stringify({ sha: commit.sha, force: false }),
+  })
+  const commits: SeedCommit[] = [{ sha: commit.sha, via: 'owner', paths: [...changed.map(file => file.path), ...removed], message: UPGRADE_MESSAGE }]
+  let current = commit.sha
+
+  if (workflow && workflowChange) {
+    const remoteSha = ctx.remote.get(WORKFLOW_PATH)
+    const created = await ghLocalJson<{ commit: { sha: string } }>(['repos/' + P + '/contents/' + WORKFLOW_PATH, '-X', 'PUT', '--input', '-'], {
+      run,
+      input: JSON.stringify({ message: workflowCommitMessage, content: Buffer.from(workflow.content, 'utf8').toString('base64'), branch: ctx.branch, ...(remoteSha ? { sha: remoteSha } : {}) }),
+    })
+    current = created.commit.sha
+    commits.push({ sha: current, via: 'local-gh', paths: [WORKFLOW_PATH], message: workflowCommitMessage })
+  }
+
+  o.out('STATUS: UPGRADED commits=' + commits.length + ' head=' + current)
+  for (const entry of commits) o.out('commit: ' + entry.sha + ' via=' + entry.via + ' files=' + entry.paths.length)
+  for (const path of removed) o.out('removed: ' + path)
+
+  let code = 0
+  let ci = ctx.ci
+  if (ctx.withCi) {
+    const report = await reportCi(o, current)
+    o.out('CI: ' + report.verdict + ' runs=' + report.runs)
+    ci = report.verdict
+    code = report.verdict === 'success' ? 0 : 1
+  }
+  writeRecord(o, { repo: P, status: 'UPGRADED', ci, missing: ctx.pfMissing, actions: ctx.pfActions, head: ctx.head, commit: current, files: changed.length, removed, commits, local: ctx.localRecord })
+  return code
 }
 
 export async function runSeed(o: SeedOptions): Promise<number> {
@@ -127,6 +219,11 @@ export async function runSeed(o: SeedOptions): Promise<number> {
   }
 
   const expected = loadSeed(withCi)
+  const versionFile = expected.find(file => file.path === SEED_VERSION_PATH)
+  const sameVersion = versionFile !== undefined && remote.get(SEED_VERSION_PATH) === blobSha(versionFile.content)
+  if (o.upgrade && head !== null && treeSha !== null && !sameVersion) {
+    return await upgradeSeed(o, { branch, head, treeSha, remote, expected, withCi, ci, pfMissing, pfActions, localRecord })
+  }
   const plan = seedPlan(expected.map(file => ({ path: file.path, content: blobSha(file.content) })), remote)
 
   if (plan.kind === 'unchanged') {
@@ -145,6 +242,7 @@ export async function runSeed(o: SeedOptions): Promise<number> {
   if (plan.kind === 'diff') {
     o.out('STATUS: DIFF')
     for (const problem of plan.problems) o.out('problem: ' + problem)
+    if (!sameVersion) o.out('action: run node tests/live/seed-playground.ts --upgrade to replace the seed')
     writeRecord(o, { repo: P, status: 'DIFF', ci, missing: pfMissing, actions: pfActions, head: head ?? undefined, problems: plan.problems, local: localRecord })
     return 1
   }
@@ -156,8 +254,6 @@ export async function runSeed(o: SeedOptions): Promise<number> {
   const first = pkg[0]
   const ownerFirst = first !== undefined && head === null ? first : undefined
   const rest = ownerFirst ? pkg.slice(1) : pkg
-  const gitMessage = 'feat: add text utilities with tests'
-  const workflowMessage = 'ci: add test workflow'
   const messages = [ownerFirst ? 'chore: add ' + ownerFirst.path : undefined, rest.length > 0 ? gitMessage : undefined, workflow ? workflowMessage : undefined]
   for (const message of messages) {
     if (message === undefined) continue
@@ -231,9 +327,9 @@ export async function runSeed(o: SeedOptions): Promise<number> {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2)
-  const known = ['--without-ci']
+  const known = ['--without-ci', '--upgrade']
   if (args.some(arg => !known.includes(arg))) {
-    console.error('usage: node tests/live/seed-playground.ts [--without-ci]')
+    console.error('usage: node tests/live/seed-playground.ts [--without-ci] [--upgrade]')
     process.exitCode = 2
   } else if (process.env.SUPERAGENT_CLAUDE_LIVE !== '1' || !process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN) {
     console.log('STATUS: SKIP (set SUPERAGENT_CLAUDE_LIVE=1 and SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN)')
@@ -243,6 +339,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.exitCode = await runSeed({
         token: process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN,
         withoutCi: args.includes('--without-ci'),
+        upgrade: args.includes('--upgrade'),
         out: console.log,
         recordDir: resolve('.docs/acceptance/raw'),
       })

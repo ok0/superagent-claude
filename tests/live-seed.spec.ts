@@ -6,6 +6,7 @@ import type { RunResult, Runner } from './live/gh.ts'
 import { runCleanup } from './live/cleanup-playground.ts'
 import { PLAYGROUND, loadSeed, runSeed } from './live/seed-playground.ts'
 import { WORKFLOW_PATH, blobSha, commitProblems } from './live/rules.ts'
+import { assertApiTarget } from './live/guard.ts'
 
 interface Call { endpoint: string; method: string; input?: string; args: readonly string[]; local: boolean }
 
@@ -86,7 +87,10 @@ function seedRunner(opts: SeedRoute) {
   return { run, calls }
 }
 
-function seedOptions(overrides: SeedRoute & { withoutCi: boolean }) {
+const OLD_SEED = [{ path: 'package.json', sha: 'old-pkg' }, { path: 'src/text.js', sha: 'old-src' }, { path: 'test/text.test.js', sha: 'old-test' }]
+const ciSha = (): string => blobSha(loadSeed(true).find(file => file.path === WORKFLOW_PATH)!.content)
+
+function seedOptions(overrides: SeedRoute & { withoutCi: boolean; upgrade?: boolean }) {
   const { run, calls } = seedRunner(overrides)
   const lines: string[] = []
   return {
@@ -95,6 +99,7 @@ function seedOptions(overrides: SeedRoute & { withoutCi: boolean }) {
     options: {
       token: 'token-under-test',
       withoutCi: overrides.withoutCi,
+      upgrade: overrides.upgrade,
       run,
       out: (line: string) => lines.push(line),
       recordDir: mkdtempSync(join(tmpdir(), 'live-seed-')),
@@ -109,7 +114,7 @@ const P = PLAYGROUND
 function emptyRepositoryWrites(): string[] {
   const expected = loadSeed(false)
   return [
-    'PUT repos/' + P + '/contents/package.json',
+    'PUT repos/' + P + '/contents/' + loadSeed(false)[0]!.path,
     ...expected.slice(1).map(() => 'POST repos/' + P + '/git/blobs'),
     'POST repos/' + P + '/git/trees',
     'POST repos/' + P + '/git/commits',
@@ -149,7 +154,7 @@ describe('live seed', () => {
   it('unchanged seed makes no commit', async () => {
     const remote = seedRemote([
       ...loadSeed(true).map(file => ({ path: file.path, sha: blobSha(file.content) })),
-      { path: 'README.md', sha: 'readme-sha' },
+      { path: 'NOTES.md', sha: 'notes-sha' },
     ])
     const { options, calls, lines } = seedOptions({ localScopes: ['repo', 'workflow'], remote, withoutCi: false })
     const code = await runSeed(options)
@@ -160,7 +165,7 @@ describe('live seed', () => {
   })
 
   it('different content is reported, not overwritten', async () => {
-    const remote = seedRemote([{ path: 'src/text.js', sha: 'not-the-expected-sha' }])
+    const remote = seedRemote([{ path: 'api/src/http/cursor.ts', sha: 'not-the-expected-sha' }])
     const { options, calls, lines } = seedOptions({ localScopes: ['repo', 'workflow'], remote, withoutCi: false })
     const code = await runSeed(options)
     expect(code).toBe(1)
@@ -212,7 +217,7 @@ describe('live seed', () => {
   it('adds only the workflow through the local gh credential', async () => {
     const remote = seedRemote([
       ...loadSeed(false).map(file => ({ path: file.path, sha: blobSha(file.content) })),
-      { path: 'README.md', sha: 'readme-sha' },
+      { path: 'NOTES.md', sha: 'notes-sha' },
     ])
     const { options, calls, lines } = seedOptions({ localScopes: ['repo', 'workflow'], remote, withoutCi: false })
     const code = await runSeed(options)
@@ -234,7 +239,7 @@ describe('live seed', () => {
     expect(code).toBe(0)
 
     const writes = calls.filter(isWrite)
-    expect(writes[0]).toMatchObject({ method: 'PUT', endpoint: 'repos/' + P + '/contents/package.json', local: false })
+    expect(writes[0]).toMatchObject({ method: 'PUT', endpoint: 'repos/' + P + '/contents/' + loadSeed(false)[0]!.path, local: false })
     expect(writes[writes.length - 1]).toMatchObject({ method: 'PUT', endpoint: 'repos/' + P + '/contents/' + WORKFLOW_PATH, local: true })
     const patch = writes.findIndex(call => call.method === 'PATCH')
     expect(patch).toBeGreaterThanOrEqual(0)
@@ -251,6 +256,107 @@ describe('live seed', () => {
         expect(call.endpoint.startsWith('repos/' + P)).toBe(true)
       }
     }
+  })
+})
+
+describe('live seed upgrade', () => {
+  const upgradeRemote = (files: { path: string; sha: string }[]) => seedRemote(files)
+
+  it('same seed version is a no-op', async () => {
+    const remote = upgradeRemote(loadSeed(true).map(file => ({ path: file.path, sha: blobSha(file.content) })))
+    const { options, calls, lines } = seedOptions({ localScopes: ['repo', 'workflow'], remote, withoutCi: false, upgrade: true })
+    const code = await runSeed(options)
+    expect(code).toBe(0)
+    expect(lines).toContain('STATUS: UNCHANGED head=h1')
+    expect(calls.filter(isWrite)).toHaveLength(0)
+  })
+
+  it('replaces an older seed in one commit and leaves the workflow alone', async () => {
+    const remote = upgradeRemote([...OLD_SEED, { path: WORKFLOW_PATH, sha: ciSha() }])
+    const { options, calls, lines } = seedOptions({ localScopes: ['repo', 'workflow'], remote, withoutCi: false, upgrade: true })
+    const code = await runSeed(options)
+    expect(code).toBe(0)
+    expect(lines).toContain('STATUS: UPGRADED commits=1 head=c1')
+
+    const expected = loadSeed(false)
+    const writes = calls.filter(isWrite)
+    expect(writes.map(call => call.method + ' ' + call.endpoint)).toEqual([
+      ...expected.map(() => 'POST repos/' + P + '/git/blobs'),
+      'POST repos/' + P + '/git/trees',
+      'POST repos/' + P + '/git/commits',
+      'PATCH repos/' + P + '/git/refs/heads/main',
+    ])
+    expect(writes.every(call => call.local === false)).toBe(true)
+    expect(writes.some(call => call.input?.includes('"force":true'))).toBe(false)
+
+    const treeCall = writes.find(call => call.endpoint.endsWith('/git/trees'))
+    const tree = JSON.parse(treeCall?.input ?? '{}') as { base_tree: string; tree: { path: string; sha: string | null }[] }
+    expect(tree.base_tree).toBe('t1')
+    expect(tree.tree.find(entry => entry.path === 'src/text.js')?.sha).toBeNull()
+    expect(tree.tree.find(entry => entry.path === 'test/text.test.js')?.sha).toBeNull()
+    expect(tree.tree.some(entry => entry.path.startsWith('.github/workflows/'))).toBe(false)
+    expect(tree.tree.find(entry => entry.path === 'package.json')?.sha).not.toBeNull()
+
+    const commitCall = writes.find(call => call.endpoint.endsWith('/git/commits'))
+    const commit = JSON.parse(commitCall?.input ?? '{}') as { message: string; parents: string[] }
+    expect(commit.parents).toEqual(['h1'])
+    expect(commitProblems(commit.message)).toEqual([])
+
+    const refCall = writes.find(call => call.endpoint.endsWith('/git/refs/heads/main'))
+    expect(JSON.parse(refCall?.input ?? '{}')).toEqual({ sha: 'c1', force: false })
+
+    expect(lines.filter(line => line.startsWith('removed: '))).toEqual(['removed: src/text.js', 'removed: test/text.test.js'])
+  })
+
+  it('a changed workflow goes through local gh as a separate commit', async () => {
+    const remote = upgradeRemote([...OLD_SEED, { path: WORKFLOW_PATH, sha: 'old-ci' }])
+    const { options, calls, lines } = seedOptions({ localScopes: ['repo', 'workflow'], remote, withoutCi: false, upgrade: true })
+    const code = await runSeed(options)
+    expect(code).toBe(0)
+
+    const writes = calls.filter(isWrite)
+    const last = writes[writes.length - 1]
+    expect(last).toMatchObject({ method: 'PUT', endpoint: 'repos/' + P + '/contents/' + WORKFLOW_PATH, local: true })
+    expect(JSON.parse(last?.input ?? '{}')).toMatchObject({ message: 'ci: install, typecheck and test every workspace', branch: 'main', sha: 'old-ci' })
+    const put = JSON.parse(last?.input ?? '{}') as { content: string }
+    expect(Buffer.from(put.content, 'base64').toString('utf8')).toBe(loadSeed(true).find(file => file.path === WORKFLOW_PATH)?.content)
+    expect(lines.filter(line => line.startsWith('commit:'))).toHaveLength(2)
+    expect(lines.some(line => line.startsWith('CI: success'))).toBe(true)
+  })
+
+  it('--without-ci leaves a changed workflow untouched', async () => {
+    const remote = upgradeRemote([...OLD_SEED, { path: WORKFLOW_PATH, sha: 'old-ci' }])
+    const { options, calls } = seedOptions({ localScopes: ['repo', 'workflow'], remote, withoutCi: true, upgrade: true })
+    await runSeed(options)
+    const writes = calls.filter(isWrite)
+    expect(writes.some(call => call.endpoint.includes('.github/workflows'))).toBe(false)
+    expect(writes.some(call => call.local)).toBe(false)
+  })
+
+  it('without --upgrade an older seed is reported, not replaced', async () => {
+    const remote = upgradeRemote(OLD_SEED)
+    const { options, calls, lines } = seedOptions({ localScopes: ['repo', 'workflow'], remote, withoutCi: false })
+    const code = await runSeed(options)
+    expect(code).toBe(1)
+    expect(lines).toContain('STATUS: DIFF')
+    expect(lines.some(line => line.includes('--upgrade'))).toBe(true)
+    expect(calls.filter(isWrite)).toHaveLength(0)
+  })
+
+  it('upgrade stays inside the playground', async () => {
+    const scenarios = [
+      upgradeRemote([...OLD_SEED, { path: WORKFLOW_PATH, sha: ciSha() }]),
+      upgradeRemote([...OLD_SEED, { path: WORKFLOW_PATH, sha: 'old-ci' }]),
+    ]
+    for (const remote of scenarios) {
+      const { options, calls } = seedOptions({ localScopes: ['repo', 'workflow'], remote, withoutCi: false, upgrade: true })
+      await runSeed(options)
+      for (const call of calls) {
+        if (call.endpoint === 'user') continue
+        expect(call.endpoint.startsWith('repos/' + P)).toBe(true)
+      }
+    }
+    expect(() => assertApiTarget(['repos/ok0/other/git/trees', '-X', 'POST'])).toThrow()
   })
 })
 

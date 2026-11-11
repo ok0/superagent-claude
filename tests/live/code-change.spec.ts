@@ -1,5 +1,5 @@
 /**
- * Live code-change scenarios against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth, a bug report and a feature request each become one pull request by the agent account with source and test changes, the new bug test fails on the base code, and a PR review adds a commit to the same branch and ticket. A PR head is judged by the playground CI when the workflow is seeded, otherwise by node --test on the head tree. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1 and the three tokens; never prints a token; all GitHub access goes through the guarded helper; cleanup closes only this run's own issues and pull requests and deletes their agent branches.
+ * Live code-change scenarios against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth, a bug report and a feature request each become one pull request by the agent account with source and test changes, the new bug test fails on the base code, and a PR review adds a commit to the same branch and ticket. A PR head is judged by the playground CI when the workflow is seeded, otherwise by node --test at the root of the head tree (the api workspace tests). Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1 and the three tokens; never prints a token; all GitHub access goes through the guarded helper; cleanup closes only this run's own issues and pull requests and deletes their agent branches.
  */
 import { EventEmitter } from 'node:events'
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -13,7 +13,8 @@ import { openReadOnly } from '../../src/app/store-read.ts'
 import { sleep } from '../fixtures/async.ts'
 import { downloadTree, ghJson, ghStatus, localIdentity } from './gh.ts'
 import { assertAllowedRepo } from './guard.ts'
-import { AGENT_BRANCH, assertClean, changeVerdict, ciVerdict, closesIssue, commitProblems, contentProblems, isTestFile, preflight, runNodeTests, runTag, seedPlan, WORKFLOW_PATH } from './rules.ts'
+import { LIVE_LIMITS, liveConfig } from './code-change-config.ts'
+import { AGENT_BRANCH, assertClean, attributionProblems, changeVerdict, ciVerdict, closesIssue, commitProblems, contentProblems, isTestFile, preflight, runNodeTests, runTag, seedPlan, WORKFLOW_PATH } from './rules.ts'
 import { loadSeed } from './seed-playground.ts'
 
 const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
@@ -23,13 +24,12 @@ const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
 const REPO = assertAllowedRepo('ok0/superagent-claude-playground')
 const AGENT = 'ok0-worker'
 const OWNER = 'ok0'
-const LIMITS = { max: 2, maxTurns: 60, maxBudgetUsd: 3 }
 const RUN = runTag()
-const BUG_TITLE = 'truncate cuts text that already fits'
-const BUG_BODY = `@ok0-worker truncate('hello', 5) in src/text.js returns 'hell…' but should return 'hello' unchanged, because the text already fits. Please fix it, add a test in test/text.test.js that reproduces the problem, make sure npm test passes, and open a pull request.\n\n<!-- live-test ${RUN} -->`
-const FEATURE_TITLE = 'Add a titleCase helper'
-const FEATURE_BODY = `@ok0-worker Please add an exported titleCase(text) function to src/text.js that upper-cases the first letter of every word and keeps the rest as is (titleCase('hello big world') returns 'Hello Big World', titleCase('') returns ''). Add tests for it in test/text.test.js, make sure npm test passes, and open a pull request.\n\n<!-- live-test ${RUN} -->`
-const REVIEW_BODY = 'Please also make truncate return an empty string when max is 0 or negative, and add a test for that case.'
+const BUG_TITLE = 'Paging through tasks drops the last one'
+const BUG_BODY = `@ok0-worker With five tasks, GET /tasks?limit=2 returns two tasks, then two more with nextCursor null, so the fifth task is never listed. A single page drops its last task too. The paging goes through api/src/http/cursor.ts, api/src/http/routes/tasks.ts, api/src/services/task-service.ts and api/src/store/memory-store.ts. Please fix it, add a test under api/test that pages through every task, make sure npm run typecheck and npm test pass at the repository root, and open a pull request.\n\n<!-- live-test ${RUN} -->`
+const FEATURE_TITLE = 'Add partial updates for tasks'
+const FEATURE_BODY = `@ok0-worker Please add PATCH /tasks/:id that changes only the given fields (title, status, dueDate) of a task. Validate them like task creation, return 400 for invalid fields, 404 for an unknown id and 403 when the caller does not own the task, and respond with the updated task. Add a service-level update with unit tests and an HTTP test in api/test, make sure npm run typecheck and npm test pass at the repository root, and open a pull request.\n\n<!-- live-test ${RUN} -->`
+const REVIEW_BODY = 'Please also answer GET /tasks with 400 when limit is 0, negative or not a whole number, and add a test for that case.'
 
 type Line = Record<string, unknown>
 interface PullInfo { number: number; html_url: string; title: string; body?: string | null; state: string; merged?: boolean; created_at: string; user: { login: string }; head: { ref: string; sha: string }; base: { sha: string } }
@@ -209,7 +209,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
 
     dir = mkdtempSync(join(tmpdir(), 'sac-code-change-'))
     configPath = join(dir, 'superagent-claude.json')
-    config = { repositories: [REPO], policy: { allowed: [OWNER], acceptMode: 'auto' }, auth: { mode: 'subscription', owner: OWNER }, delivery: { allowAutoMerge: false }, workers: LIMITS, stateDir: join(dir, 'state') }
+    config = liveConfig({ repo: REPO, owner: OWNER, stateDir: join(dir, 'state') })
     writeFileSync(configPath, JSON.stringify(config, null, 2))
     startedAt = new Date().toISOString()
     done = main(['start', '--config', configPath], {
@@ -245,13 +245,13 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
     }
     evidence.cleanupErrors = cleanupErrors
     try {
-      const serialized = JSON.stringify({ evidence, config, limits: LIMITS, startedAt, warnings: errs })
+      const serialized = JSON.stringify({ evidence, config, limits: LIVE_LIMITS, startedAt, warnings: errs })
       const jsonl = lines.map(line => JSON.stringify(line)).join('\n') + '\n'
       expect(TOKENS.some(token => serialized.includes(token) || jsonl.includes(token))).toBe(false)
       const stem = `code-change-${stamp(new Date(startedAt))}`
       const outDir = join(resolve(import.meta.dirname, '../..'), '.docs', 'acceptance', 'raw')
       mkdirSync(outDir, { recursive: true })
-      writeFileSync(join(outDir, stem + '.json'), JSON.stringify({ config, limits: LIMITS, startedAt, warnings: errs, ...evidence }, null, 2))
+      writeFileSync(join(outDir, stem + '.json'), JSON.stringify({ config, limits: LIVE_LIMITS, startedAt, warnings: errs, ...evidence }, null, 2))
       writeFileSync(join(outDir, stem + '.jsonl'), jsonl)
       expect(cleanupErrors).toEqual([])
     } finally {
@@ -288,8 +288,10 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
       expect(judged.verdict, label + ' PR head judged by ' + judged.mode).toBe('success')
       scenarios.push({ label, issue: issueNumber, pr: pr.number, url: pr.html_url, head: pr.head.sha, files: changed, ci: judged })
     }
-    const featureText = await withTree(featurePr.head.sha, async root => readFileSync(join(root, 'src/text.js'), 'utf8'))
-    expect(featureText).toContain('titleCase')
+    const featureSource = changeVerdict((await filesOf(featurePr.number)).map(f => f.filename)).source
+    expect(new Set(featureSource.map(p => p.split('/').slice(0, 3).join('/'))).size, 'feature touches several modules').toBeGreaterThanOrEqual(2)
+    const routes = await withTree(featurePr.head.sha, async root => readFileSync(join(root, 'api/src/http/routes/tasks.ts'), 'utf8'))
+    expect(routes).toContain('PATCH')
     evidence.scenarios = scenarios
   }, 3_600_000)
 
@@ -368,6 +370,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
       const detail = await owner<PullInfo>(['repos/' + REPO + '/pulls/' + pull.number])
       check(label + ' title', detail.title)
       check(label + ' body', detail.body)
+      problems.push(...attributionProblems(label + ' body', detail.body ?? ''))
       check(label + ' branch', detail.head.ref)
       for (const comment of await owner<{ body?: string | null }[]>(['repos/' + REPO + '/issues/' + pull.number + '/comments?per_page=100'])) check(label + ' comment', comment.body)
       for (const comment of await owner<{ body?: string | null }[]>(['repos/' + REPO + '/pulls/' + pull.number + '/comments?per_page=100'])) check(label + ' review comment', comment.body)
