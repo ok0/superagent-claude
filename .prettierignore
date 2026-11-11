@@ -1,0 +1,7 @@
+lib/
+coverage/
+.ensemble/
+.r/
+.doc/
+.docs/
+tests/live/fixtures/

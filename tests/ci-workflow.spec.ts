@@ -67,6 +67,7 @@ export function workflowProblems(text: string): string[] {
       ['pnpm install --frozen-lockfile', checkSection.includes('pnpm install --frozen-lockfile')],
       ['fetch-depth: 0', checkSection.includes('fetch-depth: 0')],
       ['- run: pnpm typecheck', /^\s+- run: pnpm typecheck$/m.test(checkSection)],
+      ['- run: pnpm format:check', /^\s+- run: pnpm format:check$/m.test(checkSection)],
       ['- run: pnpm test', /^\s+- run: pnpm test$/m.test(checkSection)],
       ['- run: pnpm build', /^\s+- run: pnpm build$/m.test(checkSection)],
       ['- run: pnpm check:branding', /^\s+- run: pnpm check:branding$/m.test(checkSection)],
@@ -124,6 +125,7 @@ describe('ci workflow', () => {
     ['pull_request_target trigger', (t) => t.replace('  pull_request:\n', '  pull_request_target:\n')],
     ['extra permission', (t) => t.replace('  contents: read\n', '  contents: read\n  pull-requests: write\n')],
     ['missing fetch-depth', (t) => t.replace('          fetch-depth: 0\n', '')],
+    ['missing format:check step', (t) => t.replace('      - run: pnpm format:check\n', '')],
     ['missing image job', (t) => t.slice(0, t.indexOf('\n  image:'))],
     ['live env flag', (t) => t + '      - run: SUPERAGENT_CLAUDE_LIVE=1 pnpm test\n'],
     ['non-GitHub token', (t) => t + '    env:\n      NPM_TOKEN: x\n'],
@@ -136,6 +138,6 @@ describe('ci workflow', () => {
   it('check:all chains the CI checks', () => {
     const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string> };
     expect(pkg.scripts['check:all']).toBe('pnpm check && pnpm check:branding && pnpm check:commits');
-    expect(pkg.scripts.check).toBe('pnpm typecheck && pnpm test && pnpm build');
+    expect(pkg.scripts.check).toBe('pnpm typecheck && pnpm format:check && pnpm test && pnpm build');
   });
 });

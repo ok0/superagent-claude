@@ -34,6 +34,7 @@ export const REQUIRED_CONTRIBUTING = [
   'Conventional Commits',
   'No AI attribution',
   'pnpm check:all',
+  '`pnpm format`',
   'docker build -t superagent-claude:local .',
   '](CODE_OF_CONDUCT.md)',
   '## Run live tests against your own playground',

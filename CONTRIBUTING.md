@@ -45,7 +45,9 @@ The live tests write only to the repository you name. Without that setting, ever
 
 ## Checks
 
-`pnpm check:all` runs every check CI runs: typecheck, the offline tests, the build, `check:branding` and `check:commits`. It stops at the first failure and exits non-zero. It does not build the container image.
+`pnpm check:all` runs every check CI runs: typecheck, the format check, the offline tests, the build, `check:branding` and `check:commits`. It stops at the first failure and exits non-zero. It does not build the container image.
+
+Run `pnpm format` to format the TypeScript sources with Prettier. `pnpm format:check` only checks them.
 
 To check the container image locally, you need Docker. CI builds the image but never pushes it.
 

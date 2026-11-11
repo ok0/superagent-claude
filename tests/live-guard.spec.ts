@@ -19,6 +19,20 @@ const files = readdirSync(LIVE_DIR, { recursive: true })
 const text = (name: string): string => readFileSync(join(LIVE_DIR, name), 'utf8')
 const contents = files.map(name => [name, text(name)] as const)
 const withPattern = (pattern: RegExp): string[] => contents.filter(([, body]) => pattern.test(body)).map(([name]) => name)
+const PUT_ARGV = /\[[^[\]]*'PUT'[^[\]]*\]/g
+const putCount = (text: string): number => text.split("'PUT'").length - 1
+function putProblems(name: string, body: string): string[] {
+  if (name === 'guard.ts') return []
+  const problems: string[] = []
+  const argvs = [...body.matchAll(PUT_ARGV)].map(match => match[0])
+  if (argvs.reduce((n, argv) => n + putCount(argv), 0) !== putCount(body)) problems.push(name + ': PUT outside a flat argv array')
+  for (const argv of argvs) {
+    if (name === 'owner-merge.ts' && argv.includes("/merge'")) continue
+    if (!argv.includes('/contents/')) problems.push(name + ': PUT without /contents/: ' + argv)
+    if (name !== 'seed-playground.ts') problems.push(name + ': contents PUT outside the seed script: ' + argv)
+  }
+  return problems
+}
 
 describe('live guard static scan', () => {
   it('only gh.ts spawns gh', () => {
@@ -101,15 +115,17 @@ describe('live guard static scan', () => {
   })
 
   it('contents writes only in the seed script', () => {
-    for (const [name, body] of contents) {
-      for (const line of body.split('\n')) {
-        if (!line.includes("'PUT'")) continue
-        if (name === 'guard.ts') continue
-        if (name === 'owner-merge.ts' && line.includes("/merge'")) continue
-        expect(line, name).toContain('/contents/')
-        expect(name, line.trim()).toBe('seed-playground.ts')
-      }
-    }
+    for (const [name, body] of contents) expect(putProblems(name, body), name).toEqual([])
+    const seed = contents.find(([name]) => name === 'seed-playground.ts')?.[1] ?? ''
+    expect([...seed.matchAll(PUT_ARGV)].length).toBeGreaterThan(0)
+  })
+
+  it('the contents write scan catches PUT outside the seed script and outside argv', () => {
+    expect(putProblems('x.ts', "gh(['repos/a/b/contents/f', '-X', 'PUT'])")).toHaveLength(1)
+    expect(putProblems('seed-playground.ts', "gh(['repos/a/b/pulls/1/merge', '-X', 'PUT'])")).toHaveLength(1)
+    expect(putProblems('seed-playground.ts', "const m = 'PUT'")).toHaveLength(1)
+    expect(putProblems('seed-playground.ts', "gh([\n  'repos/' + P + '/contents/' + f,\n  '-X',\n  'PUT',\n])")).toEqual([])
+    expect(putProblems('owner-merge.ts', "ghRaw(t, [endpoint + '/merge', '-X', 'PUT'])")).toEqual([])
   })
 
   it('local gh credential only in the seed script and read-only checks', () => {

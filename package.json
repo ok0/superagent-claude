@@ -32,7 +32,9 @@
     "test": "vitest run",
     "test:live": "vitest run --config vitest.live.config.ts",
     "test:seed": "SUPERAGENT_CLAUDE_SEED_INSTALL=1 vitest run tests/live-ui-scenarios.spec.ts tests/live-extended-scenarios.spec.ts",
-    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "format": "prettier --write \"**/*.ts\"",
+    "format:check": "prettier --check \"**/*.ts\"",
+    "check": "pnpm typecheck && pnpm format:check && pnpm test && pnpm build",
     "check:all": "pnpm check && pnpm check:branding && pnpm check:commits",
     "check:commits": "node scripts/check-commits.ts",
     "check:branding": "node scripts/check-branding.ts",
@@ -48,6 +50,7 @@
   "packageManager": "pnpm@11.28.11",
   "devDependencies": {
     "@types/node": "22.20.5",
+    "prettier": "3.9.10",
     "tsdown": "0.23.7",
     "typescript": "6.0.3",
     "vitest": "5.1.0"

@@ -207,6 +207,6 @@ describe('package.json metadata', () => {
   it('keeps files and dependencies unchanged', () => {
     expect(pkg.files).toEqual(['lib', 'prompts', 'skills', 'LICENSE', 'NOTICE', 'README.md'])
     expect(Object.keys(pkg.dependencies)).toEqual(['@anthropic-ai/claude-agent-sdk', 'proper-lockfile', 'zod'])
-    expect(Object.keys(pkg.devDependencies)).toEqual(['@types/node', 'tsdown', 'typescript', 'vitest'])
+    expect(Object.keys(pkg.devDependencies)).toEqual(['@types/node', 'prettier', 'tsdown', 'typescript', 'vitest'])
   })
 })
