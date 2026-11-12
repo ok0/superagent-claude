@@ -3,7 +3,7 @@ import * as os from 'node:os'
 import type { ItemResult, SpikeItem } from '../lib/types.ts'
 import { isMain } from '../lib/types.ts'
 
-const META = { id: 'version', req: 'R20', title: 'SDK 버전 고정·최소 요구' }
+const META = { id: 'version', req: 'version', title: 'SDK 버전 고정·최소 요구' }
 const SDK = '@anthropic-ai/claude-agent-sdk'
 
 interface PkgJson {
@@ -101,7 +101,7 @@ async function run(): Promise<ItemResult> {
     deviation: false,
     summary:
       failed.length === 0
-        ? `R20 최소 요구 충족 (SDK ${installed}, CLI ${cliVersion})`
+        ? `최소 요구 충족 (SDK ${installed}, CLI ${cliVersion})`
         : `요구 미충족: ${failed.map(c => c.name).join(', ')}`,
     observations,
     evidence: [],

@@ -11,7 +11,7 @@ import {
 import { isMain, type ItemResult, type SpikeContext, type SpikeItem } from '../lib/types.ts'
 
 const ID = 'steer'
-const REQ = 'R9'
+const REQ = 'steer'
 const TITLE = 'steer 입력 반영 시점 (priority: next)'
 const MARKER = 'PINEAPPLE'
 const ATTEMPTS = 3
@@ -124,7 +124,15 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   return { id: ID, req: REQ, title: TITLE, status, reason, deviation, summary, observations, evidence, attempts, costs }
 }
 
-export const item: SpikeItem = { id: ID, req: REQ, title: TITLE, adrs: 'ADR-5', live: true, estimateUsd: 0.4, run }
+export const item: SpikeItem = {
+  id: ID,
+  req: REQ,
+  title: TITLE,
+  adrs: 'input-delivery',
+  live: true,
+  estimateUsd: 0.4,
+  run,
+}
 
 if (isMain(import.meta.url)) {
   const { runStandalone } = await import('../run.ts')

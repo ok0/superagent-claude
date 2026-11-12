@@ -5,7 +5,7 @@ import type { ItemResult, SpikeContext, SpikeItem } from '../lib/types.ts'
 import { isMain } from '../lib/types.ts'
 import { baseOptions, compact, field, runScenario } from '../lib/session.ts'
 
-const META = { id: 'setting-sources', req: 'R18', title: 'settingSources 격리 (저장소 hook·.mcp.json)' }
+const META = { id: 'setting-sources', req: 'setting-sources', title: 'settingSources 격리 (저장소 hook·.mcp.json)' }
 
 interface CaseSpec {
   name: string
@@ -166,7 +166,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   }
 }
 
-export const item: SpikeItem = { ...META, adrs: 'ADR-7', live: true, estimateUsd: 0.1, run }
+export const item: SpikeItem = { ...META, adrs: 'guard-isolation', live: true, estimateUsd: 0.1, run }
 
 if (isMain(import.meta.url)) {
   const { runStandalone } = await import('../run.ts')

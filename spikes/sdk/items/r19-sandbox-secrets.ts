@@ -6,7 +6,7 @@ import type { ItemResult, SpikeContext, SpikeItem, Status } from '../lib/types.t
 import { isMain } from '../lib/types.ts'
 import { baseOptions, compact, field, runScenario, type TimelineEntry } from '../lib/session.ts'
 
-const META = { id: 'sandbox-secrets', req: 'R19', title: '샌드박스 네트워크·크레덴셜 가시성·예산 상한' }
+const META = { id: 'sandbox-secrets', req: 'sandbox-secrets', title: '샌드박스 네트워크·크레덴셜 가시성·예산 상한' }
 const NET_CMD =
   "curl -sS -m 10 -o /dev/null -w 'HTTP:%{http_code}\\n' https://example.com ; curl -sS -m 10 -o /dev/null -w 'HTTP:%{http_code}\\n' https://www.iana.org"
 const SANDBOX: SandboxSettings = {
@@ -79,7 +79,7 @@ function notRun(id: string, reason: string): NetOutcome {
   return {
     sub: {
       id,
-      req: 'R19',
+      req: 'sandbox-secrets',
       title: `샌드박스 네트워크 (${id})`,
       status: 'NOT-RUN',
       reason,
@@ -149,7 +149,7 @@ async function networkTest(ctx: SpikeContext, id: string): Promise<NetOutcome> {
   return {
     sub: {
       id,
-      req: 'R19',
+      req: 'sandbox-secrets',
       title: `샌드박스 네트워크 (${id})`,
       status: net.status,
       ...(net.reason ? { reason: net.reason } : {}),
@@ -186,7 +186,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   const linuxOut =
     process.platform === 'linux'
       ? await networkTest(ctx, 'a-network-linux')
-      : notRun('a-network-linux', 'Linux 환경 없음 — M11/M19 전 실측 필요')
+      : notRun('a-network-linux', 'Linux 환경 없음 — 샌드박스 적용 전 실측 필요')
   costs.push(...macOut.costs, ...linuxOut.costs)
   evidence.push(...macOut.evidence, ...linuxOut.evidence)
 
@@ -242,7 +242,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   const bFail = v3 !== 'ABSENT'
   const bSub: ItemResult = {
     id: 'b-secret-visibility',
-    req: 'R19',
+    req: 'sandbox-secrets',
     title: '크레덴셜 환경변수 가시성',
     status: bFail ? 'FAIL' : 'PASS',
     deviation: v1 === 'PRESENT',
@@ -265,7 +265,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   if (sandboxLive === undefined) {
     cSub = {
       id: 'c-probe',
-      req: 'R19',
+      req: 'sandbox-secrets',
       title: '샌드박스 가용성 프로브',
       status: 'NOT-RUN',
       reason: 'sandboxed session not run',
@@ -281,7 +281,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
     const blockedProbe = linuxOut.sub.status === 'BLOCKED' || macOut.sub.status === 'BLOCKED'
     cSub = {
       id: 'c-probe',
-      req: 'R19',
+      req: 'sandbox-secrets',
       title: '샌드박스 가용성 프로브',
       status: consistent ? 'PASS' : blockedProbe ? 'BLOCKED' : 'FAIL',
       ...(!consistent && blockedProbe ? { reason: 'sandbox-unavailable' } : {}),
@@ -306,7 +306,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   if (!ctx.supports.maxBudgetUsd) {
     dSub = {
       id: 'd-max-budget',
-      req: 'R19',
+      req: 'sandbox-secrets',
       title: 'maxBudgetUsd 상한 동작',
       status: 'FAIL',
       deviation: false,
@@ -329,7 +329,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
     const ok = subtype.startsWith('error_') && subtype.includes('budget')
     dSub = {
       id: 'd-max-budget',
-      req: 'R19',
+      req: 'sandbox-secrets',
       title: 'maxBudgetUsd 상한 동작',
       status: ok ? 'PASS' : 'FAIL',
       deviation: false,
@@ -365,7 +365,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   }
 }
 
-export const item: SpikeItem = { ...META, adrs: 'ADR-7, ADR-6', live: true, estimateUsd: 0.5, run }
+export const item: SpikeItem = { ...META, adrs: 'guard-isolation, result-budget', live: true, estimateUsd: 0.5, run }
 
 if (isMain(import.meta.url)) {
   const { runStandalone } = await import('../run.ts')

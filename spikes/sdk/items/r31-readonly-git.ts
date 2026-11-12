@@ -8,7 +8,7 @@ import type { ItemResult, SpikeContext, SpikeItem } from '../lib/types.ts'
 import { isMain } from '../lib/types.ts'
 import { baseOptions, compact, field, runScenario } from '../lib/session.ts'
 
-const META = { id: 'readonly-git', req: 'R31', title: '읽기 전용 git 명령 권한' }
+const META = { id: 'readonly-git', req: 'readonly-git', title: '읽기 전용 git 명령 권한' }
 
 const RULES = [
   'Bash(git show:*)',
@@ -274,7 +274,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   }
 }
 
-export const item: SpikeItem = { ...META, adrs: 'ADR-26', live: true, estimateUsd: 0.6, run }
+export const item: SpikeItem = { ...META, adrs: 'readonly-git', live: true, estimateUsd: 0.6, run }
 
 if (isMain(import.meta.url)) {
   const { runStandalone } = await import('../run.ts')

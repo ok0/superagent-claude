@@ -87,7 +87,7 @@ describe('renderReport', () => {
       '## 항목 요약',
       '## 항목별 상세',
       '## 비용',
-      '## 격리 확인 (R3)',
+      '## 격리 확인',
       '## ADR 영향',
       '### 확정 근거 요약',
       '## 알려진 한계',
@@ -108,8 +108,8 @@ describe('renderReport', () => {
 
   it('keeps ADR-5 and ADR-10 conclusions pending without measurements', () => {
     const md = renderReport(fixture())
-    const adr5 = md.split('\n').find(line => line.includes('ADR-5:'))
-    const adr10 = md.split('\n').find(line => line.includes('ADR-10:'))
+    const adr5 = md.split('\n').find(line => line.includes('입력 전달 결정:'))
+    const adr10 = md.split('\n').find(line => line.includes('resume 결정:'))
     expect(adr5).toContain('보류')
     expect(adr10).toContain('보류')
   })
@@ -135,7 +135,7 @@ describe('renderReport', () => {
     const md = renderReport(fixture({}, { status: 'PASS', deviation: true, reason: undefined }))
     expect(tableRows(md).some(line => line.includes('PASS(의미 차이)'))).toBe(true)
     expect(md).toContain('같은 턴 미반영·다음 턴 반영')
-    const adr5 = md.split('\n').find(line => line.includes('ADR-5:'))
+    const adr5 = md.split('\n').find(line => line.includes('입력 전달 결정:'))
     expect(adr5).toContain('대체안 채택(steer)')
   })
 })

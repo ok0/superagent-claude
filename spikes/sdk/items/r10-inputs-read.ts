@@ -3,7 +3,7 @@ import { baseOptions, compact, findEcho, runScenario, type TimelineEntry } from 
 import { isMain, type ItemResult, type SpikeContext, type SpikeItem } from '../lib/types.ts'
 
 const ID = 'inputs-read'
-const REQ = 'R10'
+const REQ = 'inputs-read'
 const TITLE = 'inputsRead 근사: user_message_uuid 에코 위치'
 
 function initLines(init: Record<string, unknown> | undefined): string[] {
@@ -19,7 +19,15 @@ function hitsText(timeline: TimelineEntry[], uuid: string): string {
   return hits.length === 0 ? 'none' : hits.map(h => `${h.type}.${h.field}@${h.index}`).join(',')
 }
 
-export const item: SpikeItem = { id: ID, req: REQ, title: TITLE, adrs: 'ADR-5', live: true, estimateUsd: 0.2, run }
+export const item: SpikeItem = {
+  id: ID,
+  req: REQ,
+  title: TITLE,
+  adrs: 'input-delivery',
+  live: true,
+  estimateUsd: 0.2,
+  run,
+}
 
 async function run(ctx: SpikeContext): Promise<ItemResult> {
   const A = randomUUID()

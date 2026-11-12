@@ -2,7 +2,7 @@ import type { ItemResult, SpikeContext, SpikeItem } from '../lib/types.ts'
 import { isMain } from '../lib/types.ts'
 import { baseOptions, compact, field, runScenario, type TimelineEntry } from '../lib/session.ts'
 
-const META = { id: 'disallowed-tools', req: 'R17', title: 'disallowedTools 도구 제거' }
+const META = { id: 'disallowed-tools', req: 'disallowed-tools', title: 'disallowedTools 도구 제거' }
 const REMOVED = ['AskUserQuestion', 'WebFetch', 'WebSearch', 'Write', 'Edit', 'NotebookEdit', 'Bash']
 
 function toolsOf(init: Record<string, unknown> | undefined): string[] {
@@ -128,7 +128,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   }
 }
 
-export const item: SpikeItem = { ...META, adrs: 'ADR-7', live: true, estimateUsd: 0.15, run }
+export const item: SpikeItem = { ...META, adrs: 'guard-isolation', live: true, estimateUsd: 0.15, run }
 
 if (isMain(import.meta.url)) {
   const { runStandalone } = await import('../run.ts')

@@ -2,80 +2,80 @@ import type { ItemResult, RunRecord, Status } from './types.ts'
 
 export const ADR_RULES: Record<string, { pass: string; deviation: string; fail: string }> = {
   steer: {
-    pass: "steer=priority:'next' 같은 턴 반영 확인 → ADR-5 Decision 확정, 대체안 미채택.",
-    deviation: '같은 턴 미반영·다음 턴 반영 → ADR-5 대체안(steer→followup 강등, inputsRead=다음 턴 시작(UserPromptSubmit)) 채택. 개정 요청: ADR-5 Decision 및 L3c runtime.ts 설명.',
-    fail: '입력 반영·처리 안 됨 → 대체안 채택 + 앱 큐 전달 검토. 개정 요청: ADR-5를 새 ADR로 대체.',
+    pass: "steer=priority:'next' 같은 턴 반영 확인 → 입력 전달 결정 Decision 확정, 대체안 미채택.",
+    deviation: '같은 턴 미반영·다음 턴 반영 → 입력 전달 결정 대체안(steer→followup 강등, inputsRead=다음 턴 시작(UserPromptSubmit)) 채택. 개정 요청: 입력 전달 결정 Decision 및 L3c runtime.ts 설명.',
+    fail: '입력 반영·처리 안 됨 → 대체안 채택 + 앱 큐 전달 검토. 개정 요청: 입력 전달 결정을 새 결정으로 대체.',
   },
   'inputs-read': {
     pass: 'user_message_uuid 에코로 inputsRead 근사 확정.',
-    deviation: '에코 시점이 읽음과 불일치 → inputsRead를 UserPromptSubmit/PostToolBatch 훅 기준으로 개정 요청(ADR-5, events.ts).',
-    fail: '에코 없음 → 훅 기준 inputsRead 대체 채택, ADR-5·events.ts 개정 요청.',
+    deviation: '에코 시점이 읽음과 불일치 → inputsRead를 UserPromptSubmit/PostToolBatch 훅 기준으로 개정 요청(입력 전달 결정, events.ts).',
+    fail: '에코 없음 → 훅 기준 inputsRead 대체 채택, 입력 전달 결정·events.ts 개정 요청.',
   },
   'later-inject': {
     pass: "followup=priority:'later', inject=shouldQuery:false 확정.",
-    deviation: '동작은 하나 병합·전달 시점이 다름 → ADR-5 Consequences 보완 요청.',
-    fail: '매핑 불가 → followup=앱 큐(턴 종료 후 전송), inject=다음 입력 텍스트 병합으로 대체, ADR-5 개정 요청.',
+    deviation: '동작은 하나 병합·전달 시점이 다름 → 입력 전달 결정 Consequences 보완 요청.',
+    fail: '매핑 불가 → followup=앱 큐(턴 종료 후 전송), inject=다음 입력 텍스트 병합으로 대체, 입력 전달 결정 개정 요청.',
   },
   interrupt: {
     pass: 'still_queued 영수증과 이후 처리 확인 → 재전송 금지(id 장부) 유지.',
-    deviation: 'still_queued 메시지가 interrupt 후 처리되지 않음 → 재전송 필요, ADR-5 Consequences 개정 요청.',
-    fail: '영수증 없음 → interrupt 전 대기 입력을 앱 큐에 보류하도록 ADR-5 개정 요청.',
+    deviation: 'still_queued 메시지가 interrupt 후 처리되지 않음 → 재전송 필요, 입력 전달 결정 Consequences 개정 요청.',
+    fail: '영수증 없음 → interrupt 전 대기 입력을 앱 큐에 보류하도록 입력 전달 결정 개정 요청.',
   },
   result: {
-    pass: 'subtype·total_cost_usd·num_turns 의미 확인 → ADR-6 유지, 누적/턴별 결론을 events.ts turnEnded 매핑에 반영.',
-    deviation: 'maxTurns가 세션 누적 단위로 적용 → SDK maxTurns 보조 설정 산정 방식 개정 요청(ADR-6).',
-    fail: 'error_max_turns 유도 불가 또는 값 부재 → 호스트 단독 강제, SDK 보조 설정 제거 개정 요청(ADR-6).',
+    pass: 'subtype·total_cost_usd·num_turns 의미 확인 → 결과·예산 결정 유지, 누적/턴별 결론을 events.ts turnEnded 매핑에 반영.',
+    deviation: 'maxTurns가 세션 누적 단위로 적용 → SDK maxTurns 보조 설정 산정 방식 개정 요청(결과·예산 결정).',
+    fail: 'error_max_turns 유도 불가 또는 값 부재 → 호스트 단독 강제, SDK 보조 설정 제거 개정 요청(결과·예산 결정).',
   },
   'background-bash': {
-    pass: 'run_in_background 즉시 반환 + task-notification 후속 턴 확인 → ADR-5 백그라운드 결정 확정.',
-    deviation: '후속 턴 도착 시점·스키마 상이 → turnEnded 판정 규칙 개정 요청(ADR-5).',
-    fail: '후속 턴 없음 → 백그라운드 완료 감지 대체 설계(backgroundTasks/폴링) 필요, ADR-5 개정 요청.',
+    pass: 'run_in_background 즉시 반환 + task-notification 후속 턴 확인 → 입력 전달 결정 백그라운드 결정 확정.',
+    deviation: '후속 턴 도착 시점·스키마 상이 → turnEnded 판정 규칙 개정 요청(입력 전달 결정).',
+    fail: '후속 턴 없음 → 백그라운드 완료 감지 대체 설계(backgroundTasks/폴링) 필요, 입력 전달 결정 개정 요청.',
   },
   resume: {
-    pass: 'resume 시 변경 systemPrompt 반영 → ADR-10 Decision 확정.',
-    deviation: 'resume 시 첫 프롬프트 재사용 → ADR-10 개정 요청: resume 후 notice inject로 최신 팀 섹션 전달, 강제 적용은 새 세션.',
-    fail: '같은 cwd resume에서 기억 상실 → ADR-10 및 recovery 재개 설계 개정 요청.',
+    pass: 'resume 시 변경 systemPrompt 반영 → resume 결정 Decision 확정.',
+    deviation: 'resume 시 첫 프롬프트 재사용 → resume 결정 개정 요청: resume 후 notice inject로 최신 팀 섹션 전달, 강제 적용은 새 세션.',
+    fail: '같은 cwd resume에서 기억 상실 → resume 결정 및 recovery 재개 설계 개정 요청.',
   },
   'pretooluse-guard': {
-    pass: 'deny·예외 모두 차단(fail-closed) 확인 → ADR-7 가드 유지.',
+    pass: 'deny·예외 모두 차단(fail-closed) 확인 → 가드·격리 결정 가드 유지.',
     deviation: '대조군(onFailure 미지정)도 차단 → 기본값 차이 기록, 설계 영향 없음.',
-    fail: '예외 시 통과 또는 deny 무시 → 가드 콜백 내부 try/catch로 deny 반환 규칙 추가, ADR-7 개정 요청.',
+    fail: '예외 시 통과 또는 deny 무시 → 가드 콜백 내부 try/catch로 deny 반환 규칙 추가, 가드·격리 결정 개정 요청.',
   },
   'disallowed-tools': {
-    pass: 'disallowedTools로 도구 제거 확인 → ADR-7·options.ts 유지.',
-    deviation: '제거 확인, AskUserQuestion은 헤드리스 기본 미제공(disallow 중복, 무해) → ADR-7 유지.',
-    fail: '제거 안 됨 → PreToolUse 가드로 해당 도구 deny 추가, ADR-7 개정 요청.',
+    pass: 'disallowedTools로 도구 제거 확인 → 가드·격리 결정·options.ts 유지.',
+    deviation: '제거 확인, AskUserQuestion은 헤드리스 기본 미제공(disallow 중복, 무해) → 가드·격리 결정 유지.',
+    fail: '제거 안 됨 → PreToolUse 가드로 해당 도구 deny 추가, 가드·격리 결정 개정 요청.',
   },
   'setting-sources': {
-    pass: 'settingSources:[]에서 저장소 hook·.mcp.json 비실행, 대조군 실행 확인 → ADR-7 유지.',
+    pass: 'settingSources:[]에서 저장소 hook·.mcp.json 비실행, 대조군 실행 확인 → 가드·격리 결정 유지.',
     deviation: '일부만 확인 → 미확인 경로 추가 격리 요청.',
-    fail: '실행됨 또는 대조군 무효 → worktree의 .claude/·.mcp.json 격리 조치 추가, ADR-7 개정 요청.',
+    fail: '실행됨 또는 대조군 무효 → worktree의 .claude/·.mcp.json 격리 조치 추가, 가드·격리 결정 개정 요청.',
   },
   'sandbox-secrets': {
-    pass: '샌드박스 네트워크 차단/allow, probe 일치, maxBudgetUsd 지원 확인 → ADR-7·ADR-6 유지.',
-    deviation: '워커 Bash에서 크레덴셜 env 가시 → env 제거 훅을 기본 가드에 추가하도록 ADR-7 개정 요청(우회 가능성 명시).',
-    fail: '차단 실패 또는 maxBudgetUsd 미지원 → 샌드박스 불가 취급(auto 거부 규칙) 또는 ADR-6 SDK 예산 보조 설정 제거 개정 요청.',
+    pass: '샌드박스 네트워크 차단/allow, probe 일치, maxBudgetUsd 지원 확인 → 가드·격리 결정·결과·예산 결정 유지.',
+    deviation: '워커 Bash에서 크레덴셜 env 가시 → env 제거 훅을 기본 가드에 추가하도록 가드·격리 결정 개정 요청(우회 가능성 명시).',
+    fail: '차단 실패 또는 maxBudgetUsd 미지원 → 샌드박스 불가 취급(auto 거부 규칙) 또는 결과·예산 결정 SDK 예산 보조 설정 제거 개정 요청.',
   },
   version: {
-    pass: 'R20 최소 요구 충족.',
+    pass: '최소 요구 충족.',
     deviation: '',
     fail: '요구 미충족 → 고정 버전 재선정 필요.',
   },
 }
 
 const SANDBOX_SUB_FAIL: Record<string, string> = {
-  'a-network-macos': '네트워크 allowlist 차단 실패, ADR-7 영향 검토',
-  'a-network-linux': '네트워크 allowlist 차단 실패, ADR-7 영향 검토',
+  'a-network-macos': '네트워크 allowlist 차단 실패, 가드·격리 결정 영향 검토',
+  'a-network-linux': '네트워크 allowlist 차단 실패, 가드·격리 결정 영향 검토',
   'b-secret-visibility': '크레덴셜 가시',
   'c-probe': 'probe 불일치',
   'd-max-budget': 'maxBudgetUsd 미지원',
 }
 const SANDBOX_FINDING =
-  'R19a 관측: 샌드박스 네트워크 allowlist는 permissionMode가 bypassPermissions가 아닐 때만 비허용 도메인을 차단한다(bypass에서는 ask가 자동 허용). M11은 bypassPermissions와 네트워크 샌드박스 의존을 결합하지 않고, dontAsk + 명시 allow 목록 또는 canUseTool deny를 사용한다. ADR-7 blueprint 개정 노트 요청.'
-const PENDING_RULE = "판정 보류 — live 실행 후 재생성 필요; blueprint의 'M2에서 확정' 문구는 유지"
+  '관측: 샌드박스 네트워크 allowlist는 permissionMode가 bypassPermissions가 아닐 때만 비허용 도메인을 차단한다(bypass에서는 ask가 자동 허용). 구현은 bypassPermissions와 네트워크 샌드박스 의존을 결합하지 않고, dontAsk + 명시 allow 목록 또는 canUseTool deny를 사용한다. 가드·격리 결정 개정 노트 요청.'
+const PENDING_RULE = "판정 보류 — live 실행 후 재생성 필요"
 const ADR5_IDS = ['steer', 'inputs-read', 'later-inject', 'interrupt', 'background-bash']
 const NOT_MEASURED_LIMITS = [
-  'Linux 샌드박스 미측정: M11/M19 전에 실측이 필요하다.',
+  'Linux 샌드박스 미측정: 샌드박스 적용 전에 실측이 필요하다.',
   '모델 행동 항목은 3회 시도 다수결이므로 재현성이 낮다.',
   '샌드박스 불가 케이스는 macOS에서 재현할 수 없다.',
   'SDK 버전은 1개만 측정했다.',
@@ -190,7 +190,7 @@ export function renderReport(run: RunRecord): string {
   }
   line()
 
-  line('## 사전 점검 (R6–R8)')
+  line('## 사전 점검')
   line()
   line(`- live: ${run.preflight.live ? 'true' : 'false'}`)
   for (const problem of run.preflight.problems) line(`- ${problem}`)
@@ -198,7 +198,7 @@ export function renderReport(run: RunRecord): string {
 
   line('## 항목 요약')
   line()
-  line('| 항목 ID | R# | 상태 | 한 줄 결과 |')
+  line('| 항목 ID | 영역 | 상태 | 한 줄 결과 |')
   line('| --- | --- | --- | --- |')
   for (const item of run.items) {
     line(`| ${item.id} | ${item.req} | ${statusCell(item)} | ${cell(item.summary)} |`)
@@ -263,7 +263,7 @@ export function renderReport(run: RunRecord): string {
   }
   line()
 
-  line('## 격리 확인 (R3)')
+  line('## 격리 확인')
   line()
   line(`- 확인 수행: ${run.isolation.checked ? '예' : '아니오'}`)
   for (const note of run.isolation.notes) line(`- ${note}`)
@@ -287,10 +287,10 @@ export function renderReport(run: RunRecord): string {
   line()
   line('### 확정 근거 요약')
   line()
-  line(`- ADR-5: ${adr5Conclusion(run)}`)
-  line(`- ADR-10: ${adr10Conclusion(run)}`)
+  line(`- 입력 전달 결정: ${adr5Conclusion(run)}`)
+  line(`- resume 결정: ${adr10Conclusion(run)}`)
   line()
-  line('blueprint는 M2에서 편집하지 않는다. 개정은 요청으로만 기록한다.')
+  line('개정은 요청으로만 기록한다.')
   line()
 
   line('## 알려진 한계')

@@ -5,7 +5,7 @@ import type { ItemResult, SpikeContext, SpikeItem, Status } from '../lib/types.t
 import { isMain } from '../lib/types.ts'
 import { baseOptions, compact, runScenario } from '../lib/session.ts'
 
-const META = { id: 'pretooluse-guard', req: 'R16', title: 'PreToolUse 가드 deny·예외 fail-closed' }
+const META = { id: 'pretooluse-guard', req: 'pretooluse-guard', title: 'PreToolUse 가드 deny·예외 fail-closed' }
 
 interface CaseSpec {
   name: string
@@ -34,7 +34,7 @@ function guard(mode: 'deny' | 'throw'): { cb: HookCallback; count: () => number 
 }
 
 function subMeta(spec: CaseSpec): { id: string; req: string; title: string } {
-  return { id: spec.name, req: 'R16', title: `PreToolUse 가드 (${spec.name})` }
+  return { id: spec.name, req: spec.name, title: `PreToolUse 가드 (${spec.name})` }
 }
 
 async function runCase(ctx: SpikeContext, spec: CaseSpec): Promise<ItemResult> {
@@ -174,7 +174,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   }
 }
 
-export const item: SpikeItem = { ...META, adrs: 'ADR-7', live: true, estimateUsd: 0.25, run }
+export const item: SpikeItem = { ...META, adrs: 'guard-isolation', live: true, estimateUsd: 0.25, run }
 
 if (isMain(import.meta.url)) {
   const { runStandalone } = await import('../run.ts')

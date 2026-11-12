@@ -3,7 +3,7 @@ import { baseOptions, compact, runScenario, textOf, type ScenarioControl, type T
 import { isMain, type ItemResult, type SpikeContext, type SpikeItem } from '../lib/types.ts'
 
 const ID = 'later-inject'
-const REQ = 'R11'
+const REQ = 'later-inject'
 const TITLE = 'later 큐 전달 및 inject(shouldQuery:false) 확인'
 
 function initLines(init: Record<string, unknown> | undefined): string[] {
@@ -14,7 +14,15 @@ function initLines(init: Record<string, unknown> | undefined): string[] {
   ]
 }
 
-export const item: SpikeItem = { id: ID, req: REQ, title: TITLE, adrs: 'ADR-5', live: true, estimateUsd: 0.2, run }
+export const item: SpikeItem = {
+  id: ID,
+  req: REQ,
+  title: TITLE,
+  adrs: 'input-delivery',
+  live: true,
+  estimateUsd: 0.2,
+  run,
+}
 
 async function run(ctx: SpikeContext): Promise<ItemResult> {
   const A = randomUUID()

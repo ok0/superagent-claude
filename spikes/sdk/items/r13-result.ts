@@ -2,7 +2,7 @@ import { baseOptions, compact, runScenario, type ScenarioOutcome, type TimelineE
 import { isMain, type ItemResult, type SpikeContext, type SpikeItem } from '../lib/types.ts'
 
 const ID = 'result'
-const REQ = 'R13'
+const REQ = 'result'
 const TITLE = 'result 메시지 의미 (비용·턴·maxTurns)'
 
 type CostModel = 'cumulative' | 'per-turn' | 'unknown'
@@ -42,7 +42,15 @@ function subtypesOf(outcome: ScenarioOutcome): string {
   return outcome.results.map(r => r.result?.subtype ?? 'none').join(',') || 'none'
 }
 
-export const item: SpikeItem = { id: ID, req: REQ, title: TITLE, adrs: 'ADR-6', live: true, estimateUsd: 0.35, run }
+export const item: SpikeItem = {
+  id: ID,
+  req: REQ,
+  title: TITLE,
+  adrs: 'result-budget',
+  live: true,
+  estimateUsd: 0.35,
+  run,
+}
 
 async function run(ctx: SpikeContext): Promise<ItemResult> {
   const repoA = ctx.newRepo(`${ID}-a`)

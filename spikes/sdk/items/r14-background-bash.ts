@@ -4,7 +4,7 @@ import { baseOptions, compact, runScenario, type ScenarioOutcome, type TimelineE
 import { isMain, type ItemResult, type SpikeContext, type SpikeItem } from '../lib/types.ts'
 
 const ID = 'background-bash'
-const REQ = 'R14'
+const REQ = 'background-bash'
 const TITLE = 'run_in_background 즉시 반환 및 후속 턴 확인'
 const ATTEMPTS = 3
 const PROMPT =
@@ -143,7 +143,15 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   }
 }
 
-export const item: SpikeItem = { id: ID, req: REQ, title: TITLE, adrs: 'ADR-5', live: true, estimateUsd: 0.4, run }
+export const item: SpikeItem = {
+  id: ID,
+  req: REQ,
+  title: TITLE,
+  adrs: 'input-delivery',
+  live: true,
+  estimateUsd: 0.4,
+  run,
+}
 
 if (isMain(import.meta.url)) {
   const { runStandalone } = await import('../run.ts')

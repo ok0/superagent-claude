@@ -2,7 +2,7 @@ import type { ItemResult, SpikeContext, SpikeItem } from '../lib/types.ts'
 import { isMain } from '../lib/types.ts'
 import { baseOptions, compact, field, runScenario, textOf } from '../lib/session.ts'
 
-const META = { id: 'resume', req: 'R15', title: 'resume 시 기억·systemPrompt 재적용' }
+const META = { id: 'resume', req: 'resume', title: 'resume 시 기억·systemPrompt 재적용' }
 const ALPHA = 'You are a test agent. End every reply with the tag [SP-ALPHA].'
 const BETA = 'You are a test agent. End every reply with the tag [SP-BETA].'
 const QUESTION = 'What was the secret word? Reply with only the word.'
@@ -149,7 +149,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   }
 }
 
-export const item: SpikeItem = { ...META, adrs: 'ADR-10', live: true, estimateUsd: 0.3, run }
+export const item: SpikeItem = { ...META, adrs: 'resume', live: true, estimateUsd: 0.3, run }
 
 if (isMain(import.meta.url)) {
   const { runStandalone } = await import('../run.ts')

@@ -1,4 +1,5 @@
-// Measures subagent hook inputs, foreground forcing, built-in subagent types and cost accounting on the installed SDK; local temp repository only, no remote.
+// Measures subagent hook inputs, foreground forcing, built-in subagent types and cost accounting on the installed SDK.
+// Runs in a local temp repository only, with no remote.
 import { randomUUID, type UUID } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -8,7 +9,11 @@ import { execute } from '../lib/harness.ts'
 import { baseOptions } from '../lib/session.ts'
 import { isMain, type ItemResult, type SpikeContext, type SpikeItem, type Status } from '../lib/types.ts'
 
-const META = { id: 'subagent', req: 'R46', title: 'subagent hook agent_id, foreground forcing, built-in types, cost' }
+const META = {
+  id: 'subagent',
+  req: 'subagent',
+  title: 'subagent hook agent_id, foreground forcing, built-in types, cost',
+}
 const AGENT = 'Agent'
 const ALLOWLIST_CANDIDATES = ['general-purpose', 'Explore', 'Plan']
 const PUSH = /\bgit\b[^\n;&|]*\bpush\b/
@@ -423,7 +428,7 @@ async function run(ctx: SpikeContext): Promise<ItemResult> {
   }
 }
 
-export const item: SpikeItem = { ...META, adrs: 'ADR-42', live: true, estimateUsd: 0.4, run }
+export const item: SpikeItem = { ...META, adrs: 'subagent', live: true, estimateUsd: 0.4, run }
 
 if (isMain(import.meta.url)) {
   process.exitCode = await execute({

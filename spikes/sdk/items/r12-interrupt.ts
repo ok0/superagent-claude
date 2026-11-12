@@ -3,7 +3,7 @@ import { baseOptions, compact, findEcho, runScenario } from '../lib/session.ts'
 import { isMain, type ItemResult, type SpikeContext, type SpikeItem } from '../lib/types.ts'
 
 const ID = 'interrupt'
-const REQ = 'R12'
+const REQ = 'interrupt'
 const TITLE = 'interrupt 영수증(still_queued) 및 이후 처리 확인'
 
 function initLines(init: Record<string, unknown> | undefined): string[] {
@@ -14,7 +14,15 @@ function initLines(init: Record<string, unknown> | undefined): string[] {
   ]
 }
 
-export const item: SpikeItem = { id: ID, req: REQ, title: TITLE, adrs: 'ADR-5', live: true, estimateUsd: 0.15, run }
+export const item: SpikeItem = {
+  id: ID,
+  req: REQ,
+  title: TITLE,
+  adrs: 'input-delivery',
+  live: true,
+  estimateUsd: 0.15,
+  run,
+}
 
 async function run(ctx: SpikeContext): Promise<ItemResult> {
   const A = randomUUID()
