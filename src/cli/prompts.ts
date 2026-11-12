@@ -1,4 +1,7 @@
-/** `superagent-claude prompts diff`: reports built-in default changes of the team sections from the database opened read-only; it takes no lock and needs no running daemon. */
+/**
+ * `superagent-claude prompts diff`: reports built-in default changes of the team sections from the database opened
+ * read-only; it takes no lock and needs no running daemon.
+ */
 import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { CONFIG_FILE, ConfigError, loadConfig } from '../app/config.ts'

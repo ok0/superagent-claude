@@ -1,4 +1,7 @@
-/** The daemon's log format: `start --log-format text|json` or env SUPERAGENT_CLAUDE_LOG_FORMAT. No imports, so the entry can read it before loading the rest. */
+/**
+ * The daemon's log format: `start --log-format text|json` or env SUPERAGENT_CLAUDE_LOG_FORMAT. No imports, so the
+ * entry can read it before loading the rest.
+ */
 
 export type LogFormat = 'text' | 'json'
 export const LOG_FORMAT_ENV = 'SUPERAGENT_CLAUDE_LOG_FORMAT'

@@ -21,7 +21,10 @@ const FAKE_SCRIPT: FakeScript = ({ index }) =>
   index === 0
     ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'Done: the fake worker finished' } }] }
     : {}
-/** With SUPERAGENT_CLAUDE_FAKE_HOLD=1 (read only with --fake) the fake worker never ends a turn, so a test can stop the daemon while an Assignment runs. */
+/**
+ * With SUPERAGENT_CLAUDE_FAKE_HOLD=1 (read only with --fake) the fake worker never ends a turn, so a test can stop
+ * the daemon while an Assignment runs.
+ */
 const HOLD_SCRIPT: FakeScript = () => ({ hold: new Promise<never>(() => {}) })
 const fakeScript = (env: CliIo['env']): FakeScript =>
   env.SUPERAGENT_CLAUDE_FAKE_HOLD === '1' ? HOLD_SCRIPT : FAKE_SCRIPT

@@ -1,4 +1,8 @@
-/** Host-side pull request writes under the agent account: open or adopt the PR of a branch, reply in a review thread and resolve it, enable auto-merge (never merge), close a PR, and read the push permission. Only gh api REST and graphql calls. */
+/**
+ * Host-side pull request writes under the agent account: open or adopt the PR of a branch, reply in a review thread
+ * and resolve it, enable auto-merge (never merge), close a PR, and read the push permission.
+ * Only gh api REST and graphql calls.
+ */
 import { z } from 'zod'
 import type { Commands } from '../../infra/commands.ts'
 import { repositoryCommands } from './read.ts'

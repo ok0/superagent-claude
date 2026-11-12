@@ -1,8 +1,7 @@
 // Ported from dsh-superagent-prototype (MIT) src/sources/admission-context.ts
-/** Bounded thread message window loaded for admission assessments. Changes from the reference: the command runner parameter is removed; the kind's reader closes over what it needs. */
+/** Bounded thread message window loaded for admission assessments. */
 import type { ContextMessage, TriggerContext } from './kind.ts'
 
-/** Selects the first five thread messages plus five messages on either side of `sourceId`, recording omitted gap counts. */
 export function threadWindow(messages: ContextMessage[], sourceId: string) {
   const trigger = messages.findIndex(message => message.id === sourceId)
   const selected = messages
@@ -22,8 +21,8 @@ export function threadWindow(messages: ContextMessage[], sourceId: string) {
   }
 }
 /**
- * Reads up to `maxPages` of a trigger's thread and builds the bounded message window around the trigger; counts describe
- * only this loaded snapshot (never unread history), and `status` reports fallback modes such as `chat_neighbours`.
+ * Counts describe only the loaded snapshot, never unread history;
+ * `status` reports fallback modes such as `chat_neighbours`.
  */
 export async function admissionContext(context: TriggerContext, maxPages: number) {
   const messages: ContextMessage[] = []

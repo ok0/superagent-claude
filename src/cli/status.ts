@@ -1,5 +1,6 @@
 /**
- * superagent-claude status and needs: read the state database opened read-only (no lock, no HTTP server), so they answer while the daemon runs.
+ * superagent-claude status and needs: read the state database opened read-only (no lock, no HTTP server), so they
+ * answer while the daemon runs.
  */
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'

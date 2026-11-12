@@ -1,5 +1,9 @@
 // Ported from dsh-superagent-prototype (MIT) src/infra/commands.ts
-/** Subprocess runner for the hosting API program and git, with timeouts, abort signals, sanitized errors and API paths confined to a root. Changes from the reference: the chat CLI runner and its error rewrite are removed; the API program, the inherited environment, the API-only variables and the process runner are injected options instead of a deployment; subprocesses get a whitelisted environment (subprocessEnv) instead of the daemon environment, and API-only variables reach only the API program; the repository restriction becomes a path root set by at; the JSON reader is call. */
+/**
+ * Subprocess runner for the hosting API program and git, with timeouts, abort signals and sanitized errors.
+ * API paths are confined to a root. Subprocesses get a whitelisted environment.
+ * API-only variables reach only the API program.
+ */
 import { execFile } from 'node:child_process'
 import { basename } from 'node:path'
 import { promisify } from 'node:util'
@@ -35,7 +39,7 @@ export function commandError(error: unknown, program = 'command'): Error {
     const code = parsed?.error?.code
     if (parsed?.error?.message)
       return new CliError(`${parsed.error.message}${code ? ` (${code})` : ''}`, code, exitCode)
-    // The API program exits non-zero on HTTP errors (such as "Not Found (HTTP 404)") and on HTTP 304, which conditional reads rely on.
+    // The API program exits non-zero on HTTP errors and on HTTP 304, which conditional reads rely on.
     if (stderr)
       return new CliError(stderr.slice(0, 2000), Number(/\bHTTP (\d{3})\b/.exec(stderr)?.[1]) || undefined, exitCode)
   }
@@ -56,7 +60,6 @@ export interface Tally {
   skipped: number
 }
 
-/** Parses array elements against a schema, skipping invalid items and incrementing `tally.skipped`. */
 export function validItems<T>(item: z.ZodType<T>, list: readonly unknown[], tally?: Tally): T[] {
   const items = list.flatMap(value => {
     const parsed = item.safeParse(value)
@@ -143,14 +146,12 @@ export class Commands {
     return this.run(this.options.apiProgram, args, undefined, this.options.apiEnv ?? {})
   }
 
-  /** Runs the API program and parses its JSON output. */
   async call<T>(args: string[]): Promise<T> {
     return JSON.parse(await this.runApi(args)) as T
   }
 
   /**
-   * Calls the hosting API on a path under the root, validating JSON output when a schema is provided
-   * or returning raw CLI output (such as raw files or `--include` headers) when omitted.
+   * Calls the hosting API under the root. Without a schema, returns raw output (raw files, `--include` headers).
    * @throws CliError with the HTTP status as `code` on failure.
    */
   async api<T>(schema: z.ZodType<T>, path: string, ...flags: string[]): Promise<T>

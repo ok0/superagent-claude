@@ -1,12 +1,15 @@
 /**
- * AdmissionFilter: the check every Trigger passes before Passes.receive. It admits a Trigger whose actor is on the allowed list and whose repository is configured, or a Source fact on a Thread of an open ticket whose mandate actor is allowed; every other Trigger is recorded as rejected and never reaches the Engine. It reads only the actor, the human flag, `meta.repository` and the store, never the text, and takes no authentication mode.
+ * AdmissionFilter: the check every Trigger passes before Passes.receive. It admits a Trigger whose actor is on the
+ * allowed list and whose repository is configured, or a Source fact on a Thread of an open ticket whose mandate actor
+ * is allowed. Other Triggers are recorded as rejected and never reach the Engine. It reads only the actor, the human
+ * flag, `meta.repository` and the store, never the text.
  */
 import { threadKey, type EngineForSources, type ReceiveResult, type Trigger } from '../core/index.ts'
 import { actorVerdict, sameName, type ActorRule } from '../policy/actors.ts'
 import type { RejectedTrigger, RejectionReason, Store } from '../app/store.ts'
 
 export interface AdmissionFilterDeps {
-  /** Where an admitted Trigger goes (the Runtime passes Passes.receive, which calls Engine.receive). */
+  /** Called with each admitted Trigger (the Runtime wires it to Passes.receive). */
   next(trigger: Trigger): ReceiveResult
   store: Pick<Store, 'threads' | 'tickets' | 'rejected'>
   /** The current allowed list and repositories; read on every Trigger so a reload applies to the next one. */
@@ -38,7 +41,6 @@ export class AdmissionFilter implements Pick<EngineForSources, 'receive'> {
     return 'filtered'
   }
 
-  /** True when some ref of the Trigger's Threads is subscribed by an open ticket whose mandate actor is allowed. */
   private followed(trigger: Trigger, allowed: readonly string[]): boolean {
     const { store } = this.deps
     return trigger.threads.some(ref => {

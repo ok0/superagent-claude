@@ -1,5 +1,8 @@
 // Ported from dsh-superagent-prototype (MIT) src/sources/github-channel.ts
-/** GitHub outbound channel: posts issue/PR comments and review thread replies under the agent account. Changes from the reference: the reply goes to the repository named in the address, which must be configured; the commands and the agent login are injected; the retry marker is <!-- superagent-claude:<id> -->; the channel link is removed. */
+/**
+ * GitHub outbound channel: posts issue/PR comments and review thread replies under the agent account.
+ * The reply goes to the repository named in the address, which must be configured.
+ */
 import { z } from 'zod'
 import type { OutboundMessage } from '../../core/index.ts'
 import { CliError, type Commands } from '../../infra/commands.ts'
@@ -14,7 +17,7 @@ const CommentSchema = z.looseObject({
   in_reply_to_id: z.number().nullish(),
   user: z.looseObject({ login: z.string() }).nullish(),
 })
-/** True when an issue is permanently deleted (410) or locked (403); 404 is retried because it can indicate temporary permission loss on a private repo. */
+/** A 410, or a locked 403, means gone; 404 is retried because it can mean lost permission on a private repo. */
 const gone = (error: unknown): boolean =>
   error instanceof CliError && (error.code === 410 || (error.code === 403 && /locked/i.test(error.message)))
 const missing = (error: unknown): boolean => error instanceof CliError && (error.code === 404 || error.code === 410)
@@ -26,7 +29,7 @@ export interface ChannelOptions {
   login(): string | undefined
 }
 
-/** Posts a comment or review-thread reply with an embedded HTML marker so retries do not create duplicate comments. */
+/** Embeds an HTML marker so a retried post does not create a duplicate comment. */
 export function githubChannelAdapter(options: ChannelOptions): SourceChannel<GithubConfig> {
   return {
     allowed: address => !!configured(options.repositories, address.repository ?? '') && Number(address.number) > 0,
@@ -59,7 +62,9 @@ export function githubChannelAdapter(options: ChannelOptions): SourceChannel<Git
           sameName(comment.user?.login ?? '', login) &&
           (rootId === undefined || comment.in_reply_to_id === rootId) &&
           (comment.body ?? '').includes(marker)
-        // Crash rule: a post that succeeded before the process stopped and before its receipt settled is found here by its marker on restart, so it settles as sent without a second comment. This relies on the comment list showing the created comment; one a person deleted meanwhile is posted again.
+        // Crash recovery: a post that succeeded before a restart is found here by its marker and settles as sent,
+        // without a second comment. This relies on the comment list showing the created comment; one a person
+        // deleted meanwhile is posted again.
         if ((await commands.pages(CommentSchema, path)).some(mine)) return 'sent'
         const post = rootId === undefined ? path : `${path}/${rootId}/replies`
         await commands.api(z.unknown(), post, '--method', 'POST', '-f', `body=${message.text}\n\n${marker}`)

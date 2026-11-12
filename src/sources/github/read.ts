@@ -1,5 +1,8 @@
 // Ported from dsh-superagent-prototype (MIT) src/sources/github-read.ts
-/** Read-only GitHub repository, conversation, and CI check inspection for assessments and workers. Changes from the reference: readers take commands scoped to one repository (repositoryCommands); the repository file reader is removed; the thread context reader is built for the configured repositories and picks the repository from meta.repository; the default-branch CI context is removed. */
+/**
+ * Read-only GitHub repository, conversation, and CI check inspection for assessments and workers.
+ * Readers take commands scoped to one repository; the thread context reader picks it from meta.repository.
+ */
 import { z } from 'zod'
 import type { ThreadFact } from '../../core/index.ts'
 import { validItems, type Commands, type Tally } from '../../infra/commands.ts'
@@ -96,7 +99,10 @@ export async function pullChecks(commands: Commands, head: string, tally?: Tally
   }
 }
 
-/** Formats a GitHub comment, review, or issue as a model-facing ContextMessage, marking bots and GitHub Apps because bot messages never authorize work. */
+/**
+ * Formats a GitHub comment, review, or issue as a model-facing ContextMessage, marking bots and GitHub Apps because
+ * bot messages never authorize work.
+ */
 function githubMessage(item: GithubComment, text: string, id: string): ContextMessage {
   const line = item.line ?? item.original_line
   return {
@@ -207,7 +213,7 @@ export async function readGithub(commands: Commands, resource: string): Promise<
     ...(listed.length === 20 ? { next_resource: `github/${kind}/${number}/${section}/${Number(page) + 1}` } : {}),
   }
 }
-/** Reads one page of an Issue or PR conversation (with the Issue/PR description first on page 1), using comment URLs as message IDs. */
+/** One page of an Issue or PR conversation; page 1 starts with the Issue/PR description. */
 async function conversationPage(commands: Commands, number: number, page: number) {
   const messages: ContextMessage[] = []
   if (page === 1) {
@@ -226,10 +232,7 @@ async function conversationPage(commands: Commands, number: number, page: number
     ...(tally.skipped ? { skipped: tally.skipped } : {}),
   }
 }
-/**
- * Context reader for a GitHub Trigger: reads the review thread for an inline review comment (whose first comment is its
- * root and parent), or the Issue/PR conversation by page otherwise (whose first page is its root and parent).
- */
+/** Reads the review thread of an inline review comment; otherwise the Issue/PR conversation by page. */
 export function githubThreadContext(commands: Commands, repositories: readonly string[]): ThreadContext<GithubConfig> {
   return {
     messageId: trigger => trigger.url ?? '',

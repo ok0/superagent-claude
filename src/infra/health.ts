@@ -1,8 +1,4 @@
 // Ported from dsh-superagent-prototype (MIT) src/infra/health.ts
-/**
- * Component health registry read by the status CLI.
- * Changes from the reference: the `Health` type moves here from `sources/host.ts` with an optional `code`; the docs are reworded; a snapshot of all entries and a HealthRecorder that writes it at most every HEALTH_SNAPSHOT_MS for the status CLI are added.
- */
 export type Health = {
   state: 'starting' | 'ready' | 'paused' | 'error'
   detail: string
@@ -11,26 +7,21 @@ export type Health = {
   values?: Record<string, string>
 }
 
-/** The whole board as the status CLI reads it: when it was taken, by which daemon process, and every entry. */
 export interface HealthSnapshot {
   at: string
   pid: number
   entries: Record<string, Health>
 }
-/** Minimum time between two health snapshot writes by a HealthRecorder. */
 export const HEALTH_SNAPSHOT_MS = 5_000
 
 export interface HealthEntry {
   get(): Health | undefined
   set(health: Health): void
-  /** Unregisters the entry from the board (such as when a Source kind unregisters); subsequent `set` calls become no-ops. */
+  /** Unregisters the entry; later `set` calls become no-ops. */
   release(): void
 }
 
-/**
- * Central registry of component health entries, enforcing single-writer ownership per entry name.
- * Claimed by the Runtime, Effects, WorkerExecutor, RouterHost and Sources, and read by the status CLI.
- */
+/** Health entries, each with one writer: `claim` throws when the name is already held. */
 export class HealthBoard {
   private readonly entries: Record<string, Health> = {}
   private readonly claimed = new Set<string>()
@@ -78,7 +69,6 @@ export class HealthRecorder {
     this.now = now
     this.intervalMs = intervalMs
   }
-  /** Returns true when a snapshot was written. */
   record(force = false): boolean {
     const t = this.now()
     if (!force && this.last !== undefined && t - this.last < this.intervalMs) return false

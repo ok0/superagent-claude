@@ -1,5 +1,8 @@
 // Ported from dsh-superagent-prototype (MIT) src/sources/registry.ts
-/** Registry of installed Source kinds and their configured instances, and the Engine's SourceScope. Changes from the reference: instance configs come from an injected reader instead of stored settings, and an instance is enabled while its config parses; per-kind policy parts, instance listing, variable declarations and links are removed; each kind reports under the health entry named after it, and `<kind>:<entry>` entries are claimed on first report; sending takes no command runner; `enabled` is added for the Outbox; constructor parameters are declared fields. */
+/**
+ * Registry of installed Source kinds and their configured instances, and the Engine's SourceScope.
+ * An instance is enabled while its config parses; each kind reports under the health entry named after it.
+ */
 import type { OutboundMessage, ScopeResult, SourceScope, Trigger } from '../core/index.ts'
 import { HealthBoard, type Health, type HealthEntry } from '../infra/health.ts'
 import type { SourceInstance, SourceKind, TriggerContext } from './kind.ts'

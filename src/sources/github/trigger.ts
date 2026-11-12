@@ -1,5 +1,8 @@
 // Ported from dsh-superagent-prototype (MIT) src/sources/github-trigger.ts
-/** Normalizes GitHub issues, pull requests, comments, reviews, review comments and CI transitions into domain Triggers. Changes from the reference: thread, trigger and channel keys include the repository (Thread id <owner>/<name>#<number>), every Trigger carries meta.repository in the configured spelling, githubAddress parses any configured repository, the bot suffix check ignores case, the CI Trigger takes its time from the caller, default-branch CI is removed, and sameName comes from the policy actors module. */
+/**
+ * Normalizes GitHub issues, pull requests, comments, reviews, review comments and CI transitions into domain Triggers.
+ * Thread, trigger and channel keys include the repository (Thread id <owner>/<name>#<number>).
+ */
 import { z } from 'zod'
 import { key, type ChannelRef, type Trigger } from '../../core/index.ts'
 import { escapeRegExp } from '../../infra/text.ts'
@@ -25,7 +28,7 @@ export const githubChannel = (repository: string, number: number, url?: string):
 })
 export const githubPage = (repository: string, number: number, pr = false): string =>
   `https://github.com/${repository}/${pr ? 'pull' : 'issues'}/${number}`
-/** Parses a web or API URL for an Issue, PR, or review comment in a configured repository; returns undefined for other URLs or repositories. */
+/** Parses an Issue, PR, or review-comment URL in a configured repository; undefined for anything else. */
 export function githubAddress(
   url: string,
   repositories: readonly string[],
@@ -48,10 +51,7 @@ export const UserSchema = z
   .looseObject({ login: z.string(), type: z.string().optional() })
   .nullable()
   .transform(user => user ?? { login: 'ghost', type: 'User' })
-/**
- * A GitHub comment or review; a review carries `state` and `commit_id`, and an inline review comment carries its file,
- * line, diff hunk, and `in_reply_to_id` (the root comment ID of its review thread).
- */
+/** A GitHub comment or review; `in_reply_to_id` is the root comment ID of its review thread. */
 export const CommentSchema = z.looseObject({
   id: z.number(),
   body: z.string().nullish(),
@@ -69,7 +69,7 @@ export const CommentSchema = z.looseObject({
   in_reply_to_id: z.number().nullish(),
 })
 export type GithubComment = z.infer<typeof CommentSchema>
-/** An Issue as `issues/<number>` returns it; GitHub sets `pull_request` when the number is a pull request. */
+/** GitHub sets `pull_request` when the number is a pull request. */
 export const IssueSchema = CommentSchema.extend({
   number: z.number(),
   title: z.string(),
@@ -87,13 +87,9 @@ export interface PullRef {
   url?: string
   prAuthor?: string
 }
-/**
- * True when GitHub reports the account as a regular user rather than a bot or GitHub App.
- * Review bots running under ordinary user accounts count as human here; the prompts identify which accounts are automated.
- */
+/** Review bots under ordinary user accounts count as human here; the prompts identify automated accounts. */
 export const isHumanLogin = (user: { login: string; type?: string }): boolean =>
   !/\[bot\]$/i.test(user.login) && (!user.type || user.type === 'User')
-/** Formats an inline review comment's file:line and the trailing lines of its diff hunk, which GitHub ends at the commented line. */
 export function reviewPlace(comment: GithubComment): string {
   const line = comment.line ?? comment.original_line
   const hunk = (comment.diff_hunk ?? '').split('\n').slice(-3).join('\n')
@@ -111,7 +107,7 @@ const author = (user: { login: string; type?: string }, agent: string) => ({
   actor: { source: SOURCE, id: user.login },
   human: isHumanLogin(user) && !sameName(user.login, agent),
 })
-/** Builds a trigger for a comment or review; text is empty for a bodyless comment or a `COMMENTED` review without a body. */
+/** Text is empty for a bodyless comment or a `COMMENTED` review without a body. */
 export function commentTrigger(
   comment: GithubComment,
   ref: PullRef,
@@ -149,10 +145,7 @@ export function commentTrigger(
     },
   }
 }
-/**
- * Builds the trigger for a newly opened Issue's title and body.
- * The ID is the same as when Issue bodies were stored previously, so already-stored bodies are not ingested again.
- */
+/** The ID matches the one used when Issue bodies were stored earlier, so stored bodies are not ingested again. */
 export function issueTrigger(issue: Opened, repository: string, agent: string): Trigger {
   const body = issue.body ?? ''
   return {
@@ -168,10 +161,7 @@ export function issueTrigger(issue: Opened, repository: string, agent: string): 
     meta: { repository, number: issue.number, isPr: false, kind: 'issue' },
   }
 }
-/**
- * Builds the trigger for a newly opened PR's title and description.
- * PR and Issue numbers share one sequence in GitHub and never collide, so this reuses `issueTrigger`'s `github-issue` ID format.
- */
+/** PR and Issue numbers never collide, so the PR trigger reuses `issueTrigger`'s `github-issue` ID. */
 export function pullTrigger(pull: Opened, repository: string, agent: string): Trigger {
   return {
     ...issueTrigger(pull, repository, agent),

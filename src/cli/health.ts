@@ -1,4 +1,7 @@
-/** superagent-claude health --live|--ready: the exec probe. It reads the state database read-only and the lock owner file, and exits 0 when the check passes, 1 when it fails, 2 for bad arguments. */
+/**
+ * Exec probe for `health --live|--ready`, reading the state database read-only. Exit 0 when the check passes, 1 when
+ * it fails, 2 for bad arguments.
+ */
 import { existsSync } from 'node:fs'
 import { hostname } from 'node:os'
 import { resolve } from 'node:path'

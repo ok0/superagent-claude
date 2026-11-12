@@ -1,5 +1,5 @@
 // Ported from dsh-superagent-prototype (MIT) src/sources/poll.ts
-/** Shared polling helpers for subscribed threads, overlap-safe cursors, and delays. Changes from the reference: `pause` takes injectable timers, `pollThreads` takes an injectable clock, and both take only the context members they use. */
+/** Shared polling helpers for subscribed threads: overlap-safe cursors and delays. */
 import { liveTicket, type Thread } from '../core/index.ts'
 import type { SourceContext } from './host.ts'
 
@@ -16,7 +16,6 @@ export type PollContext = {
   tickets: Pick<SourceContext['tickets'], 'get'>
 }
 
-/** True when a subscribed thread has a live ticket or recent activity/completion within `POLL_HORIZON_MS`. */
 export function polled(ctx: Pick<PollContext, 'tickets'>, thread: Thread, now = Date.now()): boolean {
   const tickets = thread.subscriptions.map(id => ctx.tickets.get(id))
   if (tickets.some(ticket => !!ticket && liveTicket(ticket))) return true
@@ -26,10 +25,16 @@ export function polled(ctx: Pick<PollContext, 'tickets'>, thread: Thread, now = 
   return now - Math.max(...times) < POLL_HORIZON_MS
 }
 
-/** Steps a poll start timestamp back by 5 seconds so late-arriving remote events are not missed; deterministic trigger IDs deduplicate overlaps. */
+/**
+ * Steps a poll start timestamp back by 5 seconds so late-arriving remote events are not missed; deterministic trigger
+ * IDs deduplicate overlaps.
+ */
 export const cursorAt = (started: string): string => new Date(Date.parse(started) - 5000).toISOString()
 
-/** Polls each subscribed Thread of `source` within the horizon independently; records failures on the Thread as `pollError` (unless `stopped()`) and clears `pollError` on success. */
+/**
+ * Polls each subscribed Thread of `source` within the horizon independently; records failures on the Thread as
+ * `pollError` (unless `stopped()`) and clears `pollError` on success.
+ */
 export async function pollThreads(
   ctx: PollContext,
   source: string,
@@ -58,7 +63,7 @@ const systemTimers: PollTimers = {
   },
 }
 
-/** Waits `ms` or until `signal` aborts, using the injected timers (global timers by default) so tests can drive polling loops. */
+/** Waits `ms` or until `signal` aborts; the injected timers let tests drive polling loops. */
 export function pause(ms: number, signal: AbortSignal, timers: PollTimers = systemTimers): Promise<void> {
   return new Promise(resolve => {
     if (signal.aborted) {

@@ -1,5 +1,5 @@
 // Ported from dsh-superagent-prototype (MIT) src/sources/github-pull.ts
-/** Pull request reads keyed by repository, and lifecycle observation with the auto-merge fact. Changes from the reference: pull requests and their Threads are keyed by repository; reads take repository-scoped commands; ticket binding (claiming a PR), agent-branch matching and chat notices are removed (delivery milestones). */
+/** Pull request reads and lifecycle observation, including the auto-merge fact. */
 import { z } from 'zod'
 import type { ThreadFact, Ticket } from '../../core/index.ts'
 import type { Commands } from '../../infra/commands.ts'

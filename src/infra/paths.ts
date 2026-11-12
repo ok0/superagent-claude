@@ -1,8 +1,4 @@
 // Ported from dsh-superagent-prototype (MIT) src/infra/paths.ts
-/**
- * Resolves packaged asset paths from either the source tree or the compiled lib/ output.
- * Changes from the reference: the package root is found by the name `superagent-claude`.
- */
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

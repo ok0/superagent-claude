@@ -1,5 +1,5 @@
 // Ported from dsh-superagent-prototype (MIT) src/sources/host.ts
-/** Host and context interfaces connecting Source plugins to the application, and the builder of one kind's context. Changes from the reference: the deployment, command runner, setup readiness and setup problem members are removed; a kind reports health under its own entry or `<kind>:<entry>` instead of a declared list; `log` is added and `receive` is synchronous; the context builder moves here from the app layer as `sourceContext`; `SourceService` (a running Source's start and stop) is added; the health codes of removed kinds are dropped. */
+/** Host and context interfaces connecting Source plugins to the application, and the builder of one kind's context. */
 import type {
   EngineForSources,
   OutboundMessage,
@@ -17,7 +17,7 @@ import type { Health } from '../infra/health.ts'
 import { fill } from '../infra/text.ts'
 import type { SourceRegistry } from './registry.ts'
 
-/** Fixed English health templates (`{name}` placeholders); the panel localizes each `code` in the interface language. */
+/** Fixed English templates; the panel localizes each `code` in the interface language. */
 export const HEALTH_TEXT = {
   sourceOff: 'Off',
   pollFailures: '{count} consecutive failed polls; last: {error}',
@@ -44,20 +44,22 @@ export interface SourceHost {
   context(kind: string): SourceContext
 }
 
-/** A running Source: started by the Runtime after recovery with its lifetime signal; `stop` resolves once polling ended, and the Runtime calls it only after `start` resolved. */
+/**
+ * A running Source: started by the Runtime after recovery with its lifetime signal; `stop` resolves once polling
+ * ended, and the Runtime calls it only after `start` resolved.
+ */
 export interface SourceService {
   readonly kind: string
   start(host: SourceHost, signal: AbortSignal): Promise<void>
   stop(): Promise<void>
 }
 
-/** Display label, URL, and facts (`null` removes a fact) that a Source publishes on a Thread. */
+/** What a Source publishes on a Thread; a `null` fact removes that fact. */
 export interface ThreadDescription {
   label?: string
   url?: string
   facts?: Record<string, ThreadFact | null>
 }
-/** Application capabilities exposed to a Source kind for reading state, ingesting triggers, managing threads/tickets, and reporting health. */
 export interface SourceContext {
   /** Returns a Source's configuration while enabled, or undefined while disabled or uninstalled. */
   config<C extends Record<string, unknown>>(kind: string): C | undefined
@@ -81,14 +83,20 @@ export interface SourceContext {
     get(id: string): Ticket | undefined
     /** Open tickets, newest first. */
     open(): Ticket[]
-    /** Binds an open ticket to follow a Source Thread (`own` when opened by the ticket) so the Thread's close, not a ready report, ends the ticket. */
+    /**
+     * Binds an open ticket to follow a Source Thread (`own` when opened by the ticket) so the Thread's close, not a
+     * ready report, ends the ticket.
+     */
     bindThread(id: string, thread: ThreadRef, own: boolean): void
-    /** Reports that a followed Thread closed at `at`; each open ticket following it ends once no `own` Thread remains open and no resumed work is still running. */
+    /**
+     * Reports that a followed Thread closed at `at`; each open ticket following it ends once no `own` Thread remains
+     * open and no resumed work is still running.
+     */
     threadClosed(thread: ThreadRef, outcome: 'merged' | 'closed', at: string): void
   }
   triggers: {
     get(id: string): Trigger | undefined
-    /** The newest Trigger on a Thread. */ latest(thread: string): Trigger | undefined
+    latest(thread: string): Trigger | undefined
   }
   notify(message: OutboundMessage): void
   /** Reports the state of this kind's health entry, or of its `<kind>:<entry>` entry. */
@@ -109,10 +117,7 @@ export interface SourceContextDeps {
   receive(trigger: Trigger): ReceiveResult
 }
 
-/**
- * Builds the context for one Source kind. Health reports go to the entries of the registration current when the context
- * is built, becoming no-ops once that registration ends.
- */
+/** Health reports go to the registration current when the context is built; they become no-ops once it ends. */
 export function sourceContext(deps: SourceContextDeps, kind: string): SourceContext {
   const { store } = deps
   const report = deps.sources.reporter(kind)

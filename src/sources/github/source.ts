@@ -1,5 +1,9 @@
 // Ported from dsh-superagent-prototype (MIT) src/sources/github.ts
-/** GitHub polling Source: the agent account's notifications, the PRs of open tickets with their CI, and subscribed Threads, polled per repository. Changes from the reference: the plugin entry becomes githubSource, which returns the kind and a SourceService; every configured repository is polled in turn with its own cursors and its health entry github:<owner>/<name>; the agent login is read at start with api user, and each repository's access and push permission is checked at start and kept in repo-access:<owner>/<name> (an inaccessible repository is not polled); the interval is an option (default and minimum 60 s) instead of a config key, raised to the API's X-Poll-Interval; the notification read's rate-limit headers are reported in health; repository-wide streams, default-branch CI, observe switches, the policy part, environment variables, display fields and links are removed; CI is polled for the open pull requests of open tickets; poll failures are reported with their consecutive count from the first one. */
+/**
+ * GitHub polling Source: the agent account's notifications, the PRs of open tickets with their CI,
+ * and subscribed Threads, polled per repository. Each repository has its own cursors and health entry
+ * (github:<owner>/<name>). Access and push permission are checked at start; an inaccessible repository is not polled.
+ */
 import { z } from 'zod'
 import { key, liveTicket, type Thread } from '../../core/index.ts'
 import { family } from '../../app/kv.ts'
@@ -76,7 +80,10 @@ export interface GithubSourceOptions {
   check?: GithubStartupCheck
 }
 
-/** Reports a failed poll with its consecutive count: `ready` until `FAILURES_BEFORE_ERROR` consecutive failures, `error` from then on. */
+/**
+ * Reports a failed poll with its consecutive count: `ready` until `FAILURES_BEFORE_ERROR` consecutive failures,
+ * `error` from then on.
+ */
 export function pollFailure(failures: number, error: unknown): Health {
   return health(failures >= FAILURES_BEFORE_ERROR ? 'error' : 'ready', 'pollFailures', {
     count: String(failures),
@@ -90,7 +97,7 @@ const NotificationSchema = z.looseObject({
   subject: z.looseObject({ url: z.string().nullish() }),
 })
 const RETRY_WINDOW_MS = 24 * 3600_000
-/** True when GitHub returns HTTP 410 (Gone); HTTP 404 is retried because it can indicate revoked access to a private repository. */
+/** Only 410 counts as deleted; 404 is retried because it can mean revoked access to a private repository. */
 const deleted = (error: unknown): boolean => error instanceof CliError && error.code === 410
 
 export interface RepositoryPoll {
@@ -116,7 +123,7 @@ interface Round {
 }
 const stopped = (round: Round): boolean => round.signal.aborted
 
-/** Records a failed read on the Thread and in the round; deleted (410) or abandoned (24h+) threads do not fail the round. */
+/** Deleted or abandoned threads are recorded without failing the round. */
 function failed(ctx: SourceContext, round: Round, number: number, error: unknown, abandoned = false): void {
   if (deleted(error)) round.dropped.push(number)
   else if (abandoned) round.abandoned.push(number)
@@ -175,7 +182,6 @@ export async function pollRepository(ctx: SourceContext, poll: RepositoryPoll): 
   return interval
 }
 
-/** Reads notifications since the cursor and each Issue or PR they name, advancing the cursor atomically with the retry map for failed reads; deleted (410) Issues are dropped once their error is recorded. */
 async function pollNotifications(
   ctx: SourceContext,
   round: Round,
@@ -203,7 +209,8 @@ async function pollNotifications(
     ? await round.api.pages(NotificationSchema, path, round.tally)
     : validItems(NotificationSchema, z.array(z.unknown()).parse(JSON.parse(body)), round.tally)
   const retries = { ...state.get(GITHUB_STATE.retries(repository)) }
-  // Failed items from the previous round run first, followed by newly notified items in chronological order; each is read once.
+  // Failed items from the previous round run first, then newly notified items in chronological order;
+  // each is read once.
   const items = new Map<number, Retry>(
     Object.entries(retries).map(([number, retry]) => [Number(number), retry] as const),
   )
@@ -226,7 +233,8 @@ async function pollNotifications(
     } catch (error) {
       if (stopped(round)) return { count: notifications.length, interval, rate }
       const retry = { ...item, failedAt: item.failedAt ?? round.started, attempts: (item.attempts ?? 0) + 1 }
-      // Abandon notification retries after 24 hours of failures so a permanently unreadable thread does not hold source health in error; its cursor stays so a later notification or thread poll still reads what was missed.
+      // Abandon notification retries after 24 hours of failures so a permanently unreadable thread does not hold
+      // source health in error; its cursor stays so a later notification or thread poll still reads what was missed.
       const abandoned = Date.parse(round.started) - Date.parse(retry.failedAt) >= RETRY_WINDOW_MS
       failed(ctx, round, number, error, abandoned)
       if (!deleted(error) && !abandoned) {
@@ -254,7 +262,8 @@ async function readNotified(ctx: SourceContext, round: Round, number: number, it
     // `issues/<n>` also returns PRs with `pull_request` set; handle them in the PR branch below.
     isPr = !!issue.pull_request
     if (!isPr) {
-      // An Issue opened by someone other than the agent since the cursor brings its body so a mention in it reaches the gate.
+      // An Issue opened by someone other than the agent since the cursor brings its body so a mention in it reaches
+      // the gate.
       // A mention added by a later edit to the body is not read: only the author can be the actor of the body.
       const created = Date.parse(issue.created_at)
       const opened =
@@ -385,7 +394,7 @@ function nameThread(ctx: SourceContext, repository: string, number: number, titl
   })
 }
 
-/** Polls subscribed Issue and PR Threads of this repository not already read in this round; a deleted (410) Issue is still polled within the horizon (costing one read) and does not fail the round. */
+/** A deleted (410) Issue is still polled within the horizon and does not fail the round. */
 async function pollThreads(ctx: SourceContext, round: Round): Promise<void> {
   const skip = (thread: Thread): boolean => {
     const parsed = parseThreadId(thread.ref.id)
@@ -589,7 +598,8 @@ export function githubSource(options: GithubSourceOptions): { kind: SourceKind<G
       const lifetime = AbortSignal.any([signal, controller.signal])
       const ready = await prepare(ctx, lifetime)
       if (!ready) return
-      // Unhandled rejections terminate the daemon, so a failure escaping the polling loop is reported as health instead.
+      // Unhandled rejections terminate the daemon, so a failure escaping the polling loop
+      // is reported as health instead.
       running = watch(ctx, ready, lifetime).catch((error: unknown) => {
         ctx.report({ state: 'error', detail: String(error), at: iso() })
       })

@@ -1,4 +1,4 @@
-/** Ambient types for the subset of proper-lockfile 4.1.2 the Store uses (no @types package, M6 AC9). */
+/** Ambient types for the subset of proper-lockfile 4.1.2 the Store uses (no @types package). */
 declare module 'proper-lockfile' {
   interface LockOptions {
     stale?: number
