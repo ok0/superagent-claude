@@ -75,10 +75,10 @@ describe('ported prompt and skill assets', () => {
     expect(MCP_TOOL_PREFIX).toBe('mcp__superagent__')
   })
 
-  it('defines 11 router and 10 worker tools, 20 unique', () => {
+  it('defines 11 router and 11 worker tools, 21 unique', () => {
     expect(ROUTER_TOOLS).toHaveLength(11)
-    expect(WORKER_TOOLS).toHaveLength(10)
-    expect(TOOL_NAMES).toHaveLength(20)
+    expect(WORKER_TOOLS).toHaveLength(11)
+    expect(TOOL_NAMES).toHaveLength(21)
     expect(new Set(TOOL_NAMES).size).toBe(TOOL_NAMES.length)
   })
 

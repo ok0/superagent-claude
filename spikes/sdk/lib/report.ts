@@ -222,7 +222,7 @@ export function renderReport(run: RunRecord): string {
       const perSession = item.costs.map((session, index) => `세션 ${index + 1} [${session.join(', ')}]`)
       line(`- 비용(세션별, USD): ${perSession.join('; ')}`)
     }
-    line(`- 재현: \`${reproCommand(item.id)}\``)
+    line(`- 재현: \`${item.repro ?? reproCommand(item.id)}\``)
     if (item.sub !== undefined && item.sub.length > 0) {
       line('- 세부 결과:')
       for (const sub of item.sub) for (const subLine of renderSub(sub, 1)) line(subLine)

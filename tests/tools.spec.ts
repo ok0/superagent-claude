@@ -1,5 +1,6 @@
 /** Worker tool specs: tool names, report reaching the engine, human_action and acknowledgement limits, thread keys. */
 import { describe, expect, it, vi } from 'vitest'
+import { ZodError } from 'zod'
 import { executorTools, type ExecutorToolsHost } from '../src/app/tools/executor.ts'
 import { WORKER_TOOLS } from '../src/app/tool-names.ts'
 import type { ToolSpec } from '../src/executor/contract.ts'
@@ -30,7 +31,7 @@ describe('worker tools', () => {
     const { host: h } = host()
     const names = executorTools(h, { id: 'T1' }).map(item => item.name)
     expect(names).toEqual([...WORKER_TOOLS])
-    expect(names).toHaveLength(10)
+    expect(names).toHaveLength(11)
   })
 
   it('orchestrator_read without a reader is a tool error', async () => {
@@ -164,5 +165,35 @@ describe('worker tools', () => {
       report.execute({ state: 'progress', summary: 's', title }, new AbortController().signal),
     ).rejects.toThrow()
     expect(engine.report).not.toHaveBeenCalled()
+  })
+})
+
+describe('git_inspect tool', () => {
+  it('wraps the host output as external data', async () => {
+    const inspect = vi.fn(async () => 'commit abc\n')
+    const { host: h } = host()
+    const tools = executorTools({ ...h, inspect }, { id: 'T1' })
+    const out = await find(tools, 'git_inspect').execute({ command: 'log', limit: 3 }, new AbortController().signal)
+    expect(String(out).startsWith('<external-data source="git-inspect">')).toBe(true)
+    expect(String(out)).toContain('commit abc')
+    expect(inspect).toHaveBeenCalledWith('T1', { command: 'log', limit: 3 })
+  })
+
+  it('rejects unknown fields and commands before the host', async () => {
+    const inspect = vi.fn(async () => '')
+    const { host: h } = host()
+    const tools = executorTools({ ...h, inspect }, { id: 'T1' })
+    const signal = new AbortController().signal
+    await expect(find(tools, 'git_inspect').execute({ command: 'log', flags: '-p' }, signal)).rejects.toThrow(ZodError)
+    await expect(find(tools, 'git_inspect').execute({ command: 'status' }, signal)).rejects.toThrow(ZodError)
+    expect(inspect).not.toHaveBeenCalled()
+  })
+
+  it('is a tool error without a worktree', async () => {
+    const { host: h } = host()
+    const tools = executorTools(h, { id: 'T1' })
+    await expect(find(tools, 'git_inspect').execute({ command: 'log' }, new AbortController().signal)).rejects.toThrow(
+      /no git worktree/,
+    )
   })
 })

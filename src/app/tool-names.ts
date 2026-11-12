@@ -26,6 +26,7 @@ export const WORKER_TOOLS = [
   'orchestrator_review_reply',
   'orchestrator_pr_auto_merge',
   'orchestrator_pr_close',
+  'git_inspect',
 ] as const
 export type ToolName = (typeof ROUTER_TOOLS)[number] | (typeof WORKER_TOOLS)[number]
 export const TOOL_NAMES: readonly ToolName[] = [...new Set([...ROUTER_TOOLS, ...WORKER_TOOLS])]

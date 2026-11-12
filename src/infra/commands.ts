@@ -23,8 +23,12 @@ export class CliError extends Error {
   }
 }
 
+export interface CommandLimits {
+  timeoutMs?: number
+}
+
 /** Extracts a sanitized error from a failed subprocess without echoing argv, which may contain message text. */
-export function commandError(error: unknown, program = 'command'): Error {
+export function commandError(error: unknown, program = 'command', timeoutMs = TIMEOUT_MS): Error {
   if (error instanceof Error && error.name === 'AbortError') return error
   const exitCode =
     error && typeof error === 'object' && 'code' in error && typeof error.code === 'number' ? error.code : undefined
@@ -43,14 +47,14 @@ export function commandError(error: unknown, program = 'command'): Error {
     if (stderr)
       return new CliError(stderr.slice(0, 2000), Number(/\bHTTP (\d{3})\b/.exec(stderr)?.[1]) || undefined, exitCode)
   }
-  return new CliError(`${basename(program)} ${ended(error)}`, undefined, exitCode)
+  return new CliError(`${basename(program)} ${ended(error, timeoutMs)}`, undefined, exitCode)
 }
 
-function ended(error: unknown): string {
+function ended(error: unknown, timeoutMs: number): string {
   const { killed, signal, code } = (error ?? {}) as { killed?: boolean; signal?: string | null; code?: unknown }
   if (code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return 'printed more output than it may'
   // `execFile` timeout terminates the process with SIGTERM and sets `killed: true`.
-  if (killed && signal === 'SIGTERM') return `timed out after ${TIMEOUT_MS / 1000} s`
+  if (killed && signal === 'SIGTERM') return `timed out after ${timeoutMs / 1000} s`
   if (signal) return `was stopped by ${signal}`
   if (typeof code === 'number') return `exited with code ${code}`
   return typeof code === 'string' ? `could not run: ${code}` : 'failed'
@@ -126,19 +130,21 @@ export class Commands {
     args: string[],
     cwd?: string,
     extra: Readonly<Record<string, string>> = {},
+    limits: CommandLimits = {},
   ): Promise<string> {
     const env = subprocessEnv(this.options.baseEnv, { ...this.options.env, ...extra })
+    const timeout = limits.timeoutMs ?? TIMEOUT_MS
     try {
       const { stdout } = await (this.options.exec ?? execProgram)(program, args, {
         ...(cwd ? { cwd } : {}),
         env,
         ...(this.options.signal ? { signal: this.options.signal } : {}),
-        timeout: TIMEOUT_MS,
+        timeout,
         maxBuffer: MAX_BUFFER,
       })
       return stdout
     } catch (error) {
-      throw commandError(error, program)
+      throw commandError(error, program, timeout)
     }
   }
 
@@ -179,7 +185,12 @@ export class Commands {
   }
 
   /** Runs `git` with the whitelisted environment only, without API-only variables; `extra` reaches only this call. */
-  async git(args: string[], cwd: string, extra: Readonly<Record<string, string>> = {}): Promise<string> {
-    return this.run('git', args, cwd, extra)
+  async git(
+    args: string[],
+    cwd: string,
+    extra: Readonly<Record<string, string>> = {},
+    limits: CommandLimits = {},
+  ): Promise<string> {
+    return this.run('git', args, cwd, extra, limits)
   }
 }

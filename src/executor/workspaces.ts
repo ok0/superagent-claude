@@ -5,11 +5,18 @@
  * Publishing pushes an agent branch without force, adding co-author trailers only to commits not yet pushed.
  * Access errors carry the HTTP status when one is known. A transient push failure is retried up to 3 times (2 s, 5 s).
  */
-import { existsSync, mkdirSync, rmSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { basename, dirname, join, resolve } from 'node:path'
 import type { Ticket } from '../core/index.ts'
-import { CliError, type Commands } from '../infra/commands.ts'
+import { CliError, type CommandLimits, type Commands } from '../infra/commands.ts'
 import { stripAiAttribution } from '../infra/text.ts'
+import {
+  GIT_INSPECT_LIMITS,
+  GIT_READ_OPTIONS,
+  type GitInspectRequest,
+  gitInspectArgv,
+  truncateOutput,
+} from './git-inspect.ts'
 import type { Workspace } from './worker-executor.ts'
 
 export class RepositoryAccessError extends Error {
@@ -48,12 +55,31 @@ export function pushFailure(message: string, status: number | undefined): PushFa
   return { kind: 'transient' }
 }
 
+export interface DiffStat {
+  base: string
+  files: number
+  changedLines: number
+}
+
+export interface DiffText {
+  text: string
+  truncated: boolean
+}
+
 export interface WorkspaceProvider {
   prepare(ticket: Ticket, name: string): Promise<Workspace>
   remove(ticketId: string): Promise<void>
   history(cwd: string): Promise<string>
   push(ticket: Ticket, options: PushOptions): Promise<PushResult>
+  head(cwd: string): Promise<string>
+  diffStat(cwd: string, base?: string): Promise<DiffStat>
+  diffText(cwd: string, base: string, maxChars: number): Promise<DiffText>
+  inspect(cwd: string, request: GitInspectRequest): Promise<string>
 }
+
+const SHA = /^[0-9a-f]{7,64}$/
+const NO_WORKTREE = 'This session has no git worktree'
+const DIFF = ['--no-ext-diff', '--no-textconv', '--no-color']
 
 export const CO_AUTHOR = /^[^<>\r\n]+ <[^<>\s@]+@[^<>\s]+>$/
 
@@ -131,8 +157,13 @@ export class Workspaces implements WorkspaceProvider {
     this.hooks = join(options.stateDir, 'empty-hooks')
   }
 
-  private git(args: string[], cwd: string, extra: Record<string, string> = {}): Promise<string> {
-    return this.commands.git(['-c', `core.hooksPath=${this.hooks}`, ...args], cwd, extra)
+  private git(
+    args: string[],
+    cwd: string,
+    extra: Record<string, string> = {},
+    limits: CommandLimits = {},
+  ): Promise<string> {
+    return this.commands.git(['-c', `core.hooksPath=${this.hooks}`, ...args], cwd, extra, limits)
   }
 
   private redact(text: string): string {
@@ -226,6 +257,123 @@ export class Workspaces implements WorkspaceProvider {
 
   async history(cwd: string): Promise<string> {
     return (await this.git(['log', '--oneline', '-n', '20'], cwd).catch(() => '')).trim()
+  }
+
+  /** Git location computed from the host state, never from `<cwd>/.git`, which the agent may rewrite. */
+  private repository(cwd: string): string[] {
+    const work = resolve(cwd)
+    if (work !== this.worktreePath(basename(work))) throw new Error(NO_WORKTREE)
+    let real: string
+    try {
+      real = realpathSync(work)
+    } catch {
+      throw new Error(NO_WORKTREE)
+    }
+    const repos = join(this.stateDir, 'repos')
+    let clones: string[]
+    try {
+      clones = readdirSync(repos)
+    } catch {
+      throw new Error(NO_WORKTREE)
+    }
+    for (const repo of clones) {
+      const admin = join(repos, repo, '.git', 'worktrees')
+      let names: string[]
+      try {
+        names = readdirSync(admin)
+      } catch {
+        continue
+      }
+      for (const name of names) {
+        try {
+          const target = readFileSync(join(admin, name, 'gitdir'), 'utf8').trim()
+          if (realpathSync(dirname(resolve(join(admin, name), target))) === real)
+            return ['--git-dir=' + join(admin, name), '--work-tree=' + work]
+        } catch {
+          continue
+        }
+      }
+    }
+    throw new Error(NO_WORKTREE)
+  }
+
+  async head(cwd: string): Promise<string> {
+    return (await this.git([...this.repository(cwd), ...GIT_READ_OPTIONS, 'rev-parse', 'HEAD'], cwd)).trim()
+  }
+
+  async diffStat(cwd: string, base?: string): Promise<DiffStat> {
+    const repo = this.repository(cwd)
+    const known =
+      base !== undefined &&
+      SHA.test(base) &&
+      (await this.git([...repo, ...GIT_READ_OPTIONS, 'cat-file', '-e', base + '^{commit}'], cwd).then(
+        () => true,
+        () => false,
+      ))
+    const from =
+      base !== undefined && known
+        ? base
+        : (await this.git([...repo, ...GIT_READ_OPTIONS, 'merge-base', 'origin/HEAD', 'HEAD'], cwd)).trim()
+    const out = await this.git(
+      [...repo, ...GIT_READ_OPTIONS, 'diff', '--numstat', ...DIFF, '--end-of-options', from, 'HEAD', '--'],
+      cwd,
+    )
+    let files = 0
+    let changedLines = 0
+    for (const line of out.split('\n')) {
+      if (!line.trim()) continue
+      files++
+      const [added = '', deleted = ''] = line.split('\t')
+      changedLines += (added === '-' ? 0 : Number(added) || 0) + (deleted === '-' ? 0 : Number(deleted) || 0)
+    }
+    return { base: from, files, changedLines }
+  }
+
+  async diffText(cwd: string, base: string, maxChars: number): Promise<DiffText> {
+    if (!SHA.test(base)) throw new Error('The diff base must be a commit sha')
+    const repo = this.repository(cwd)
+    const diff = (extra: string[]) => [
+      ...repo,
+      ...GIT_READ_OPTIONS,
+      'diff',
+      ...extra,
+      ...DIFF,
+      '--end-of-options',
+      base,
+      'HEAD',
+      '--',
+    ]
+    const full = await this.git(diff([]), cwd)
+    if (full.length <= maxChars) return { text: full, truncated: false }
+    const stat = await this.git(diff(['--stat']), cwd)
+    return {
+      text:
+        full.slice(0, maxChars) +
+        '\n[diff truncated at ' +
+        maxChars +
+        ' of ' +
+        full.length +
+        ' characters; summary of all changes:]\n' +
+        stat,
+      truncated: true,
+    }
+  }
+
+  async inspect(cwd: string, request: GitInspectRequest): Promise<string> {
+    const { argv, revs, maxLines } = gitInspectArgv(request)
+    const repo = this.repository(cwd)
+    for (const rev of revs) {
+      try {
+        await this.git(
+          [...repo, ...GIT_READ_OPTIONS, 'rev-parse', '--verify', '--quiet', '--end-of-options', rev + '^{object}'],
+          cwd,
+        )
+      } catch {
+        throw new Error('Unknown revision ' + rev)
+      }
+    }
+    const out = await this.git([...repo, ...argv], cwd, {}, { timeoutMs: GIT_INSPECT_LIMITS.timeoutMs })
+    return truncateOutput(out, maxLines, GIT_INSPECT_LIMITS.outputBytes)
   }
 
   async push(ticket: Ticket, options: PushOptions): Promise<PushResult> {
@@ -353,5 +501,21 @@ export class ScratchWorkspaces implements WorkspaceProvider {
 
   async push(): Promise<PushResult> {
     throw new Error('Publishing needs a git workspace; this run uses scratch directories')
+  }
+
+  async head(): Promise<string> {
+    return ''
+  }
+
+  async diffStat(): Promise<DiffStat> {
+    return { base: '', files: 0, changedLines: 0 }
+  }
+
+  async diffText(): Promise<DiffText> {
+    return { text: '', truncated: false }
+  }
+
+  async inspect(): Promise<string> {
+    throw new Error(NO_WORKTREE)
   }
 }

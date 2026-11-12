@@ -12,6 +12,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -21,12 +22,14 @@ import type { Ticket } from '../src/core/index.ts'
 import {
   PUSH_BACKOFF_MS,
   RepositoryAccessError,
+  ScratchWorkspaces,
   Workspaces,
   accessStatus,
   coAuthorTrailers,
   pushFailure,
   worktreeName,
   type RepositoryAccess,
+  type WorkspaceProvider,
 } from '../src/executor/workspaces.ts'
 import { CliError, Commands, commandError, execProgram } from '../src/infra/commands.ts'
 import { isAiAttributionLine } from '../src/infra/text.ts'
@@ -58,13 +61,13 @@ function commit(sh: Sh, cwd: string, file: string, text: string, message: string
   sh([...COMMIT, 'commit', '-m', message], cwd)
 }
 function spy(dir: string) {
-  const calls: { args: readonly string[]; env: Record<string, string> }[] = []
+  const calls: { args: readonly string[]; env: Record<string, string>; timeout: number }[] = []
   const commands = new Commands({
     apiProgram: 'gh',
     baseEnv: { PATH: process.env.PATH!, HOME: join(dir, 'home'), LANG: 'C' },
     env: { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' },
     exec: (p, a, o) => {
-      calls.push({ args: a, env: o.env })
+      calls.push({ args: a, env: o.env, timeout: o.timeout })
       return execProgram(p, a, o)
     },
   })
@@ -567,5 +570,193 @@ describe('push retries', () => {
     ['The requested URL returned error: 500', 500, 'transient'],
   ])('pushFailure classifies push errors %# as %s', (message, status, kind) => {
     expect(pushFailure(message, status).kind).toBe(kind)
+  })
+})
+
+function mtimes(root: string): Record<string, number> {
+  const out: Record<string, number> = {}
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) walk(path)
+      else out[path] = statSync(path).mtimeMs
+    }
+  }
+  walk(root)
+  return out
+}
+
+describe('read-only git for review', () => {
+  async function prepared() {
+    const f = fixture()
+    const a = await f.ws.prepare(ticket(idA), 'alpha')
+    return { ...f, cwd: a.cwd, gitdir: join(f.state, 'repos', 'owner__repo', '.git', 'worktrees', idA) }
+  }
+
+  it('head returns the worktree HEAD', async () => {
+    const { sh, ws, cwd } = await prepared()
+    commit(sh, cwd, 'a.txt', '1\n', 'c1')
+    expect(await ws.head(cwd)).toBe(sh(['rev-parse', 'HEAD'], cwd).trim())
+  })
+
+  it('diffStat counts the full diff, changes after a base, falls back for an unknown base, and counts binaries as 0', async () => {
+    const { sh, ws, cwd } = await prepared()
+    commit(sh, cwd, 'a.txt', '1\n2\n3\n', 'c1')
+    const h1 = sh(['rev-parse', 'HEAD'], cwd).trim()
+    const merge = sh(['merge-base', 'origin/HEAD', 'HEAD'], cwd).trim()
+    expect(await ws.diffStat(cwd)).toEqual({ base: merge, files: 1, changedLines: 3 })
+
+    writeFileSync(join(cwd, 'a.txt'), '1\nX\n3\n')
+    writeFileSync(join(cwd, 'b.txt'), 'b1\nb2\n')
+    sh(['add', '-A'], cwd)
+    sh([...COMMIT, 'commit', '-m', 'c2'], cwd)
+    expect(await ws.diffStat(cwd, h1)).toEqual({ base: h1, files: 2, changedLines: 4 })
+    expect(await ws.diffStat(cwd, 'f'.repeat(40))).toEqual({ base: merge, files: 2, changedLines: 5 })
+    expect(await ws.diffStat(cwd, 'not-a-sha')).toEqual({ base: merge, files: 2, changedLines: 5 })
+
+    const h2 = sh(['rev-parse', 'HEAD'], cwd).trim()
+    writeFileSync(join(cwd, 'bin.dat'), Buffer.from([0, 1, 2, 0, 255]))
+    sh(['add', '-A'], cwd)
+    sh([...COMMIT, 'commit', '-m', 'c3'], cwd)
+    expect(await ws.diffStat(cwd, h2)).toEqual({ base: h2, files: 1, changedLines: 0 })
+  })
+
+  it('diffText returns the diff for a base and truncates with a summary', async () => {
+    const { sh, ws, cwd } = await prepared()
+    commit(sh, cwd, 'a.txt', '1\n2\n3\n', 'c1')
+    const stat = await ws.diffStat(cwd)
+    const full = await ws.diffText(cwd, stat.base, 100_000)
+    expect(full.truncated).toBe(false)
+    expect(full.text).toContain('a.txt')
+    expect(full.text).toContain('+')
+    const cut = await ws.diffText(cwd, stat.base, 40)
+    expect(cut.truncated).toBe(true)
+    expect(cut.text.startsWith(full.text.slice(0, 40))).toBe(true)
+    expect(cut.text).toContain('[diff truncated at 40 of')
+    expect(cut.text).toMatch(/\d+ files? changed/)
+    await expect(ws.diffText(cwd, 'HEAD', 10)).rejects.toThrow(/commit sha/)
+  })
+
+  it('inspect runs a fixed argv array with the host git dir and a 10 s timeout', async () => {
+    const { dir, origin, state } = fixture()
+    const { commands, calls } = spy(dir)
+    const ws = new Workspaces({ stateDir: state, commands, repositoryOf: () => 'owner/repo', access: local(origin) })
+    const a = await ws.prepare(ticket(idA), 'alpha')
+    const gitdir = join(state, 'repos', 'owner__repo', '.git', 'worktrees', idA)
+    const out = await ws.inspect(a.cwd, { command: 'log', path: 'README.md', limit: 5 })
+    expect(out).toContain('init')
+    const last = calls.at(-1)!
+    expect(last.args).toEqual([
+      '-c',
+      'core.hooksPath=' + join(state, 'empty-hooks'),
+      '--git-dir=' + gitdir,
+      '--work-tree=' + a.cwd,
+      '--no-pager',
+      '--no-optional-locks',
+      '-c',
+      'core.fsmonitor=false',
+      '--literal-pathspecs',
+      'log',
+      '--no-ext-diff',
+      '--no-textconv',
+      '--no-color',
+      '-n',
+      '5',
+      '--end-of-options',
+      '--',
+      'README.md',
+    ])
+    expect(last.timeout).toBe(10_000)
+    expect(Object.keys(last.env).some(key => /TOKEN/.test(key))).toBe(false)
+  })
+
+  it('inspect ignores a rewritten .git file', async () => {
+    const { sh, ws, cwd, dir } = await prepared()
+    const before = await ws.head(cwd)
+    expect(before).toBe(sh(['rev-parse', 'HEAD'], cwd).trim())
+    const original = readFileSync(join(cwd, '.git'), 'utf8')
+    writeFileSync(join(cwd, '.git'), 'gitdir: ' + join(dir, 'elsewhere') + '\n')
+    try {
+      expect(await ws.head(cwd)).toBe(before)
+      await expect(ws.inspect(cwd, { command: 'show', rev: 'HEAD' })).resolves.toContain('init')
+    } finally {
+      writeFileSync(join(cwd, '.git'), original)
+    }
+  })
+
+  it('inspect reports an unknown revision', async () => {
+    const { ws, cwd, state } = await prepared()
+    await expect(ws.inspect(cwd, { command: 'show', rev: 'deadbeef' })).rejects.toThrow(/Unknown revision deadbeef/)
+    await expect(ws.inspect(join(state, 'worktrees', 'missing'), { command: 'log' })).rejects.toThrow(/no git worktree/)
+    const scratch: WorkspaceProvider = new ScratchWorkspaces({ stateDir: state, repositoryOf: () => 'owner/repo' })
+    await expect(scratch.inspect(cwd, { command: 'log' })).rejects.toThrow(/no git worktree/)
+    expect(await scratch.head(cwd)).toBe('')
+    expect(await scratch.diffStat(cwd)).toEqual({ base: '', files: 0, changedLines: 0 })
+    expect(await scratch.diffText(cwd, 'f'.repeat(40), 10)).toEqual({ text: '', truncated: false })
+  })
+
+  it('inspect truncates large output', async () => {
+    const { sh, ws, cwd } = await prepared()
+    commit(sh, cwd, 'big.txt', Array.from({ length: 3000 }, (_, i) => 'line ' + i).join('\n'), 'big')
+    const out = await ws.inspect(cwd, { command: 'show', rev: 'HEAD', path: 'big.txt' })
+    expect(out).toContain('[output truncated:')
+    expect(out.split('\n').length).toBeLessThanOrEqual(401)
+  })
+
+  it('inspect and the diff reads leave status, refs and file times unchanged', async () => {
+    const { sh, ws, cwd, state } = await prepared()
+    commit(sh, cwd, 'a.txt', '1\n', 'c1')
+    commit(sh, cwd, 'a.txt', '1\n2\n', 'c2')
+    writeFileSync(join(cwd, 'a.txt'), '1\n2\nedited\n')
+    writeFileSync(join(cwd, 'untracked.txt'), 'u')
+    const clone = join(state, 'repos', 'owner__repo')
+    const snapshot = () => ({
+      status: sh(['status', '--porcelain'], cwd),
+      refs: sh(['for-each-ref', '--format=%(refname) %(objectname)'], clone) + sh(['rev-parse', 'HEAD'], cwd),
+      times: mtimes(cwd),
+    })
+    const before = snapshot()
+    const base = await ws.diffStat(cwd)
+    await ws.inspect(cwd, { command: 'diff' })
+    await ws.inspect(cwd, { command: 'diff', rev: 'HEAD~1..HEAD' })
+    await ws.inspect(cwd, { command: 'log' })
+    await ws.inspect(cwd, { command: 'show', rev: 'HEAD' })
+    await ws.inspect(cwd, { command: 'blame', path: 'a.txt' })
+    await ws.head(cwd)
+    await ws.diffStat(cwd)
+    await ws.diffText(cwd, base.base, 1000)
+    expect(snapshot()).toEqual(before)
+  })
+
+  it('hostile diff.external, textconv and fsmonitor config never run', async () => {
+    const { dir, sh, ws, cwd, state } = await prepared()
+    const clone = join(state, 'repos', 'owner__repo')
+    commit(sh, cwd, '.gitattributes', '*.txt diff=hostile\n', 'attrs')
+    commit(sh, cwd, 'x.txt', 'one\n', 'x1')
+    const firstX = sh(['rev-parse', 'HEAD'], cwd).trim()
+    commit(sh, cwd, 'x.txt', 'two\n', 'x2')
+    const marker = join(dir, 'hostile-marker')
+    const script = join(dir, 'hostile.sh')
+    writeFileSync(script, `#!/bin/sh\ntouch "${marker}"\ncat "$1" 2>/dev/null\n`)
+    chmodSync(script, 0o755)
+    sh(['config', 'diff.external', script], clone)
+    sh(['config', 'diff.hostile.textconv', script], clone)
+    sh(['config', 'core.fsmonitor', script], clone)
+
+    await ws.inspect(cwd, { command: 'diff', rev: 'HEAD~1..HEAD' })
+    await ws.inspect(cwd, { command: 'diff' })
+    await ws.inspect(cwd, { command: 'show', rev: 'HEAD' })
+    await ws.inspect(cwd, { command: 'log' })
+    await ws.inspect(cwd, { command: 'blame', path: 'x.txt' })
+    await ws.diffStat(cwd, firstX)
+    await ws.diffText(cwd, firstX, 100_000)
+    expect(existsSync(marker)).toBe(false)
+
+    try {
+      sh(['diff', 'HEAD~1', 'HEAD'], cwd)
+    } catch {
+      /* The control only needs the side effect of the configured program. */
+    }
+    expect(existsSync(marker)).toBe(true)
   })
 })

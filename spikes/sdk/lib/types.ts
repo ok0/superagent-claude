@@ -14,6 +14,7 @@ export interface ItemResult {
   costs: number[][];
   sub?: ItemResult[];
   adrs?: string;
+  repro?: string;
 }
 
 export interface SpikeItem {

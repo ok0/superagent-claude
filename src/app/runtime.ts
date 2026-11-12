@@ -404,6 +404,11 @@ export class Runtime implements SourceHost {
             read: (resource, offset, limit, signal) =>
               readResource(this.resources, resource, offset, limit, ticket.id, signal),
             repositories: () => this.current.repositories,
+            inspect: (id, request) =>
+              this.workspaces.inspect(
+                this.workspaces instanceof Workspaces ? this.workspaces.worktreePath(id) : '',
+                request,
+              ),
             ...(session ? { notify: notifyRouter } : {}),
             delivery: {
               repositoryOf: id => repositoryOf(store.tickets.get(id)!),

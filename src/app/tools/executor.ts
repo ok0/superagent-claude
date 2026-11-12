@@ -12,6 +12,8 @@ import { resourceGrammar } from '../resources.ts'
 import { threadFollowedNotice, type Notice } from '../notices.ts'
 import { AcknowledgementSchema, HumanActionSchema, readTool, tool } from './tool.ts'
 import { deliveryTools, type DeliveryHost } from './delivery.ts'
+import { inspectTool } from './inspect.ts'
+import type { GitInspectRequest } from '../../executor/git-inspect.ts'
 
 export interface ExecutorToolsHost {
   engine(): Pick<
@@ -24,6 +26,7 @@ export interface ExecutorToolsHost {
   notify?(notice: Notice): void
   repositories?(): readonly string[]
   delivery?: DeliveryHost
+  inspect?(ticketId: string, request: GitInspectRequest): Promise<string>
 }
 
 export function executorTools(host: ExecutorToolsHost, ticket: Pick<Ticket, 'id'>): ToolSpec[] {
@@ -168,5 +171,6 @@ export function executorTools(host: ExecutorToolsHost, ticket: Pick<Ticket, 'id'
       },
     }),
     ...deliveryTools(host, ticketId),
+    inspectTool(host, ticketId),
   ]
 }

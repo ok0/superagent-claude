@@ -79,6 +79,7 @@ it("auto: an allowed sender's mention opens one Ticket whose fake worker reports
     'orchestrator_review_reply',
     'orchestrator_pr_auto_merge',
     'orchestrator_pr_close',
+    'git_inspect',
   ])
   expect(opened.instructions.startsWith('## Host rules')).toBe(true)
   expect(opened.instructions).toContain('## Communication')

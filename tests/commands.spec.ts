@@ -1,7 +1,7 @@
 /** The subprocess runner: whitelisted environment, API-only variables, sanitized errors and the path root. */
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { CliError, Commands, type Exec, type Tally } from '../src/infra/commands.ts'
+import { CliError, Commands, commandError, type Exec, type Tally } from '../src/infra/commands.ts'
 import { subprocessEnv } from '../src/infra/env.ts'
 
 const ok = () => vi.fn<Exec>(async () => ({ stdout: '{}' }))
@@ -93,5 +93,20 @@ describe('Commands', () => {
     expect(tally.skipped).toBe(1)
     const args = exec.mock.calls[0]![1]
     expect(args.slice(-2)).toEqual(['--paginate', '--slurp'])
+  })
+
+  it('uses a per-call timeout for git and keeps the default otherwise', async () => {
+    const exec = ok()
+    const commands = new Commands({ apiProgram: 'gh', baseEnv: {}, exec })
+    await commands.git(['status'], '/tmp')
+    expect(exec.mock.calls[0]![2].timeout).toBe(90_000)
+    await commands.git(['log'], '/tmp', {}, { timeoutMs: 10_000 })
+    expect(exec.mock.calls[1]![2].timeout).toBe(10_000)
+  })
+
+  it('names the actual timeout in a timed-out error', () => {
+    expect(
+      commandError(Object.assign(new Error('x'), { killed: true, signal: 'SIGTERM' }), 'git', 10_000).message,
+    ).toBe('git timed out after 10 s')
   })
 })
