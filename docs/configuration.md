@@ -57,6 +57,19 @@ A minimal config:
 
 See [security.md](security.md) for the trust policy behind the `security.*` and `network.allow` settings.
 
+## Environment notes
+
+Each repository can have an environment note: a short text that tells the worker about the build and test environment, such as the installed toolchains, the commands that build and test the project, and known gaps.
+
+- Path: `prompts/environment/<owner>/<name>.md` next to the config file, in the same `prompts/` directory as the team sections. For example, `prompts/environment/owner/repo.md`.
+- Matching: directory and file names are compared with `repositories` case-insensitively, so `Owner/Repo.md` matches `owner/repo`.
+- Size: at most 4000 characters after surrounding whitespace is trimmed. An empty note counts as no note.
+- Scope: the note is added to the worker prompt only for tickets on that repository, after the team sections. It does not change the host rules. The router prompt never includes it.
+- Errors: at startup, a note over 4000 characters or one that cannot be read stops the start with a config error that names the file. On reload, the same problem is logged as a warning and the previous note stays in effect.
+- Unlisted repositories: a note for a repository that is not in `repositories` is ignored with a warning.
+- Reload: a reload re-reads the notes. Open worker sessions on a repository whose note changed get the new note with their next input.
+- Secrets: the worker reads the note as trusted text. Do not put tokens, passwords, or other secrets in a note.
+
 ## Next
 
 - [authentication.md](authentication.md)

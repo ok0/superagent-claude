@@ -30,9 +30,16 @@ function teamFile(section: string, text: string): void {
   writeFileSync(join(directory!, 'config', 'prompts', 'team', `${section}.md`), text)
 }
 
-async function boot(given?: FakeScript) {
+function noteFile(repository: string, text: string): void {
+  const [owner, name] = repository.split('/')
+  mkdirSync(join(directory!, 'config', 'prompts', 'environment', owner!), { recursive: true })
+  writeFileSync(join(directory!, 'config', 'prompts', 'environment', owner!, `${name}.md`), text)
+}
+
+async function boot(given?: FakeScript, options: { repositories?: string[]; notes?: Record<string, string> } = {}) {
   directory = mkdtempSync(join(tmpdir(), 'prompt-notice-'))
   teamFile('communication', 'Team communication A')
+  for (const [repository, text] of Object.entries(options.notes ?? {})) noteFile(repository, text)
   gate = deferred()
   const script: FakeScript =
     given ??
@@ -41,7 +48,7 @@ async function boot(given?: FakeScript) {
         ? { hold: gate.promise }
         : { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'done' } }] })
   const config = ConfigSchema.parse({
-    repositories: ['owner/repo'],
+    repositories: options.repositories ?? ['owner/repo'],
     policy: { allowed: ['alice'], acceptMode: 'auto' },
     stateDir: join(directory, 'state'),
   })
@@ -73,7 +80,7 @@ function promptRows(r: Runtime): { hash: string; parts_json: string }[] {
 
 it('records the latest prompt version when a worker session opens', async () => {
   const { r, chat, fake } = await boot()
-  const hashA = r.prompts.version('worker')
+  const hashA = r.prompts.version('worker', 'owner/repo')
   const session = await openSession(chat, fake)
   expect(session.spec.instructions).toContain('## Communication\nTeam communication A')
   const [ticket] = r.store.tickets.list()
@@ -86,7 +93,7 @@ it('records the latest prompt version when a worker session opens', async () => 
 it('injects changed team sections into a running worker session with its next input', async () => {
   const { r, chat, fake } = await boot()
   const session = await openSession(chat, fake)
-  const hashA = r.prompts.version('worker')
+  const hashA = r.prompts.version('worker', 'owner/repo')
   const rowsBefore = promptRows(r)
   const [ticket] = r.store.tickets.list()
   const workerBefore = r.store.db
@@ -95,7 +102,7 @@ it('injects changed team sections into a running worker session with its next in
 
   teamFile('communication', 'Team communication B')
   expect(r.refreshPrompts()).toBe(1)
-  const hashB = r.prompts.version('worker')
+  const hashB = r.prompts.version('worker', 'owner/repo')
   expect(hashB).not.toBe(hashA)
 
   await waitUntil(() => session.sent.some(input => input.mode === 'inject' && input.id === `notice:prompts:${hashB}`))
@@ -154,13 +161,75 @@ it('a ticket resumed after it ended gets the changed team sections merged into i
 
   teamFile('communication', 'Team communication B')
   r.refreshPrompts()
-  const hashB = r.prompts.version('worker')
+  const hashB = r.prompts.version('worker', 'owner/repo')
   chat.emit(trigger('2', { addressed: 'mention', meta: { repository: 'owner/repo' } }))
   await waitUntil(() => fake.sessions.length === 2)
   expect(fake.sessions[1]!.spec.resume).toBe(fake.sessions[0]!.sessionId)
   const first = fake.sessions[1]!.sent[0]!
   expect(first).toMatchObject({ id: `notice:prompts:${hashB}`, mode: 'inject' })
   expect(first.text).toContain('## Communication\nTeam communication B')
+  const [ticket] = r.store.tickets.list()
+  expect(
+    r.store.db.prepare('SELECT prompt_version FROM worker WHERE ticket_id = ?').get(ticket!.id)?.prompt_version,
+  ).toBe(hashB)
+})
+
+it("a changed note notices only that repository's open session and changes only its version", async () => {
+  const { r, chat, fake } = await boot(undefined, {
+    repositories: ['owner/repo', 'other/repo'],
+    notes: { 'owner/repo': 'Note A', 'other/repo': 'Other note' },
+  })
+  chat.emit(trigger('1', { addressed: 'mention', meta: { repository: 'owner/repo' } }))
+  chat.emit(
+    trigger('2', {
+      addressed: 'mention',
+      threads: [{ source: 'chat', id: 't2' }],
+      channel: { source: 'chat', thread: 't2', address: { message: '2' } },
+      meta: { repository: 'other/repo' },
+    }),
+  )
+  await waitUntil(() => fake.sessions.length === 2)
+  const owner = fake.sessions.find(session => session.spec.instructions.includes('Note A'))!
+  const other = fake.sessions.find(session => session.spec.instructions.includes('Other note'))!
+  const vOwner = r.prompts.version('worker', 'owner/repo')
+  const vOther = r.prompts.version('worker', 'other/repo')
+
+  noteFile('owner/repo', 'Note B')
+  r.prompts.loadNotes(false)
+  expect(r.refreshPrompts()).toBe(1)
+  const newOwner = r.prompts.version('worker', 'owner/repo')
+  expect(newOwner).not.toBe(vOwner)
+  expect(r.prompts.version('worker', 'other/repo')).toBe(vOther)
+
+  await waitUntil(() => owner.sent.some(input => input.mode === 'inject' && input.id === `notice:prompts:${newOwner}`))
+  const notice = owner.sent.find(input => input.id === `notice:prompts:${newOwner}`)!
+  expect(notice.text).toContain('## Environment notes for owner/repo')
+  expect(notice.text).toContain('Note B')
+  await r.effects.idle('notice')
+  expect(other.sent.filter(input => input.mode === 'inject')).toHaveLength(0)
+  expect(r.refreshPrompts()).toBe(0)
+})
+
+it('a ticket resumed after it ended gets the latest note with its first input', async () => {
+  const { r, chat, fake } = await boot(
+    ({ index }) =>
+      index === 0 ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'done' } }] } : {},
+    { notes: { 'owner/repo': 'Note A' } },
+  )
+  chat.emit(trigger('1', { addressed: 'mention', meta: { repository: 'owner/repo' } }))
+  await waitUntil(() => fake.sessions.length === 1 && fake.sessions[0]!.closed)
+  await waitUntil(() => r.store.tickets.list().some(ticket => ticket.ended !== undefined))
+
+  noteFile('owner/repo', 'Note B')
+  r.prompts.loadNotes(false)
+  r.refreshPrompts()
+  const hashB = r.prompts.version('worker', 'owner/repo')
+  chat.emit(trigger('2', { addressed: 'mention', meta: { repository: 'owner/repo' } }))
+  await waitUntil(() => fake.sessions.length === 2)
+  expect(fake.sessions[1]!.spec.resume).toBe(fake.sessions[0]!.sessionId)
+  const first = fake.sessions[1]!.sent[0]!
+  expect(first).toMatchObject({ mode: 'inject' })
+  expect(first.text).toContain('Note B')
   const [ticket] = r.store.tickets.list()
   expect(
     r.store.db.prepare('SELECT prompt_version FROM worker WHERE ticket_id = ?').get(ticket!.id)?.prompt_version,

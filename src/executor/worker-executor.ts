@@ -49,8 +49,8 @@ export interface WorkerDeps {
   instructions(ticket: Ticket): Promise<string>
   tools(ticket: Ticket, assignment: Assignment): ToolSpec[]
   env?(ticket: Ticket): Record<string, string>
-  promptVersion?(): string
-  promptChange?(stored: string): PromptChange
+  promptVersion?(ticket: Ticket): string
+  promptChange?(stored: string, ticket: Ticket): PromptChange
   history?(cwd: string): Promise<string>
   /** A host note for a fresh launch, such as missing write access. */
   launchNote?(ticket: Ticket, workspace: Workspace): string | undefined
@@ -319,8 +319,8 @@ export class WorkerExecutor implements Executor {
     let resume = record?.sessionId ?? undefined
     const lead: RuntimeInput[] = []
     if (resume && record?.promptVersion && this.deps.promptChange) {
-      const change = this.deps.promptChange(record.promptVersion)
-      const tag = this.deps.promptVersion?.() ?? assignment.id
+      const change = this.deps.promptChange(record.promptVersion, ticket)
+      const tag = this.deps.promptVersion?.(ticket) ?? assignment.id
       if (change.kind === 'fixed') {
         resume = undefined
         lead.push({ id: `context:prompts:${tag}`, text: await this.contextNote(ticket, cwd, branch), mode: 'followup' })
@@ -394,7 +394,7 @@ export class WorkerExecutor implements Executor {
         branch: workspace.branch,
         turns: same ? record.turns : 0,
         costUsd: same ? record.costUsd : 0,
-        promptVersion: this.deps.promptVersion?.() ?? null,
+        promptVersion: this.deps.promptVersion?.(ticket) ?? null,
       })
       const live = this.attach(ticketId, assignmentId, session)
       attached = true
@@ -462,7 +462,7 @@ export class WorkerExecutor implements Executor {
         return
       }
       if (session.sessionId && session.sessionId !== resume) this.workers.setSession(ticketId, session.sessionId)
-      const version = this.deps.promptVersion?.()
+      const version = this.deps.promptVersion?.(first)
       if (version && this.workers.get(ticketId)) this.workers.setPromptVersion(ticketId, version)
       live = this.attach(ticketId, target.id, session)
       woken = true

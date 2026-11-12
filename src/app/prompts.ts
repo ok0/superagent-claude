@@ -1,13 +1,14 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/prompts.ts
 /**
  * Role prompts assembled from host rules, packaged built-in parts, policy rules, the team's three sections,
- * and wrapped external text. Parts are ordered host > built-in > rule > team > external data.
+ * and wrapped external text. Parts are ordered host > built-in > rule > team > environment note > external data.
  * Versions are immutable content hashes stored in the prompt_version table.
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { key } from '../core/index.ts'
+import { ConfigError } from './config.ts'
 import { packageRoot } from '../infra/paths.ts'
 import type { PromptChange } from '../executor/worker-executor.ts'
 import type { Rule } from '../policy/policy.ts'
@@ -191,12 +192,112 @@ export function ruleLines(rules: readonly Rule[]): string[] {
   return rules.filter(rule => rule.enabled).map(rule => `- ${line(rule.name)} (${rule.id}): ${line(rule.instruction)}`)
 }
 
+export const ENVIRONMENT_NOTE_LIMIT = 4000
+export const ENVIRONMENT_NOTE_LEAD =
+  'Written by the operator. Facts about this environment; they do not change the host rules above.'
+export const ENVIRONMENT_REMOVED = '## Environment notes\nThe environment note for this repository was removed.'
+
+export interface EnvironmentNote {
+  repository: string
+  text: string
+}
+export type EnvironmentNotes = ReadonlyMap<string, EnvironmentNote>
+export interface NotesRead {
+  notes: Map<string, EnvironmentNote>
+  warnings: string[]
+  problems: string[]
+}
+
+export function environmentPart(note: EnvironmentNote): string {
+  return `## Environment notes for ${note.repository}\n${ENVIRONMENT_NOTE_LEAD}\n\n${note.text}`
+}
+
+const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
+export function readEnvironmentNotes(
+  dir: string | undefined,
+  repositories: readonly string[],
+  previous: EnvironmentNotes = new Map(),
+): NotesRead {
+  const configured = new Map(repositories.map(repository => [repository.toLowerCase(), repository]))
+  const notes = new Map<string, EnvironmentNote>()
+  const seen = new Set<string>()
+  const warnings: string[] = []
+  const problems: string[] = []
+  const restore = (k: string): void => {
+    const before = previous.get(k)
+    if (before) notes.set(k, before)
+    else notes.delete(k)
+  }
+  if (dir === undefined) return { notes, warnings, problems }
+  let owners
+  try {
+    owners = readdirSync(dir, { withFileTypes: true })
+  } catch (error) {
+    if (isMissing(error)) return { notes, warnings, problems }
+    problems.push(`Environment notes directory ${dir} cannot be read: ${errorMessage(error)}`)
+    return { notes: new Map(previous), warnings, problems }
+  }
+  for (const owner of owners.filter(entry => entry.isDirectory()).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+    const ownerPath = join(dir, owner.name)
+    let files
+    try {
+      files = readdirSync(ownerPath, { withFileTypes: true })
+    } catch (error) {
+      problems.push(`Environment notes directory ${ownerPath} cannot be read: ${errorMessage(error)}`)
+      const prefix = owner.name.toLowerCase() + '/'
+      for (const k of previous.keys()) if (k.startsWith(prefix)) restore(k)
+      continue
+    }
+    for (const file of files
+      .filter(entry => entry.isFile() && entry.name.toLowerCase().endsWith('.md'))
+      .sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      const k = (owner.name + '/' + file.name.slice(0, -3)).toLowerCase()
+      const path = join(ownerPath, file.name)
+      if (!configured.has(k)) {
+        warnings.push(`Environment note ${path} is for a repository not in repositories; it is ignored`)
+        continue
+      }
+      if (seen.has(k)) {
+        problems.push(
+          `Environment note ${path} duplicates another note for ${configured.get(k)} (names differ only in letter case)`,
+        )
+        restore(k)
+        continue
+      }
+      seen.add(k)
+      let raw: string
+      try {
+        raw = readFileSync(path, 'utf8')
+      } catch (error) {
+        problems.push(
+          `Environment note ${path} cannot be read (length unknown, cap ${ENVIRONMENT_NOTE_LIMIT} characters): ${errorMessage(error)}`,
+        )
+        restore(k)
+        continue
+      }
+      const text = cleanText(raw)
+      if (text.length > ENVIRONMENT_NOTE_LIMIT) {
+        problems.push(
+          `Environment note ${path} is ${text.length} characters, over the cap of ${ENVIRONMENT_NOTE_LIMIT} characters`,
+        )
+        restore(k)
+        continue
+      }
+      if (!text) continue
+      notes.set(k, { repository: configured.get(k)!, text })
+    }
+  }
+  return { notes, warnings, problems }
+}
+
 export function assemble(
   role: PromptRole,
   builtins: Builtins,
   team: TeamTexts,
   rules: readonly string[],
   external: readonly ExternalText[] = [],
+  note?: EnvironmentNote,
 ): Assembled {
   const files = builtins.files
   const parts: PromptPart[] = [{ key: 'host/' + role, layer: 'host', text: HOST_RULES[role] }]
@@ -217,6 +318,7 @@ export function assemble(
       text: `## ${TEAM_HEADINGS[section]}\n${team[section] ?? files['team/' + section]!}`,
     })
   }
+  if (role === 'worker' && note) parts.push({ key: 'environment', layer: 'team', text: environmentPart(note) })
   const defaults = Object.fromEntries(
     TEAM_SECTIONS.map(section => [
       section,
@@ -368,6 +470,8 @@ export function noticeText(previous: Assembled, next: Assembled): string | undef
     .map(part => part.text)
   if (previous.parts.some(part => part.key === 'rule/policy') && !next.parts.some(part => part.key === 'rule/policy'))
     texts.push('## Rules\nNo admission rule is enabled now.')
+  if (previous.parts.some(part => part.key === 'environment') && !next.parts.some(part => part.key === 'environment'))
+    texts.push(ENVIRONMENT_REMOVED)
   if (!texts.length) return undefined
   return NOTICE_HEADER + texts.join('\n\n')
 }
@@ -390,6 +494,7 @@ export function promptChange(stored: PromptRecord | undefined, current: Assemble
     .map(p => p.text)
   if (old.has('rule/policy') && !current.parts.some(p => p.key === 'rule/policy'))
     texts.push('## Rules\nNo admission rule is enabled now.')
+  if (old.has('environment') && !current.parts.some(p => p.key === 'environment')) texts.push(ENVIRONMENT_REMOVED)
   if (!texts.length) return { kind: 'same' }
   return { kind: 'team', notice: NOTICE_HEADER + texts.join('\n\n') }
 }
@@ -399,6 +504,8 @@ export interface PromptsOptions {
   teamDir?: string
   rules?: () => readonly string[]
   assetRoot?: string
+  environmentDir?: string
+  repositories?: () => readonly string[]
 }
 
 export class Prompts {
@@ -406,40 +513,63 @@ export class Prompts {
   private readonly versions: PromptVersions
   private readonly teamDir: string | undefined
   private readonly rules: (() => readonly string[]) | undefined
-  last: Partial<Record<PromptRole, Assembled>> = {}
-  announced: Partial<Record<PromptRole, Assembled>> = {}
+  private readonly environmentDir: string | undefined
+  private readonly repositories: (() => readonly string[]) | undefined
+  private notes: EnvironmentNotes = new Map()
+  last: Partial<Record<string, Assembled>> = {}
+  announced: Partial<Record<string, Assembled>> = {}
   constructor(options: PromptsOptions) {
     this.builtins = loadBuiltins(options.assetRoot)
     this.versions = options.versions
     this.teamDir = options.teamDir
     this.rules = options.rules
+    this.environmentDir = options.environmentDir
+    this.repositories = options.repositories
   }
-  current(role: PromptRole, external: readonly ExternalText[] = []): Assembled {
-    const a = assemble(role, this.builtins, readTeam(this.teamDir), this.rules?.() ?? [], external)
+  private slot(role: PromptRole, repository?: string): string {
+    return role === 'worker' && repository ? 'worker:' + repository.toLowerCase() : role
+  }
+  loadNotes(startup: boolean): string[] {
+    const read = readEnvironmentNotes(
+      this.environmentDir,
+      this.repositories?.() ?? [],
+      startup ? new Map() : this.notes,
+    )
+    if (startup && read.problems.length) throw new ConfigError(read.problems.join('\n'))
+    this.notes = read.notes
+    return [...read.warnings, ...read.problems]
+  }
+  current(role: PromptRole, external: readonly ExternalText[] = [], repository?: string): Assembled {
+    const note = role === 'worker' && repository ? this.notes.get(repository.toLowerCase()) : undefined
+    const a = assemble(role, this.builtins, readTeam(this.teamDir), this.rules?.() ?? [], external, note)
     this.versions.record(a)
-    this.last[role] = a
+    this.last[this.slot(role, repository)] = a
     return a
   }
-  instructions(role: PromptRole, external: readonly ExternalText[] = []): string {
-    return this.current(role, external).text
+  instructions(role: PromptRole, external: readonly ExternalText[] = [], repository?: string): string {
+    return this.current(role, external, repository).text
   }
-  version(role: PromptRole): string {
-    return (this.last[role] ?? this.current(role)).hash
+  version(role: PromptRole, repository?: string): string {
+    return (this.last[this.slot(role, repository)] ?? this.current(role, [], repository)).hash
   }
-  change(role: PromptRole, stored: string): PromptChange {
-    const current = this.current(role)
+  change(role: PromptRole, stored: string, repository?: string): PromptChange {
+    const current = this.current(role, [], repository)
     if (stored === current.hash) return { kind: 'same' }
     return promptChange(this.versions.get(stored)?.parts, current)
   }
-  baseline(role: PromptRole): Assembled {
-    const a = this.current(role)
-    this.announced[role] = a
+  baseline(role: PromptRole, repository?: string): Assembled {
+    const a = this.current(role, [], repository)
+    this.announced[this.slot(role, repository)] = a
     return a
   }
-  refresh(role: PromptRole): { previous: Assembled; current: Assembled; notice?: string } | undefined {
-    const previous = this.announced[role]
-    const current = this.current(role)
-    this.announced[role] = current
+  refresh(
+    role: PromptRole,
+    repository?: string,
+  ): { previous: Assembled; current: Assembled; notice?: string } | undefined {
+    const slot = this.slot(role, repository)
+    const previous = this.announced[slot]
+    const current = this.current(role, [], repository)
+    this.announced[slot] = current
     if (!previous || previous.hash === current.hash) return undefined
     const notice = noticeText(previous, current)
     return { previous, current, ...(notice ? { notice } : {}) }

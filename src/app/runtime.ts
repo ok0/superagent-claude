@@ -191,7 +191,7 @@ export class GateAssessor implements Assessor {
 
 export interface RuntimeOptions {
   config: Config
-  /** Directory of the config file; team sections are read from <configDir>/prompts/team. */
+  /** Directory of the config file; team sections are read from <configDir>/prompts/team and environment notes from <configDir>/prompts/environment. */
   configDir?: string
   configPath?: string
   env?: Readonly<Record<string, string | undefined>>
@@ -312,6 +312,7 @@ export class Runtime implements SourceHost {
   private readonly configPath: string | undefined
   private readonly env: Readonly<Record<string, string | undefined>>
   private readonly agentLogin: (() => string | undefined) | undefined
+  private readonly repositoryOf: (ticket: Ticket) => string
   private readonly stopTimeoutMs: number
   private closing = false
   private starting?: Promise<void>
@@ -350,9 +351,15 @@ export class Runtime implements SourceHost {
       this.prompts = new Prompts({
         versions: new PromptVersions(store, now),
         ...(options.configDir === undefined ? {} : { teamDir: join(options.configDir, 'prompts', 'team') }),
+        ...(options.configDir === undefined
+          ? {}
+          : { environmentDir: join(options.configDir, 'prompts', 'environment') }),
+        repositories: () => this.current.repositories,
         rules: () => ruleLines(this.settings.policy.rules),
       })
-      this.prompts.baseline('worker')
+      for (const detail of this.prompts.loadNotes(true))
+        this.log({ level: 'warn', at: this.stamp(), event: 'config.warning', detail })
+      for (const repository of config.repositories) this.prompts.baseline('worker', repository)
       if (session) this.prompts.baseline('router')
       const sources = new SourceRegistry(() => ({}), board)
       this.sources = sources
@@ -368,6 +375,7 @@ export class Runtime implements SourceHost {
         const origin = store.triggers.get(ticket.origin.triggerId)
         return typeof origin?.meta.repository === 'string' ? origin.meta.repository : config.repositories[0]!
       }
+      this.repositoryOf = repositoryOf
       this.resources = {
         store,
         pages: new TextCache(4_000_000),
@@ -409,7 +417,7 @@ export class Runtime implements SourceHost {
       const deps: WorkerDeps = {
         prepare: ticket => this.workspaces.prepare(ticket, worktreeName(ticket)),
         instructions: async ticket =>
-          this.prompts.instructions('worker', [{ source: 'ticket-title', text: ticket.title }]),
+          this.prompts.instructions('worker', [{ source: 'ticket-title', text: ticket.title }], repositoryOf(ticket)),
         tools: ticket => {
           const host: ExecutorToolsHost = {
             engine: () => this.executorEngine,
@@ -439,8 +447,8 @@ export class Runtime implements SourceHost {
           return session ? executorTools(host, ticket) : workerTools(host, ticket, operation => store.atomic(operation))
         },
         env: () => ({}),
-        promptVersion: () => this.prompts.version('worker'),
-        promptChange: stored => this.prompts.change('worker', stored),
+        promptVersion: ticket => this.prompts.version('worker', repositoryOf(ticket)),
+        promptChange: (stored, ticket) => this.prompts.change('worker', stored, repositoryOf(ticket)),
         launchNote: (_ticket, workspace) =>
           writeAccessNote(workspace.repository, this.store.get(GITHUB_STATE.access(workspace.repository))),
         history: cwd => this.workspaces.history(cwd),
@@ -694,9 +702,9 @@ export class Runtime implements SourceHost {
   }
 
   /**
-   * Reassembles the worker prompt; when its team sections or rules changed, queues a notice with the changed sections
-   * for every open worker session (same key per ticket: only the latest is delivered). Returns the number queued.
-   * Called on reload.
+   * Reassembles the worker prompt per repository; when its team sections, rules or environment note changed, queues a
+   * notice with the changed sections for each open worker session on that repository (same key per ticket: only the
+   * latest is delivered). Returns the number queued. Called on reload.
    */
   refreshPrompts(): number {
     const routerChange = this.router ? this.prompts.refresh('router') : undefined
@@ -710,18 +718,33 @@ export class Runtime implements SourceHost {
         })
       })
     }
-    const change = this.prompts.refresh('worker')
-    if (!change?.notice) return 0
-    const tickets = this.executor.liveTickets()
-    const notice = change.notice
-    this.store.atomic(() => {
-      for (const ticketId of tickets)
-        this.effects.enqueue('notice', `worker-prompts:${ticketId}`, {
-          value: { target: 'worker', ticketId, id: `notice:prompts:${change.current.hash}`, text: notice },
-          summary: `Prompt version ${change.current.hash.slice(0, 12)}`,
-        })
+    const groups = new Map<string, { repository: string; tickets: string[] }>()
+    for (const repository of this.current.repositories)
+      groups.set(repository.toLowerCase(), { repository, tickets: [] })
+    for (const ticketId of this.executor.liveTickets()) {
+      const ticket = this.store.tickets.get(ticketId)
+      if (!ticket) continue
+      const repository = this.repositoryOf(ticket)
+      const group = groups.get(repository.toLowerCase()) ?? { repository, tickets: [] }
+      group.tickets.push(ticketId)
+      groups.set(repository.toLowerCase(), group)
+    }
+    const changes = [...groups.values()].flatMap(({ repository, tickets }) => {
+      const change = this.prompts.refresh('worker', repository)
+      return change?.notice ? [{ tickets, hash: change.current.hash, notice: change.notice }] : []
     })
-    return tickets.length
+    let queued = 0
+    this.store.atomic(() => {
+      for (const { tickets, hash, notice } of changes)
+        for (const ticketId of tickets) {
+          this.effects.enqueue('notice', `worker-prompts:${ticketId}`, {
+            value: { target: 'worker', ticketId, id: `notice:prompts:${hash}`, text: notice },
+            summary: `Prompt version ${hash.slice(0, 12)}`,
+          })
+          queued++
+        }
+    })
+    return queued
   }
 
   stop(): Promise<void> {
@@ -818,6 +841,7 @@ export class Runtime implements SourceHost {
     this.current = effective
     this.settings = after
     this.policy = settingsPolicy(after, this.sources)
+    configWarnings.push(...this.prompts.loadNotes(false))
     if (from !== to)
       this.engine.policyChanged(
         from,

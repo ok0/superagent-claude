@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
+import type { Ticket } from '../src/core/index.ts'
 import type { PromptChange } from '../src/executor/worker-executor.ts'
 import type { FakeScript } from '../src/runtimes/fake/runtime.ts'
 import { waitUntil } from './fixtures/async.ts'
@@ -57,13 +58,14 @@ it("resumes an ended ticket on a person's message with its stored session and wo
 
 it('team-only change: resumes and merges the latest team notice into the first input', async () => {
   let version = 'v1'
-  const promptChange = vi.fn((stored: string): PromptChange =>
+  const promptChange = vi.fn((stored: string, _ticket: Ticket): PromptChange =>
     stored === version ? { kind: 'same' } : { kind: 'team', notice: 'NOTICE team' },
   )
+  const promptVersion = vi.fn((_ticket: Ticket) => version)
   const w = workerHarness({
     script: READY,
     deps: {
-      promptVersion: () => version,
+      promptVersion,
       instructions: async () => `instructions-${version}`,
       promptChange,
       history: async () => 'abc1234 first commit',
@@ -76,7 +78,8 @@ it('team-only change: resumes and merges the latest team notice into the first i
     version = 'v2'
     wake(w, '2')
     await waitUntil(() => w.runtime.sessions.length === 2 && w.runtime.sessions[1]!.turns.length >= 1)
-    expect(promptChange).toHaveBeenCalledWith('v1')
+    expect(promptChange).toHaveBeenCalledWith('v1', expect.objectContaining({ id }))
+    expect(promptVersion).toHaveBeenCalledWith(expect.objectContaining({ id }))
     expect(w.runtime.opened[1]!.resume).toBe(stored.sessionId)
     const a2 = w.ticket(id).assignments[1]!.id
     expect(w.runtime.sessions[1]!.sent[0]).toEqual({ id: 'notice:prompts:v2', mode: 'inject', text: 'NOTICE team' })

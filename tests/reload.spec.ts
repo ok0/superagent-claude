@@ -3,11 +3,11 @@
  * cancelling them, a refused file keeps the running config, rule violations refuse the whole change, startup-only
  * keys are kept and reported, prompts are refreshed on success only, and SIGHUP reloads the daemon.
  */
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadConfig } from '../src/app/config.ts'
+import { ConfigError, loadConfig } from '../src/app/config.ts'
 import { allowedHash } from '../src/app/credentials.ts'
 import { Runtime } from '../src/app/runtime.ts'
 import { main } from '../src/cli/main.ts'
@@ -60,6 +60,7 @@ async function boot(over: Record<string, unknown> = {}, agentLogin?: () => strin
   const fake = new FakeRuntime(hold, { probe: { sandbox: true, version: 'x' } })
   const r = new Runtime({
     config,
+    configDir: dir,
     configPath: path,
     env: ENV,
     runtime: fake,
@@ -191,6 +192,47 @@ describe('policy reload', () => {
     writeFileSync(path, '{')
     await r.reload()
     expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('an oversize note on reload is a warning and the previous note stays', async () => {
+    const notePath = join(dir, 'prompts', 'environment', 'owner', 'repo.md')
+    mkdirSync(join(dir, 'prompts', 'environment', 'owner'), { recursive: true })
+    writeFileSync(notePath, 'Note A')
+    const { r, records, fake } = await boot()
+    expect(fake.sessions[0]!.spec.instructions).toContain('Note A')
+
+    writeFileSync(notePath, 'x'.repeat(4001))
+    writeConfig()
+    const o = await r.reload()
+    expect(o.applied).toBe(true)
+    expect(o.warnings.some(warning => warning.includes(notePath) && warning.includes('4001'))).toBe(true)
+    expect(records).toContainEqual(
+      expect.objectContaining({ event: 'config.warning', detail: expect.stringContaining(notePath) }),
+    )
+    expect(r.prompts.instructions('worker', [], 'owner/repo')).toContain('Note A')
+  })
+
+  it('an oversize note at startup refuses the runtime', async () => {
+    const notePath = join(dir, 'prompts', 'environment', 'owner', 'repo.md')
+    mkdirSync(join(dir, 'prompts', 'environment', 'owner'), { recursive: true })
+    writeConfig()
+    writeFileSync(notePath, 'x'.repeat(4001))
+    let error: unknown
+    try {
+      new Runtime({
+        config: loadConfig(path, ENV),
+        configDir: dir,
+        configPath: path,
+        env: ENV,
+        runtime: new FakeRuntime(hold),
+      })
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(ConfigError)
+    expect((error as Error).message).toContain(notePath)
+    expect((error as Error).message).toContain('4001')
+    expect((error as Error).message).toContain('4000')
   })
 
   it('keeps startup-only keys and reports them, and a repository change applies to admission now', async () => {
