@@ -1,4 +1,8 @@
-/** Live guard check against the real SDK: a worker asked to push to a local bare remote gets a guard denial reported through onDeny, without the command text; local repositories only, GitHub is never called. Gated like claude-resume.spec.ts. */
+/**
+ * Live guard check against the real SDK: a worker asked to push to a local bare remote gets a guard denial
+ * reported through onDeny, without the command text; local repositories only, GitHub is never called.
+ * Gated like claude-resume.spec.ts.
+ */
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

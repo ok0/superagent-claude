@@ -1,5 +1,18 @@
 /**
- * Live code-change scenarios against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth. Scenarios come from the registry in tests/live/scenarios (core always, extended by SUPERAGENT_CLAUDE_LIVE_SCENARIOS). Each initial scenario's issue becomes one agent PR. A scenario passes only when the PR head checks succeed (playground CI, or npm ci, npm run typecheck and npm test locally on the head tree when the workflow is not seeded), its hidden acceptance tests pass on the PR head, and the diff check passes; the bug scenario also needs its new test to fail on the base. A scenario with an answer gets that answer once when the agent asks a question before its pull request, and a scenario that gets a reply and no pull request within the grace period fails instead of waiting out the whole timeout;an ambiguity scenario also needs a question or a stated interpretation; a prepared scenario starts from an owner pull request that adds one failing test. A review follow-up is judged again on the new head with the cumulative PR diff. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token; all GitHub access goes through the guarded helper; After judging, the owner squash-merges at most one passing pull request per scenario kind (bug, feature, ui). Cleanup then closes this run's other pull requests without merging, deletes their agent branches, and closes this run's issues.
+ * Live code-change scenarios against the playground repository: the daemon started through the CLI in auto mode with
+ * subscription OAuth. Scenarios come from the registry in tests/live/scenarios (core always, extended by
+ * SUPERAGENT_CLAUDE_LIVE_SCENARIOS). Each initial scenario's issue becomes one agent PR. A scenario passes only when
+ * the PR head checks succeed (playground CI, or npm ci, npm run typecheck and npm test locally on the head tree when
+ * the workflow is not seeded), its hidden acceptance tests pass on the PR head, and the diff check passes; the bug
+ * scenario also needs its new test to fail on the base. A scenario with an answer gets that answer once when the agent
+ * asks a question before its pull request, and a scenario that gets a reply and no pull request within the grace period
+ * fails instead of waiting out the whole timeout; an ambiguity scenario also needs a question or a stated
+ * interpretation; a prepared scenario starts from an owner pull request that adds one failing test. A review follow-up
+ * is judged again on the new head with the cumulative PR diff. Evidence is read from the store, GitHub and the logs.
+ * Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three
+ * tokens; never prints a token; all GitHub access goes through the guarded helper; After judging, the owner
+ * squash-merges at most one passing pull request per scenario kind (bug, feature, ui). Cleanup then closes this run's
+ * other pull requests without merging, deletes their agent branches, and closes this run's issues.
  */
 import { EventEmitter } from 'node:events'
 import {

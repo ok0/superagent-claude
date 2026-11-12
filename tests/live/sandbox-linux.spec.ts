@@ -1,4 +1,11 @@
-/** Linux sandbox through the adapter: a real dontAsk session with network.allow ['example.com'] fetches an allowed and a disallowed domain; the result is compared with probe().sandbox. Runs only on Linux with SUPERAGENT_CLAUDE_LIVE=1 and CLAUDE_CODE_OAUTH_TOKEN. Writes adapter.json to SANDBOX_LINUX_OUT when set. SANDBOX_WEAKER_NESTED=1 sets security.weakerNestedSandbox and SANDBOX_ALLOW_UNSANDBOXED=1 sets security.allowUnsandboxed. Only counts of CLAUDE_CODE_OAUTH_TOKEN are recorded, never values. A probe.sh written by the test counts, per token name, the other processes whose environ holds it, and whether /proc is visible. */
+/**
+ * Linux sandbox through the adapter: a real dontAsk session with network.allow ['example.com'] fetches an allowed and a
+ * disallowed domain; the result is compared with probe().sandbox. Runs only on Linux with SUPERAGENT_CLAUDE_LIVE=1 and
+ * CLAUDE_CODE_OAUTH_TOKEN. Writes adapter.json to SANDBOX_LINUX_OUT when set. SANDBOX_WEAKER_NESTED=1 sets
+ * security.weakerNestedSandbox and SANDBOX_ALLOW_UNSANDBOXED=1 sets security.allowUnsandboxed. Only counts of
+ * CLAUDE_CODE_OAUTH_TOKEN are recorded, never values. A probe.sh written by the test counts, per token name, the other
+ * processes whose environ holds it, and whether /proc is visible.
+ */
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

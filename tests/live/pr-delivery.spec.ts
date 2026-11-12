@@ -1,5 +1,10 @@
 /**
- * Live PR delivery run against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth, an owner issue becomes one pull request by the agent account, and a follow-up PR comment adds a commit in the same ticket, worktree and session. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token; the PR body closes the issue, `status` shows the idle session as idle, and the follow-up result goes to the PR, not the issue.
+ * Live PR delivery run against the playground repository: the daemon started through the CLI in auto mode with
+ * subscription OAuth, an owner issue becomes one pull request by the agent account, and a follow-up PR comment adds a
+ * commit in the same ticket, worktree and session. Evidence is read from the store, GitHub and the logs. Gated by
+ * SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens;
+ * never prints a token; the PR body closes the issue, `status` shows the idle session as idle, and the follow-up result
+ * goes to the PR, not the issue.
  */
 import { EventEmitter } from 'node:events'
 import {

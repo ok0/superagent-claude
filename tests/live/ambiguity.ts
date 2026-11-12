@@ -1,7 +1,10 @@
 import { basename } from 'node:path'
 import { isTestFile } from './rules.ts'
 
-// Ambiguity check: question OR stated interpretation. A question counts when the agent asks it before the pull request. An interpretation counts when a file or component is named in the PR body, when an agent issue comment states the planned change (posted no later than 120 s after the PR), or when PR prose names visual properties or areas. Every arm is a cheap heuristic (keywords and sentence matching, no model call); false positives only make the check pass.
+// Ambiguity check: question OR stated interpretation. A question counts when the agent asks it before the pull request.
+// An interpretation counts when a file or component is named in the PR body, when an agent issue comment states the
+// planned change (posted no later than 120 s after the PR), or when PR prose names visual properties or areas. Every
+// arm is a cheap heuristic (keywords and sentence matching, no model call); false positives only make the check pass.
 export interface IssueComment {
   user: { login: string }
   body?: string | null
@@ -10,7 +13,7 @@ export interface IssueComment {
 }
 export const KOREAN_QUESTION_ENDINGS = ['까요', '나요', 'ㄹ까요', '습니까', '인가요', '있을까요', '할까요'] as const
 
-// Cheap heuristic for Korean clarification requests that end in a request rather than a question mark or question ending.
+// Cheap heuristic for Korean clarification requests ending in a request, not a question mark or ending.
 // False positives only trigger one canned answer, and only for agent comments posted before the pull request.
 const KOREAN_REQUEST_RE =
   /(?:알려|말씀)\s?(?:해\s?)?주(?:세요|시면|시겠|시기)|확인\s?(?:부탁|해\s?주)|주시면[^.!。…\n]*겠습니다/u

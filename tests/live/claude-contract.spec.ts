@@ -1,4 +1,7 @@
-/** Live Claude contract cases against the real SDK, gated by SUPERAGENT_CLAUDE_LIVE=1 and an auth mode; skipped otherwise. */
+/**
+ * Live Claude contract cases against the real SDK, gated by SUPERAGENT_CLAUDE_LIVE=1 and an auth mode;
+ * they are skipped otherwise.
+ */
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

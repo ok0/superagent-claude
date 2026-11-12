@@ -1,5 +1,9 @@
 /**
- * Live conversation run against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth. A mention that asks for something outside the repository gets one refusal on its issue, also after a daemon restart. A pull request whose ticket is ready keeps that report when a CI event arrives after a handed-back comment. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token.
+ * Live conversation run against the playground repository: the daemon started through the CLI in auto mode with
+ * subscription OAuth. A mention that asks for something outside the repository gets one refusal on its issue, also
+ * after a daemon restart. A pull request whose ticket is ready keeps that report when a CI event arrives after a
+ * handed-back comment. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1, a
+ * configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token.
  */
 import { EventEmitter } from 'node:events'
 import {

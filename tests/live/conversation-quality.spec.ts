@@ -1,5 +1,11 @@
 /**
- * Live conversation quality run against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth. Checks that a steer which changes the request renames the ticket in status and needs and that its pull request carries only the requested files; that an acknowledgement does not assert a premise the request does not give; that an out-of-scope refusal has a readable reason, with the raw reason and the posted body recorded; and that no live content in the repository names a milestone. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token.
+ * Live conversation quality run against the playground repository: the daemon started through the CLI in auto mode with
+ * subscription OAuth. Checks that a steer which changes the request renames the ticket in status and needs and that its
+ * pull request carries only the requested files; that an acknowledgement does not assert a premise the request does not
+ * give; that an out-of-scope refusal has a readable reason, with the raw reason and the posted body recorded; and that
+ * no live content in the repository names a milestone. Evidence is read from the store, GitHub and the logs. Gated by
+ * SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens;
+ * never prints a token.
  */
 import { EventEmitter } from 'node:events'
 import {

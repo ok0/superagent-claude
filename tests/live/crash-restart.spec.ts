@@ -1,5 +1,8 @@
 /**
- * Live forced-stop run against the playground repository: the daemon is started as a child process through the CLI entry with subscription OAuth, SIGKILLed while a ticket's Assignment runs, restarted on the same stateDir, and checked through the store and the GitHub comment list. Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token.
+ * Live forced-stop run against the playground repository: the daemon is started as a child process through the CLI
+ * entry with subscription OAuth, SIGKILLed while a ticket's Assignment runs, restarted on the same stateDir, and
+ * checked through the store and the GitHub comment list. Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured
+ * SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token.
  */
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
