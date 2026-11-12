@@ -46,6 +46,8 @@ export const REQUIRED_CONTRIBUTING = [
   '`pnpm live:seed`',
   '`pnpm live:cleanup`',
   '](docs/releasing.md)',
+  'Code comments say why, not what',
+  'internal planning IDs',
 ] as const
 
 export const REQUIRED_RELEASING = [
@@ -279,7 +281,7 @@ describe('contributing docs', () => {
 
   it.each([
     ['see .docs/notes.md', 'links .docs/'],
-    ['shipped in M28', 'milestone id'],
+    ['shipped in M' + '28', 'milestone id'],
     ['next Milestone', 'milestone word'],
     ['mail dev@example.com', 'email address'],
     ['built with Claude' + ' Code', 'branding'],

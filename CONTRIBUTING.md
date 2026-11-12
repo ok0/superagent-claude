@@ -49,6 +49,8 @@ The live tests write only to the repository you name. Without that setting, ever
 
 Run `pnpm format` to format the TypeScript sources with Prettier. `pnpm format:check` only checks them.
 
+Code comments say why, not what. Do not refer to internal planning IDs (design records, requirement or acceptance numbers) in comments, test titles or strings; `tests/process-refs.spec.ts` checks this.
+
 To check the container image locally, you need Docker. CI builds the image but never pushes it.
 
 ```sh
