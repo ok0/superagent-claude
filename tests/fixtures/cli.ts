@@ -1,4 +1,7 @@
-/** CLI test fixtures: a fake gh program on PATH (builtins only), the environment that starts the daemon, and a CliIo that records output and signal listeners. */
+/**
+ * CLI test fixtures: a fake gh program on PATH (builtins only), the environment that starts the daemon, and a CliIo
+ * that records output and signal listeners.
+ */
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CliIo } from '../../src/cli/main.ts'

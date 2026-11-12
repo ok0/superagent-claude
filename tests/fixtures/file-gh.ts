@@ -1,5 +1,7 @@
 /**
- * A file-backed fake gh for daemon child processes: routes through `fakeGh`, keeps the script and the posted comments in one JSON file shared by every gh call, and SIGKILLs the calling daemon once before or after a matching POST when the test sets a kill rule.
+ * A file-backed fake gh for daemon child processes: routes through `fakeGh`, keeps the script and the posted comments
+ * in one JSON file shared by every gh call, and SIGKILLs the calling daemon once before or after a matching POST when
+ * the test sets a kill rule.
  */
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'

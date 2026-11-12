@@ -1,6 +1,7 @@
 /**
- * Runtime host for Router-session tests: a Runtime in session mode over the scripted fake runtime, with a chat Source, a
- * controllable clock, and a switch that makes the next Router opens fail. It exposes what the Router and the workers were sent.
+ * Runtime host for Router-session tests: a Runtime in session mode over the scripted fake runtime, with a chat Source,
+ * a controllable clock, and a switch that makes the next Router opens fail.
+ * It exposes what the Router and the workers were sent.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

@@ -1,5 +1,8 @@
 // Ported from dsh-superagent-prototype (MIT) tests/core-engine.spec.ts
-/** Engine test harness (ref core-engine.spec harness): MemoryRepositories plus vi.fn port mocks and a deterministic clock. A real Executor may replace the double through the executor hook. */
+/**
+ * Engine test harness: MemoryRepositories plus vi.fn port mocks and a deterministic clock. A real Executor may replace
+ * the double through the executor hook.
+ */
 import { vi } from 'vitest'
 import { Engine, MemoryRepositories, runningAssignment } from '../../src/core/index.ts'
 import type {
@@ -112,7 +115,7 @@ export function harness(
     ...(prepareTicket ? { prepareTicket } : {}),
     now: () => new Date(Date.UTC(2026, 8, 23, 0, 0, clock)).toISOString(),
   })
-  /** Simulate the executor starting queued assignments (unless `launch` is false) and delivering pending ticket inputs. */
+  /** Simulate the executor starting queued assignments (unless `launch` is false) and delivering ticket inputs. */
   function settle({ launch = true } = {}) {
     for (;;) {
       const next = launch ? launches.shift() : undefined

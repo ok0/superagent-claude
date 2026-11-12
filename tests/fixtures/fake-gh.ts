@@ -1,4 +1,7 @@
-/** A scripted stand-in for the gh and git programs behind a real Commands runner, and a recording Source host; no network and no real gh. */
+/**
+ * A scripted stand-in for the gh and git programs behind a real Commands runner, and a recording Source host; no
+ * network and no real gh.
+ */
 import { Commands, type Exec } from '../../src/infra/commands.ts'
 import { HealthBoard } from '../../src/infra/health.ts'
 import type { ReceiveResult, Ticket, Thread, ThreadRef, Trigger } from '../../src/core/index.ts'

@@ -1,4 +1,7 @@
-/** Runtime-neutral contract suite (docs/runtime-contract.md). Call runtimeContract with a factory that returns the runtime under test for each case; M11 reruns a subset against the real adapter. */
+/**
+ * Runtime-neutral contract suite (docs/runtime-contract.md). Call runtimeContract with a factory that returns the
+ * runtime under test for each case; the live suite reruns a subset against the real adapter.
+ */
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
@@ -189,7 +192,9 @@ const CHECKS: Record<ContractCase, (c: CaseContext) => Promise<void>> = {
   },
 }
 
-/** Adds one `it` per contract case (all cases unless options.cases narrows them), each against a session from factory(case). */
+/**
+ * Adds one `it` per contract case, or only the cases options.cases names, each against a session from factory(case).
+ */
 export function runtimeContract(
   name: string,
   factory: (contractCase: ContractCase) => AgentRuntime,

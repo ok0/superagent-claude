@@ -1,4 +1,7 @@
-/** Child entry for the transaction crash test: commits one reply effect, then SIGKILLs itself inside a transaction that never commits. */
+/**
+ * Child entry for the transaction crash test: commits one reply effect, then SIGKILLs itself inside a transaction
+ * that never commits.
+ */
 import { Effects } from '../../src/app/effects.ts'
 import { Store } from '../../src/app/store.ts'
 import { HealthBoard } from '../../src/infra/health.ts'

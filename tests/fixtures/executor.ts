@@ -1,4 +1,7 @@
-/** WorkerExecutor test harness: file Store, Effects, the Engine harness, FakeRuntime and a manual clock that drives Effects, worker timers and Fake delays. */
+/**
+ * WorkerExecutor test harness: file Store, Effects, the Engine harness, FakeRuntime and a manual clock that drives
+ * Effects, worker timers and Fake delays.
+ */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

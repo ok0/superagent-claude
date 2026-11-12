@@ -1,4 +1,7 @@
-/** A scripted Source kind for runtime tests: its Channel records what it sends, and its service hands Triggers to the Engine through the SourceHost. */
+/**
+ * A scripted Source kind for runtime tests: its Channel records what it sends, and its service hands Triggers to the
+ * Engine through the SourceHost.
+ */
 import { z } from 'zod'
 import type { OutboundMessage, ReceiveResult, Trigger } from '../../src/core/index.ts'
 import type { SourceHost, SourceService } from '../../src/sources/host.ts'

@@ -1,4 +1,7 @@
-/** Scripted stand-in for the SDK query: records the user messages the adapter sends and lets a test stream back the messages the SDK would emit. */
+/**
+ * Scripted stand-in for the SDK query: records the user messages the adapter sends and lets a test stream back the
+ * messages the SDK would emit.
+ */
 import type {
   HookInput,
   Options,

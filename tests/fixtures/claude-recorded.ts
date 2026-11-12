@@ -1,4 +1,7 @@
-/** Recorded SDK message sequences transcribed from M2 evidence (sdk-semantics.md: result, background-bash attempt 1, inputs-read, interrupt; SDK 0.3.321 / CLI 2.1.321), with uuids replaced by fixed fixture uuids. Tests must not read .docs/. */
+/**
+ * Recorded SDK message sequences from real runs (result, background-bash attempt 1, inputs-read, interrupt;
+ * SDK 0.3.321 / CLI 2.1.321), with uuids replaced by fixed fixture uuids.
+ */
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { EventMapper } from '../../src/runtimes/claude/events.ts'
 import type { RuntimeEvent } from '../../src/executor/contract.ts'
