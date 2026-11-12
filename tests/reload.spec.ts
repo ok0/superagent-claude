@@ -11,6 +11,7 @@ import { ConfigError, loadConfig } from '../src/app/config.ts'
 import { allowedHash } from '../src/app/credentials.ts'
 import { Runtime } from '../src/app/runtime.ts'
 import { main } from '../src/cli/main.ts'
+import { ScratchWorkspaces } from '../src/executor/workspaces.ts'
 import type { Trigger } from '../src/core/index.ts'
 import { ticketStage } from '../src/core/stage.ts'
 import { SettingsSchema } from '../src/policy/policy.ts'
@@ -308,4 +309,61 @@ it('a reload that lowers the limits leaves existing reports alone', async () => 
   expect(r.store.tickets.get(id)!.assignments).toEqual(kept)
   expect(records.some(record => record.event === 'worker.limit')).toBe(false)
   expect(ticketStage(r.store.tickets.get(id)!)).toEqual({ stage: 'person', action: 'review' })
+})
+
+it('a branch setting change is not a restart key and applies to tickets created after the reload', async () => {
+  const prepare = vi.spyOn(ScratchWorkspaces.prototype, 'prepare')
+  try {
+    writeConfig({ repositories: [{ repository: 'owner/repo', pullRequestTo: 'dev' }] })
+    const config = loadConfig(path, ENV)
+    const chat = testSource()
+    const fake = new FakeRuntime(hold, { probe: { sandbox: true, version: 'x' } })
+    const r = new Runtime({
+      config,
+      configDir: dir,
+      configPath: path,
+      env: ENV,
+      runtime: fake,
+      kinds: [chat.kind],
+      services: [chat.service],
+    })
+    runtime = r
+    await r.start()
+    expect(chat.emit(from('1', 'alice'))).toBe('stored')
+    await waitUntil(() => fake.sessions.length === 1 && r.store.tickets.open().length === 1)
+    const calls = () => prepare.mock.calls as unknown as [{ id: string }, string, unknown][]
+    const firstId = r.store.tickets.list()[0]!.id
+    expect(
+      calls()
+        .filter(call => call[0].id === firstId)
+        .map(call => call[2]),
+    ).toEqual([{ pullRequestTo: 'dev' }])
+
+    writeConfig({ repositories: [{ repository: 'owner/repo', branchFrom: 'main', pullRequestTo: 'release' }] })
+    const outcome = await r.reload()
+    expect(outcome).toMatchObject({ applied: true, restartRequired: [] })
+    expect(r.config.branches).toEqual({ 'owner/repo': { branchFrom: 'main', pullRequestTo: 'release' } })
+
+    expect(chat.emit(from('2', 'alice'))).toBe('stored')
+    await waitUntil(() => fake.sessions.length === 2)
+    const second = calls().find(call => call[0].id !== firstId)!
+    expect(second[2]).toEqual({ branchFrom: 'main', pullRequestTo: 'release' })
+    expect(
+      calls()
+        .filter(call => call[0].id === firstId)
+        .map(call => call[2]),
+    ).toEqual([{ pullRequestTo: 'dev' }])
+  } finally {
+    prepare.mockRestore()
+  }
+})
+
+it('applies review keys on reload', async () => {
+  const { r } = await boot()
+  const review = { enabled: false, minChangedLines: 10, maxPerTicket: 1 }
+  writeConfig({ review })
+  const outcome = await r.reload()
+  expect(outcome).toMatchObject({ applied: true })
+  expect(outcome.restartRequired).not.toContain('review')
+  expect(r.config.review).toEqual(review)
 })

@@ -43,6 +43,13 @@ export interface Workspace {
   cwd: string
   branch: string
 }
+/** A configured branch is missing on the remote; the message is the reason a person reads. */
+export class WorkspaceBlocked extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'WorkspaceBlocked'
+  }
+}
 export type PromptChange = { kind: 'same' } | { kind: 'team'; notice: string } | { kind: 'fixed' }
 export interface WorkerDeps {
   prepare(ticket: Ticket): Promise<Workspace>
@@ -375,6 +382,10 @@ export class WorkerExecutor implements Executor {
       try {
         workspace = await this.deps.prepare(ticket)
       } catch (e) {
+        if (e instanceof WorkspaceBlocked) {
+          this.report(ticketId, { state: 'blocked', summary: e.message })
+          return
+        }
         this.report(ticketId, { state: 'failed', summary: `The workspace could not be prepared: ${this.message(e)}` })
         return
       }

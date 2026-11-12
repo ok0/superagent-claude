@@ -4,11 +4,11 @@
  * pushes; the PR body closes the issue, and the follow-up's result goes to the PR, not the issue.
  */
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { ConfigSchema } from '../src/app/config.ts'
+import { ConfigSchema, repositoryBranches } from '../src/app/config.ts'
 import { Runtime } from '../src/app/runtime.ts'
 import { installedSources } from '../src/app/sources.ts'
 import { WorkerStore } from '../src/executor/worker-store.ts'
@@ -106,12 +106,16 @@ function workerScript(env: Record<string, string>): FakeScript {
   }
 }
 
-function start(log?: (record: LogRecord) => void): {
+function start(
+  log?: (record: LogRecord) => void,
+  options: { repositories?: unknown[]; issueBody?: string; dev?: boolean } = {},
+): {
   gh: ReturnType<typeof fakeGh>
   clock: ManualClock
   fake: FakeRuntime
   origin: string
   env: Record<string, string>
+  stateDir: string
 } {
   directory = mkdtempSync(join(tmpdir(), 'delivery-e2e-'))
   const env = { PATH: process.env.PATH!, HOME: join(directory, 'home'), LANG: 'C' }
@@ -126,17 +130,26 @@ function start(log?: (record: LogRecord) => void): {
   sh(['add', '-A'], seed)
   sh([...COMMIT, 'commit', '-m', 'init'], seed)
   sh(['push', origin, 'main'], seed)
+  if (options.dev) {
+    sh(['checkout', '-b', 'dev'], seed)
+    writeFileSync(join(seed, 'dev.txt'), 'dev')
+    sh(['add', '-A'], seed)
+    sh([...COMMIT, 'commit', '-m', 'dev'], seed)
+    sh(['push', origin, 'dev'], seed)
+    sh(['checkout', 'main'], seed)
+  }
 
-  const config = ConfigSchema.parse({
-    repositories: [A],
+  const raw = {
+    repositories: options.repositories ?? [A],
     policy: { allowed: ['alice'], acceptMode: 'auto' },
     stateDir: join(directory, 'state'),
-  })
+  }
+  const config = { ...ConfigSchema.parse(raw), branches: repositoryBranches(raw.repositories) }
   const gh = fakeGh({
     repositories: {
       [A]: {
         notifications: [notification(A, 1)],
-        issues: { 1: issue(A, 1, { body: '@agent-bot please fix the typo' }) },
+        issues: { 1: issue(A, 1, { body: options.issueBody ?? '@agent-bot please fix the typo' }) },
       },
     },
   })
@@ -158,7 +171,7 @@ function start(log?: (record: LogRecord) => void): {
     access: { remote: () => origin, env: () => ({}), secrets: [] },
     ...(log ? { log } : {}),
   })
-  return { gh, clock, fake, origin, env }
+  return { gh, clock, fake, origin, env, stateDir: join(directory, 'state') }
 }
 
 const publishResults = (session: {
@@ -267,4 +280,47 @@ it('publish twice opens one PR bound to the ticket, and a PR follow-up resumes t
   expect(
     gh.posted.filter(post => post.path === 'issues/1/comments' && post.body.includes('Pushed the follow-up.')),
   ).toHaveLength(0)
+})
+
+it('with branchFrom main and pullRequestTo dev the PR opens against dev from a worktree on main', async () => {
+  const { gh, fake, origin, env, stateDir } = start(undefined, {
+    dev: true,
+    repositories: [{ repository: A, branchFrom: 'main', pullRequestTo: 'dev' }],
+  })
+  await runtime!.start()
+  await waitUntil(() =>
+    fake.sessions.some(session => session.spec.role === 'worker' && publishResults(session).length === 2),
+  )
+
+  const ticketId = runtime!.store.tickets.list()[0]!.id
+  const worker = fake.sessions.find(session => session.spec.role === 'worker')!
+  const record = new WorkerStore(runtime!.store, Date.now).get(ticketId)!
+  const posts = gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')
+  expect(posts).toHaveLength(1)
+  expect(posts[0]!.fields.base).toBe('dev')
+  expect(execFileSync('git', ['rev-parse', 'HEAD~1'], { cwd: record.cwd, env, encoding: 'utf8' }).trim()).toBe(
+    execFileSync('git', ['rev-parse', 'refs/heads/main'], { cwd: origin, env, encoding: 'utf8' }).trim(),
+  )
+  expect(JSON.parse(readFileSync(join(stateDir, 'branches', ticketId + '.json'), 'utf8'))).toEqual({
+    from: 'main',
+    to: 'dev',
+  })
+  expect(worker.spec.cwd).toBe(record.cwd)
+})
+
+it('an issue asking for another base does not change the PR base', async () => {
+  const { gh, fake, stateDir } = start(undefined, {
+    dev: true,
+    issueBody: '@agent-bot please fix the typo and open the PR against dev',
+  })
+  await runtime!.start()
+  await waitUntil(() =>
+    fake.sessions.some(session => session.spec.role === 'worker' && publishResults(session).length === 2),
+  )
+
+  const ticketId = runtime!.store.tickets.list()[0]!.id
+  const posts = gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')
+  expect(posts).toHaveLength(1)
+  expect(posts[0]!.fields.base).toBe('main')
+  expect(JSON.parse(readFileSync(join(stateDir, 'branches', ticketId + '.json'), 'utf8'))).toEqual({})
 })

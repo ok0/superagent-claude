@@ -13,7 +13,7 @@ Everything else has a default.
 
 | Key | Default |
 | --- | --- |
-| `repositories` | required, one or more `owner/name` |
+| `repositories` | required, one or more `owner/name` entries; an entry may be an object with branch settings (see [Repository branches](#repository-branches)) |
 | `policy.allowed` | required, one or more logins |
 | `policy.acceptMode` | `observe` |
 | `policy.rules` | built-in rules |
@@ -56,6 +56,27 @@ A minimal config:
 ```
 
 See [security.md](security.md) for the trust policy behind the `security.*` and `network.allow` settings.
+
+## Repository branches
+
+An entry in `repositories` can be an object with branch settings. An entry that is only a string needs no settings:
+
+```json
+{
+  "repositories": [
+    "owner/tool",
+    { "repository": "owner/app", "branchFrom": "main", "pullRequestTo": "dev" }
+  ],
+  "policy": { "allowed": ["alice"] }
+}
+```
+
+- `branchFrom`: the remote branch a new worktree starts from; default the repository's default branch. `pullRequestTo`: the branch pull requests open against; default `branchFrom`, else the default branch. In the example, work starts from `main` and the pull request targets `dev`.
+- Only the config file sets these; text in issues, comments or pull requests cannot change them.
+- Each ticket keeps the values from when its worktree was created; after a reload (SIGHUP) new values apply to tickets started after it; the base of an open pull request is never changed.
+- Not checked at startup. If a configured branch is missing on the remote when a ticket starts, or the target branch is missing at publish, the ticket is blocked, nothing is pushed and no pull request is opened; a person creates the branch or fixes the config.
+- Warning: when the two differ, commits on `branchFrom` that are not on `pullRequestTo` show up in the pull request diff, and changes that exist only on `pullRequestTo` can conflict with the work.
+- Names: letters, digits, `.`, `_`, `-`, `/`; no leading `-` or `/`, no `..` or `//`, no trailing `/` or `.lock`. A repository may be listed once.
 
 ## Environment notes
 

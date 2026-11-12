@@ -4,8 +4,9 @@
  * Clone and fetch get the injected access env (authentication), and errors mask its secrets.
  * Publishing pushes an agent branch without force, adding co-author trailers only to commits not yet pushed.
  * Access errors carry the HTTP status when one is known. A transient push failure is retried up to 3 times (2 s, 5 s).
+ * A worktree starts from the configured remote branch, the branch choice is fixed per ticket in a host file outside the worktree, and a missing configured branch stops prepare or push with `WorkspaceBlocked`.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { Ticket } from '../core/index.ts'
 import { CliError, type CommandLimits, type Commands } from '../infra/commands.ts'
@@ -17,7 +18,9 @@ import {
   gitInspectArgv,
   truncateOutput,
 } from './git-inspect.ts'
-import type { Workspace } from './worker-executor.ts'
+import { WorkspaceBlocked, type Workspace } from './worker-executor.ts'
+
+export { WorkspaceBlocked }
 
 export class RepositoryAccessError extends Error {
   readonly repository: string
@@ -66,8 +69,13 @@ export interface DiffText {
   truncated: boolean
 }
 
+export interface BranchConfig {
+  branchFrom?: string
+  pullRequestTo?: string
+}
+
 export interface WorkspaceProvider {
-  prepare(ticket: Ticket, name: string): Promise<Workspace>
+  prepare(ticket: Ticket, name: string, branches?: BranchConfig): Promise<Workspace>
   remove(ticketId: string): Promise<void>
   history(cwd: string): Promise<string>
   push(ticket: Ticket, options: PushOptions): Promise<PushResult>
@@ -191,7 +199,30 @@ export class Workspaces implements WorkspaceProvider {
     return join(this.stateDir, 'repos', repository.replace('/', '__'))
   }
 
-  async prepare(ticket: Ticket, name: string): Promise<Workspace> {
+  private branchesPath(ticketId: string): string {
+    return join(this.stateDir, 'branches', ticketId + '.json')
+  }
+
+  private fixedBranches(ticketId: string): { from?: string; to?: string } | undefined {
+    const path = this.branchesPath(ticketId)
+    if (!existsSync(path)) return undefined
+    const record: unknown = JSON.parse(readFileSync(path, 'utf8'))
+    if (typeof record !== 'object' || record === null || Array.isArray(record))
+      throw new Error(`The branch record of ticket ${ticketId} is unreadable`)
+    const { from, to } = record as { from?: unknown; to?: unknown }
+    if ((from !== undefined && typeof from !== 'string') || (to !== undefined && typeof to !== 'string'))
+      throw new Error(`The branch record of ticket ${ticketId} is unreadable`)
+    return { ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}) }
+  }
+
+  private remoteHas(clone: string, name: string): Promise<boolean> {
+    return this.git(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/' + name], clone).then(
+      () => true,
+      () => false,
+    )
+  }
+
+  async prepare(ticket: Ticket, name: string, branches: BranchConfig = {}): Promise<Workspace> {
     if (!NAME.test(name) || name.includes('..') || name.endsWith('.lock'))
       throw new Error('Invalid worktree name: ' + name)
     const repository = this.repositoryOf(ticket)
@@ -210,14 +241,33 @@ export class Workspaces implements WorkspaceProvider {
       const base = await this.clone(repository)
       mkdirSync(dirname(cwd), { recursive: true })
       await this.git(['worktree', 'prune'], base)
+      const stored = this.fixedBranches(ticket.id)
+      const fixed: { from?: string; to?: string } = stored ?? {
+        ...(branches.branchFrom ? { from: branches.branchFrom } : {}),
+        ...(branches.pullRequestTo ? { to: branches.pullRequestTo } : {}),
+      }
+      const names = [...new Set([fixed.from, fixed.to].filter((name): name is string => name !== undefined))]
+      const missing: string[] = []
+      for (const name of names) if (!(await this.remoteHas(base, name))) missing.push(name)
+      if (missing.length)
+        throw new WorkspaceBlocked(
+          `${repository} has no branch ${missing.join(', ')}, so no workspace was made. A person must create the branch or change branchFrom or pullRequestTo for ${repository} in the config.`,
+        )
       const exists = await this.git(['rev-parse', '--verify', '--quiet', 'refs/heads/' + branch], base).then(
         () => true,
         () => false,
       )
       await this.git(
-        exists ? ['worktree', 'add', cwd, branch] : ['worktree', 'add', '--no-track', '-b', branch, cwd, 'origin/HEAD'],
+        exists
+          ? ['worktree', 'add', cwd, branch]
+          : ['worktree', 'add', '--no-track', '-b', branch, cwd, fixed.from ? 'origin/' + fixed.from : 'origin/HEAD'],
         base,
       )
+      if (stored === undefined) {
+        const path = this.branchesPath(ticket.id)
+        mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+        writeFileSync(path, JSON.stringify(fixed) + '\n', { mode: 0o600 })
+      }
       return { repository, cwd, branch }
     })
   }
@@ -246,6 +296,7 @@ export class Workspaces implements WorkspaceProvider {
   }
 
   async remove(ticketId: string): Promise<void> {
+    rmSync(this.branchesPath(ticketId), { force: true })
     const path = this.worktreePath(ticketId)
     if (!existsSync(path)) return
     const common = existsSync(join(path, '.git'))
@@ -301,6 +352,19 @@ export class Workspaces implements WorkspaceProvider {
     return (await this.git([...this.repository(cwd), ...GIT_READ_OPTIONS, 'rev-parse', 'HEAD'], cwd)).trim()
   }
 
+  private async reviewBase(cwd: string, repo: string[]): Promise<string> {
+    const configured = this.fixedBranches(basename(resolve(cwd)))?.from
+    if (configured === undefined) return 'origin/HEAD'
+    const present = await this.git(
+      [...repo, ...GIT_READ_OPTIONS, 'rev-parse', '--verify', '--quiet', 'refs/remotes/origin/' + configured],
+      cwd,
+    ).then(
+      () => true,
+      () => false,
+    )
+    return present ? 'refs/remotes/origin/' + configured : 'origin/HEAD'
+  }
+
   async diffStat(cwd: string, base?: string): Promise<DiffStat> {
     const repo = this.repository(cwd)
     const known =
@@ -313,7 +377,9 @@ export class Workspaces implements WorkspaceProvider {
     const from =
       base !== undefined && known
         ? base
-        : (await this.git([...repo, ...GIT_READ_OPTIONS, 'merge-base', 'origin/HEAD', 'HEAD'], cwd)).trim()
+        : (
+            await this.git([...repo, ...GIT_READ_OPTIONS, 'merge-base', await this.reviewBase(cwd, repo), 'HEAD'], cwd)
+          ).trim()
     const out = await this.git(
       [...repo, ...GIT_READ_OPTIONS, 'diff', '--numstat', ...DIFF, '--end-of-options', from, 'HEAD', '--'],
       cwd,
@@ -387,9 +453,20 @@ export class Workspaces implements WorkspaceProvider {
       const branch = (await this.git(['branch', '--show-current'], cwd)).trim()
       if (!branch.startsWith('agent/')) throw new Error('The worktree is not on its agent branch')
       const clone = await this.clone(repository)
-      const base = (await this.git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], clone))
-        .trim()
-        .replace(/^origin\//, '')
+      const fixed = this.fixedBranches(ticket.id)
+      const target = fixed?.to ?? fixed?.from
+      let base: string
+      if (target) {
+        if (!(await this.remoteHas(clone, target)))
+          throw new WorkspaceBlocked(
+            `${repository} has no branch ${target} to open the pull request against, so nothing was pushed and no pull request was opened. A person must create the branch or change branchFrom or pullRequestTo for ${repository} in the config.`,
+          )
+        base = target
+      } else {
+        base = (await this.git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], clone))
+          .trim()
+          .replace(/^origin\//, '')
+      }
       const uncommitted = (await this.git(['status', '--porcelain'], cwd)).trim() !== ''
       const list = (await this.git(['rev-list', '--reverse', '--topo-order', 'HEAD', '--not', '--remotes=origin'], cwd))
         .split('\n')

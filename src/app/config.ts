@@ -15,6 +15,26 @@ export const RepositorySchema = z
   .trim()
   .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'must be owner/name')
 
+const BRANCH_NAME = /^(?![-/])(?!.*\.\.)(?!.*\/\/)(?!.*\/$)(?!.*\.lock$)[A-Za-z0-9._/-]{1,200}$/
+
+export const BranchNameSchema = z
+  .string()
+  .regex(
+    BRANCH_NAME,
+    'must be a branch name: letters, digits and . _ - /, not starting with - or /, without .. or //, not ending with / or .lock',
+  )
+
+const RepositoryEntrySchema = z.union([
+  RepositorySchema,
+  z
+    .object({
+      repository: RepositorySchema,
+      branchFrom: BranchNameSchema.optional(),
+      pullRequestTo: BranchNameSchema.optional(),
+    })
+    .strict(),
+])
+
 const AUTH_MODES = Object.keys(AUTH_ENV) as [AuthMode, ...AuthMode[]]
 
 export type StartupRule =
@@ -41,7 +61,24 @@ export class StartupRefused extends Error {
 
 export const ConfigSchema = z
   .object({
-    repositories: z.array(RepositorySchema).min(1, 'must name at least one repository'),
+    repositories: z
+      .array(RepositoryEntrySchema)
+      .min(1, 'must name at least one repository')
+      .superRefine((items, ctx) => {
+        const seen = new Set<string>()
+        const reported = new Set<string>()
+        for (const item of items) {
+          const name = typeof item === 'string' ? item : item.repository
+          const key = name.toLowerCase()
+          if (seen.has(key)) {
+            if (!reported.has(key)) {
+              reported.add(key)
+              ctx.addIssue({ code: 'custom', message: `lists ${name} more than once` })
+            }
+          } else seen.add(key)
+        }
+      })
+      .transform(items => items.map(item => (typeof item === 'string' ? item : item.repository))),
     policy: z
       .object({
         allowed: z.array(LoginSchema).min(1, 'must name at least one login'),
@@ -109,7 +146,32 @@ export const ConfigSchema = z
   })
   .strict()
 
-export type Config = z.infer<typeof ConfigSchema>
+export type Config = z.infer<typeof ConfigSchema> & {
+  branches?: Readonly<Record<string, { branchFrom?: string; pullRequestTo?: string }>>
+}
+
+export function repositoryBranches(entries: unknown): Record<string, { branchFrom?: string; pullRequestTo?: string }> {
+  const parsed = z.array(RepositoryEntrySchema).safeParse(entries)
+  if (!parsed.success) return {}
+  const branches: Record<string, { branchFrom?: string; pullRequestTo?: string }> = {}
+  for (const entry of parsed.data) {
+    if (typeof entry === 'string') continue
+    const { repository, branchFrom, pullRequestTo } = entry
+    if (branchFrom === undefined && pullRequestTo === undefined) continue
+    branches[repository.toLowerCase()] = {
+      ...(branchFrom !== undefined ? { branchFrom } : {}),
+      ...(pullRequestTo !== undefined ? { pullRequestTo } : {}),
+    }
+  }
+  return branches
+}
+
+export function branchesOf(
+  config: Pick<Config, 'branches'>,
+  repository: string,
+): { branchFrom?: string; pullRequestTo?: string } {
+  return config.branches?.[repository.toLowerCase()] ?? {}
+}
 
 export class ConfigError extends StartupRefused {
   constructor(message: string) {
@@ -155,7 +217,12 @@ export function loadConfig(path: string, env: Readonly<Record<string, string | u
     )
   }
   const data = result.data
-  return { ...data, stateDir: expandStateDir(data.stateDir, dirname(path), env) }
+  const branches = repositoryBranches((raw as { repositories?: unknown }).repositories)
+  return {
+    ...data,
+    stateDir: expandStateDir(data.stateDir, dirname(path), env),
+    ...(Object.keys(branches).length ? { branches } : {}),
+  }
 }
 
 const byLogin = (a: string, b: string): number => {

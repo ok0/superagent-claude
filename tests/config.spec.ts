@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CONFIG_FILE, ConfigError, StartupRefused, loadConfig, settingsOf } from '../src/app/config.ts'
+import { CONFIG_FILE, ConfigError, StartupRefused, branchesOf, loadConfig, settingsOf } from '../src/app/config.ts'
 import { SettingsSchema, policyVersion } from '../src/policy/policy.ts'
 
 const ENV = { HOME: '/home/test' }
@@ -194,5 +194,42 @@ describe('config file', () => {
     expect(settings.paused).toBe(false)
     expect(settings.eval.timeoutSeconds).toBe(120)
     expect(settings.policy.rules.map(rule => rule.id)).toEqual(['copy', 'visual'])
+  })
+
+  it('normalizes object repository entries into repositories and branch settings', () => {
+    const path = write({
+      repositories: [
+        'owner/a',
+        { repository: 'owner/b', branchFrom: 'main', pullRequestTo: 'dev' },
+        { repository: 'Owner/C' },
+      ],
+      policy: { allowed: ['alice'] },
+    })
+    const config = loadConfig(path, ENV)
+    expect(config.repositories).toEqual(['owner/a', 'owner/b', 'Owner/C'])
+    expect(config.branches).toEqual({ 'owner/b': { branchFrom: 'main', pullRequestTo: 'dev' } })
+    expect(branchesOf(config, 'OWNER/B')).toEqual({ branchFrom: 'main', pullRequestTo: 'dev' })
+    expect(branchesOf(config, 'owner/a')).toEqual({})
+  })
+
+  it('string-only entries have no branch settings', () => {
+    const config = loadConfig(write({ repositories: ['owner/repo'], policy: { allowed: ['alice'] } }), ENV)
+    expect(config.branches).toBeUndefined()
+    expect(branchesOf(config, 'owner/repo')).toEqual({})
+  })
+
+  it.each([
+    ['a repository listed twice in different case', { repositories: ['owner/repo', 'Owner/Repo'] }, 'more than once'],
+    ['a repository listed as string and object', { repositories: ['owner/repo', { repository: 'owner/repo' }] }, ''],
+    ['an unknown branch key', { repositories: [{ repository: 'owner/repo', base: 'dev' }] }, ''],
+    ['a branchFrom starting with a dash', { repositories: [{ repository: 'owner/repo', branchFrom: '-x' }] }, ''],
+    ['a branchFrom containing ..', { repositories: [{ repository: 'owner/repo', branchFrom: 'a..b' }] }, ''],
+    ['a pullRequestTo ending in .lock', { repositories: [{ repository: 'owner/repo', pullRequestTo: 'x.lock' }] }, ''],
+    ['an empty pullRequestTo', { repositories: [{ repository: 'owner/repo', pullRequestTo: '' }] }, ''],
+    ['an empty branchFrom', { repositories: [{ repository: 'owner/repo', branchFrom: '' }] }, ''],
+  ])('refuses %s', (_label, over, text) => {
+    const path = write({ policy: { allowed: ['alice'] }, ...over })
+    expect(() => loadConfig(path, ENV)).toThrow(ConfigError)
+    if (text) expect(() => loadConfig(path, ENV)).toThrow(text)
   })
 })

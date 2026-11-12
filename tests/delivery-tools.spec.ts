@@ -5,7 +5,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { deliveryTools, issueOf, linkIssue, type DeliveryToolsHost } from '../src/app/tools/delivery.ts'
 import type { ToolSpec } from '../src/executor/contract.ts'
-import { RepositoryAccessError } from '../src/executor/workspaces.ts'
+import { RepositoryAccessError, WorkspaceBlocked } from '../src/executor/workspaces.ts'
 import { githubPullRequests } from '../src/sources/github/delivery.ts'
 import { fakeGh, pull, type FakeRepository } from './fixtures/fake-gh.ts'
 
@@ -162,6 +162,21 @@ describe('worker delivery tools', () => {
       /HTTP 403/,
     )
     expect(report).toHaveBeenCalledWith('T1', { state: 'failed', summary: expect.stringContaining('(HTTP 403)') })
+  })
+
+  it('a missing target branch at push returns published false with the reason and opens no PR', async () => {
+    const message = 'acme/widgets has no branch dev to open the pull request against'
+    const { gh, tools, bindThread, report } = setup({ pushError: new WorkspaceBlocked(message) })
+    const result = await find(tools, 'orchestrator_publish').execute({ title: 'Fix', body: 'Body' }, signal())
+    expect(result).toEqual({
+      published: false,
+      repository: A,
+      reason: message,
+      next: expect.stringContaining('create the branch'),
+    })
+    expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')).toHaveLength(0)
+    expect(bindThread).not.toHaveBeenCalled()
+    expect(report).not.toHaveBeenCalled()
   })
 
   it('a push that still fails after the host retries is a tool error without a failed report', async () => {

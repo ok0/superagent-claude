@@ -4,7 +4,7 @@
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import { ticketStage } from '../src/core/stage.ts'
-import { inputMode, remainingLimits } from '../src/executor/worker-executor.ts'
+import { inputMode, remainingLimits, WorkspaceBlocked } from '../src/executor/worker-executor.ts'
 import { accepted, guest, trigger } from './fixtures/engine.ts'
 import { gates, workerHarness } from './fixtures/executor.ts'
 import { waitUntil } from './fixtures/async.ts'
@@ -302,6 +302,26 @@ it('reports failed when the workspace cannot be prepared', async () => {
     expect(w.ticket(id).assignments[0]!.report).toMatchObject({
       state: 'failed',
       summary: 'The workspace could not be prepared: disk full',
+    })
+    expect(w.runtime.opened.length).toBe(0)
+    expect(w.slots.used).toBe(0)
+  } finally {
+    await w.close()
+  }
+})
+
+it('reports blocked with the reason when a configured branch is missing', async () => {
+  const w = workerHarness({
+    prepare: async () => {
+      throw new WorkspaceBlocked('owner/repo has no branch dev, so no workspace was made.')
+    },
+  })
+  try {
+    const id = accepted(w, '1').ticketId!
+    await waitUntil(() => w.ticket(id).assignments[0]!.report?.state === 'blocked')
+    expect(w.ticket(id).assignments[0]!.report).toMatchObject({
+      state: 'blocked',
+      summary: 'owner/repo has no branch dev, so no workspace was made.',
     })
     expect(w.runtime.opened.length).toBe(0)
     expect(w.slots.used).toBe(0)

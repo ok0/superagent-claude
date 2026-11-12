@@ -51,7 +51,7 @@ import {
 } from '../sources/host.ts'
 import type { SourceKind } from '../sources/kind.ts'
 import { SourceRegistry } from '../sources/registry.ts'
-import { loadConfig, settingsOf, StartupRefused, type Config } from './config.ts'
+import { branchesOf, loadConfig, settingsOf, StartupRefused, type Config } from './config.ts'
 import { assertStartupPolicy, type StartupReport } from './credentials.ts'
 import { Effects } from './effects.ts'
 import { Outbox, type OutboxChannels } from './outbox.ts'
@@ -415,7 +415,8 @@ export class Runtime implements SourceHost {
         })
       }
       const deps: WorkerDeps = {
-        prepare: ticket => this.workspaces.prepare(ticket, worktreeName(ticket)),
+        prepare: ticket =>
+          this.workspaces.prepare(ticket, worktreeName(ticket), branchesOf(this.current, repositoryOf(ticket))),
         instructions: async ticket =>
           this.prompts.instructions('worker', [{ source: 'ticket-title', text: ticket.title }], repositoryOf(ticket)),
         tools: ticket => {
@@ -796,6 +797,8 @@ export class Runtime implements SourceHost {
     const effective: Config = {
       ...this.current,
       repositories: next.repositories,
+      branches: next.branches,
+      review: next.review,
       policy: next.policy,
       network: next.network,
       retention: next.retention,

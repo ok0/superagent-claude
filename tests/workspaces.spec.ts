@@ -23,6 +23,7 @@ import {
   PUSH_BACKOFF_MS,
   RepositoryAccessError,
   ScratchWorkspaces,
+  WorkspaceBlocked,
   Workspaces,
   accessStatus,
   coAuthorTrailers,
@@ -758,5 +759,133 @@ describe('read-only git for review', () => {
       /* The control only needs the side effect of the configured program. */
     }
     expect(existsSync(marker)).toBe(true)
+  })
+})
+
+type Fixture = ReturnType<typeof fixture>
+const mainSha = (f: Fixture): string => f.sh(['rev-parse', 'refs/heads/main'], f.origin).trim()
+const fixedFile = (f: Fixture, id: string): string => join(f.state, 'branches', id + '.json')
+function withDev(f: Fixture): string {
+  const seed = join(f.dir, 'seed')
+  f.sh(['checkout', '-b', 'dev'], seed)
+  commit(f.sh, seed, 'dev.txt', 'dev', 'dev commit')
+  f.sh(['push', f.origin, 'dev'], seed)
+  f.sh(['checkout', 'main'], seed)
+  return f.sh(['rev-parse', 'refs/heads/dev'], f.origin).trim()
+}
+
+describe('repository branches', () => {
+  it('with no branch settings starts from the default branch and pushes against main', async () => {
+    const f = fixture()
+    const a = await f.ws.prepare(ticket(idA), 'alpha')
+    expect(f.sh(['rev-parse', 'HEAD'], a.cwd).trim()).toBe(mainSha(f))
+    commit(f.sh, a.cwd, 'one.txt', '1', 'c1')
+    expect((await f.ws.push(ticket(idA), {})).base).toBe('main')
+    expect(JSON.parse(readFileSync(fixedFile(f, idA), 'utf8'))).toEqual({})
+  })
+
+  it('branchFrom main alone starts and targets main', async () => {
+    const f = fixture()
+    const a = await f.ws.prepare(ticket(idA), 'alpha', { branchFrom: 'main' })
+    expect(f.sh(['rev-parse', 'HEAD'], a.cwd).trim()).toBe(mainSha(f))
+    commit(f.sh, a.cwd, 'one.txt', '1', 'c1')
+    expect((await f.ws.push(ticket(idA), {})).base).toBe('main')
+  })
+
+  it('starts from the latest remote branchFrom after fetch and targets pullRequestTo', async () => {
+    const f = fixture()
+    const devSha = withDev(f)
+    const seed = join(f.dir, 'seed')
+    await f.ws.prepare(ticket(idB), 'beta')
+    commit(f.sh, seed, 'later.txt', 'later', 'later')
+    f.sh(['push', f.origin, 'main'], seed)
+    const newMain = mainSha(f)
+    const a = await f.ws.prepare(ticket(idA), 'alpha', { branchFrom: 'main', pullRequestTo: 'dev' })
+    expect(f.sh(['rev-parse', 'HEAD'], a.cwd).trim()).toBe(newMain)
+    commit(f.sh, a.cwd, 'one.txt', '1', 'c1')
+    expect((await f.ws.push(ticket(idA), {})).base).toBe('dev')
+
+    const c = await f.ws.prepare(ticket('c'.repeat(32)), 'gamma', { pullRequestTo: 'dev' })
+    expect(f.sh(['rev-parse', 'HEAD'], c.cwd).trim()).toBe(newMain)
+    commit(f.sh, c.cwd, 'two.txt', '2', 'c2')
+    expect((await f.ws.push(ticket('c'.repeat(32)), {})).base).toBe('dev')
+
+    const d = await f.ws.prepare(ticket('d'.repeat(32)), 'delta', { branchFrom: 'dev' })
+    expect(f.sh(['rev-parse', 'HEAD'], d.cwd).trim()).toBe(devSha)
+  })
+
+  it('a missing configured branch blocks prepare without a worktree or fixed record', async () => {
+    const f = fixture()
+    for (const branches of [{ branchFrom: 'nope' }, { pullRequestTo: 'gone' }]) {
+      const error = await f.ws.prepare(ticket(idA), 'alpha', branches).then(
+        () => undefined,
+        (e: unknown) => e,
+      )
+      expect(error).toBeInstanceOf(WorkspaceBlocked)
+      expect((error as Error).message).toContain(Object.values(branches)[0]!)
+      expect(existsSync(f.ws.worktreePath(idA))).toBe(false)
+      expect(existsSync(fixedFile(f, idA))).toBe(false)
+    }
+    const w = workerHarness({ prepare: t => f.ws.prepare(t, t.id, { pullRequestTo: 'gone' }) })
+    const id = accepted(w, '1').ticketId!
+    await waitUntil(() => w.ticket(id).assignments[0]!.report?.state === 'blocked')
+    expect(w.ticket(id).assignments[0]!.report!.state).toBe('blocked')
+    expect(w.ticket(id).assignments[0]!.report!.summary).toContain('gone')
+    w.close()
+  })
+
+  it('a pullRequestTo deleted before publish blocks the push', async () => {
+    const f = fixture()
+    withDev(f)
+    const a = await f.ws.prepare(ticket(idA), 'alpha', { pullRequestTo: 'dev' })
+    commit(f.sh, a.cwd, 'one.txt', '1', 'c1')
+    f.sh(['branch', '-D', 'dev'], f.origin)
+    const error = await f.ws.push(ticket(idA), {}).then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    expect(error).toBeInstanceOf(WorkspaceBlocked)
+    expect((error as Error).message).toContain('dev')
+    expect(() => f.sh(['rev-parse', '--verify', '--quiet', 'refs/heads/agent/alpha'], f.origin)).toThrow()
+  })
+
+  it('keeps the branch settings fixed per ticket and removes them with the ticket', async () => {
+    const f = fixture()
+    withDev(f)
+    const a = await f.ws.prepare(ticket(idA), 'alpha', { pullRequestTo: 'dev' })
+    const again = await f.ws.prepare(ticket(idA), 'alpha', { branchFrom: 'main', pullRequestTo: 'main' })
+    expect({ cwd: again.cwd, branch: again.branch }).toEqual({ cwd: a.cwd, branch: a.branch })
+    expect(JSON.parse(readFileSync(fixedFile(f, idA), 'utf8'))).toEqual({ to: 'dev' })
+    commit(f.sh, a.cwd, 'one.txt', '1', 'c1')
+    expect((await f.ws.push(ticket(idA), {})).base).toBe('dev')
+    mkdirSync(join(a.cwd, 'branches'))
+    commit(f.sh, a.cwd, 'branches/' + idA + '.json', '{"to":"main"}', 'record')
+    expect((await f.ws.push(ticket(idA), {})).base).toBe('dev')
+    await f.ws.remove(idA)
+    expect(existsSync(fixedFile(f, idA))).toBe(false)
+
+    const b = await f.ws.prepare(ticket(idB), 'beta')
+    rmSync(fixedFile(f, idB))
+    commit(f.sh, b.cwd, 'two.txt', '2', 'c2')
+    expect((await f.ws.push(ticket(idB), {})).base).toBe('main')
+  })
+
+  it('stores the fixed record outside the worktree, readable only by the owner', async () => {
+    const f = fixture()
+    await f.ws.prepare(ticket(idA), 'alpha')
+    const path = fixedFile(f, idA)
+    expect(path.startsWith(f.ws.worktreePath(idA))).toBe(false)
+    expect(statSync(path).mode & 0o777).toBe(0o600)
+  })
+
+  it('the default review diff base is the merge-base with branchFrom', async () => {
+    const f = fixture()
+    const devSha = withDev(f)
+    const a = await f.ws.prepare(ticket(idA), 'alpha', { branchFrom: 'dev' })
+    commit(f.sh, a.cwd, 'one.txt', '1\n', 'c1')
+    const stat = await f.ws.diffStat(a.cwd)
+    expect(stat.base).toBe(f.sh(['merge-base', 'refs/remotes/origin/dev', 'HEAD'], a.cwd).trim())
+    expect(stat.base).toBe(devSha)
+    expect(stat.changedLines).toBe(1)
   })
 })

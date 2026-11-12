@@ -2,7 +2,8 @@
  * Policy is checked before any git or GitHub call: live ticket, configured repository, a PR this ticket bound,
  * and delivery.allowAutoMerge. Publish re-checks push permission first and returns `published: false`
  * without any write when it is missing. Then the host review decision may stop it with `review_required`, again without any write.
- * Repository access errors file a failed report.
+ * Repository access errors file a failed report. A configured target branch missing on the remote returns
+ * `published: false` before any push.
  */
 import { z } from 'zod'
 import type { EngineForExecutor } from '../../core/index.ts'
@@ -11,6 +12,7 @@ import type { ToolSpec } from '../../executor/contract.ts'
 import {
   CO_AUTHOR,
   RepositoryAccessError,
+  WorkspaceBlocked,
   accessStatus,
   type PushOptions,
   type PushResult,
@@ -122,7 +124,7 @@ export function deliveryTools(host: DeliveryToolsHost, ticketId: string): ToolSp
     tool({
       name: 'orchestrator_publish',
       description:
-        "Push this ticket's commits and open its pull request, or reuse the open one for the branch; never force-pushes. Binds the PR thread to this ticket. Returns published: false, pushing nothing, when the agent account has no write access to the repository. Returns published: false with review_required, pushing nothing, when the host requires a review first: run the superagent-reviewer subagent, then publish again.",
+        "Push this ticket's commits and open its pull request, or reuse the open one for the branch; never force-pushes. Binds the PR thread to this ticket. Returns published: false, pushing nothing, when the agent account has no write access to the repository. Returns published: false with review_required, pushing nothing, when the host requires a review first: run the superagent-reviewer subagent, then publish again. Returns published: false, pushing nothing, when the configured target branch is missing on the remote.",
       schema: z
         .object({
           title: z.string().trim().min(1).max(256),
@@ -171,6 +173,13 @@ export function deliveryTools(host: DeliveryToolsHost, ticketId: string): ToolSp
         try {
           pushed = await deliveryHost().push(ticketId, { coAuthors: args.coAuthors })
         } catch (error) {
+          if (error instanceof WorkspaceBlocked)
+            return {
+              published: false,
+              repository,
+              reason: error.message,
+              next: 'Report blocked with the reason; a person must create the branch or fix the repository config',
+            }
           throw error instanceof RepositoryAccessError ? accessFailure(repository, error) : error
         }
         let pr: Awaited<ReturnType<PullRequests['open']>>
