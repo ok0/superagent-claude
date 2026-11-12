@@ -1,5 +1,5 @@
 // Ported from dsh-superagent-prototype (MIT) tests/github-read.spec.ts
-/** GitHub resource and CI readers over a repository-scoped command runner. Changes from the reference: the runner is scoped to the repository with at, its JSON reader is call, and no deployment fixture is used. */
+/** GitHub resource and CI readers over a repository-scoped command runner. */
 import { afterEach, expect, it, vi } from 'vitest'
 import { Commands } from '../src/infra/commands.ts'
 import { readGithub, pullChecks } from '../src/sources/github/read.ts'

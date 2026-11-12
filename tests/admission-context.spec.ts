@@ -1,5 +1,5 @@
 // Ported from dsh-superagent-prototype (MIT) tests/admission-context.spec.ts
-/** Admission context window and paging cases. Changes from the reference: the paging case reads through a scripted thread context instead of a chat command runner; the chat-neighbour case is not ported; message ids are neutral. */
+/** Admission context window and paging cases. */
 import { expect, it, vi } from 'vitest'
 import { admissionContext, threadWindow } from '../src/sources/admission-context.ts'
 import type { ContextMessage, TriggerContext } from '../src/sources/kind.ts'

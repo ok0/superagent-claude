@@ -36,7 +36,7 @@ const answered = { inputs: [{ id: 'i', kind: 'trigger' as const, triggerId: 'e',
 const reportedAt = (state: ReportState) => reported(state, { report: { state, summary: '', at: 'earlier' } })
 const ended = { at: '', by: 'executor' as const, reason: 'closed', outcome: 'closed' as const }
 
-// The rows of the docs/003 table, in order; a Ticket that matches several rows takes the first.
+// The rows are checked in order; a Ticket that matches several rows takes the first.
 describe('ticketStage', () => {
   it.each([
     [

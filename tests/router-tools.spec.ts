@@ -1,8 +1,6 @@
 /**
- * Router session tools over a real Engine and Store: the eleven tool names, routing shapes, per-item refusals, the accept mode,
- * ticket and trigger guards, eval tools and reads. Adapted from the reference tools spec (Router cases).
- * Excluded from the reference (ADR-9 and the earlier source-specific surfaces): settings, policy-sync and prompt tools, the
- * earlier registration, the human word limit cases (covered by the word-limit cases of tools.spec), and the failing-source case.
+ * Router session tools over a real Engine and Store: the eleven tool names, routing shapes, per-item refusals,
+ * the accept mode, ticket and trigger guards, eval tools and reads.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

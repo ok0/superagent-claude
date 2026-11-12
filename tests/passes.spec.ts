@@ -1,7 +1,6 @@
 // Ported from dsh-superagent-prototype (MIT) tests/passes.spec.ts
 /**
  * Pass scheduling, coalescing, and runtime health reporting.
- * Changes from the reference: the trigger fixture uses the `chat` source; the interval timer and clock are injected through `PassesHost`; a case checks the 2-second tick and the injected clock; the stop-refusal case is renamed for superagent-claude.
  */
 import { expect, it, vi } from 'vitest'
 import { Passes, type PassesHost } from '../src/app/passes.ts'

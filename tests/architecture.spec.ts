@@ -1,4 +1,9 @@
-// Enforces the layer import rules (PAC1) and that the bypass permission mode is never named under src/: core stays free of Node I/O and the SDK, policy imports only zod, core and itself, the executor imports only core, infra, app effects and store, runtimes import only the runtime contract and infra, the SDK is imported only from src/runtimes/claude, and app/infra import only node:*, zod, proper-lockfile and allowed relative paths; the Source framework imports only core, policy, infra, itself and the app store and KV types (never the executor, runtimes or the SDK); the CLI imports only src/ modules, package.json and node:*.
+// Enforces the layer import rules, and that the bypass permission mode is never named under src/.
+// core stays free of Node I/O and the SDK; policy imports only zod, core and itself; the executor imports only
+// core, infra, app effects and store; runtimes import only the runtime contract and infra; the SDK is imported only
+// from src/runtimes/claude; app and infra import only node:*, zod, proper-lockfile and allowed relative paths; the
+// Source framework imports only core, policy, infra, itself and the app store and KV types (never the executor,
+// runtimes or the SDK); the CLI imports only src/ modules, package.json and node:*.
 import { describe, it, expect, afterEach } from 'vitest'
 import ts from 'typescript'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync, existsSync } from 'node:fs'

@@ -1,5 +1,7 @@
 // Ported from dsh-superagent-prototype (MIT) tests/queue.spec.ts
-/** Effect queue notices on the Runtime. Adapted from the reference queue spec: only the Router-session notice case (reference L28) is kept, since the reference L10 migration case is excluded by ADR-3. Worker notices are covered by tests/prompt-notice.spec.ts. */
+/**
+ * Effect queue notices on the Runtime: the Router-session notice; worker notices are in tests/prompt-notice.spec.ts.
+ */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

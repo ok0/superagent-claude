@@ -1,6 +1,5 @@
 /**
- * Router-session assessor: per-Eval state, context loading, reads and decisions. Adapted from the reference assessment spec.
- * Excluded (D4): the image, file and directory reads of the reference (the repository path reader is not in this build).
+ * Router-session assessor: per-Eval state, context loading, reads and decisions.
  */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
@@ -196,7 +195,8 @@ it('loads a window of the thread: the trigger once, cut messages with their leng
   expect(result).not.toHaveProperty('instructions')
   expect(result.text).toBe(external('trigger', bodies[15]!))
   const at = (i: number) => result.thread.messages.find(item => item.id === `m${i}`)!
-  // The trigger's own text is given once at top level; its two nearest neighbours keep more text than the rest of the window.
+  // The trigger's own text is given once at top level; its two nearest neighbours keep more text than the rest
+  // of the window.
   expect(at(15)).toEqual({ id: 'm15', from: 'bob', at: expect.any(String), trigger: true })
   expect(at(16)).toMatchObject({
     chars: bodies[16]!.length,

@@ -1,12 +1,6 @@
 // Ported from dsh-superagent-prototype (MIT) tests/policy.spec.ts
 /**
- * Ported policy spec (spec AC4). Reference: 40 `it` and 1 `it.each` (288 rows); 30 `it` and the `it.each` are kept.
- * Excluded (10): source scope L32, L40, L49 (Source registry install, enable and invalid configuration, and the discarded chat Source's scope; the registry is ported with sources/registry in M8);
- * settings migration L233, L249, L261, L267, L272 (migration.ts is discarded, ADR-2); L464 (Source kind UI hint text); L471 (repository Source scope rows, ported with the repository Source in M9).
- * Adapted (7): L54 (the sender name comes from the allowed entry string); L60 (one global allowed list, so an id allowed on one Source is allowed on all, charter A10);
- * L123 (gate expects kept, the two registry scope expects dropped); L224 (executor and Source-config fields are no longer in Settings; the Source-config case becomes a scope stub with the same settings);
- * L306 (SettingsSchema refusals kept, the three validatePolicy expects dropped until M8/M9); L315 (the accept mode now bears on explicit candidates: observe records would_accept, off records nothing). L84 (an automated message from a listed login is a listed bot, so it gates inferred; the not_human expect uses an unlisted sender).
- * Unchanged in meaning (names, ids and settings paths renamed only): the other 23 `it` and the `it.each` at L185.
+ * One global allowed list, so an id allowed on one Source is allowed on all.
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -37,7 +31,7 @@ const DEFAULT_CHAT: ChatConfig = {
   ],
   directMessages: true,
 }
-// Port note: the reference SourceRegistry and its Source kinds are replaced by a stub reproducing their scope rules (spec A5).
+// Stands in for the source registry and its kinds, reproducing their scope rules.
 function chatScope(config: ChatConfig, meta: Record<string, unknown>): ScopeResult {
   if (meta.direct === true)
     return config.directMessages
@@ -187,7 +181,7 @@ describe('gate', () => {
       admissible: false,
       reason: 'not_human',
     })
-    // Port note: one global list (charter A10), so an automated message from a listed login is a listed bot: inferred at most (spec R2, R8).
+    // One global list, so an automated message from a listed login is a listed bot: inferred at most.
     expect(policy.gate(chat({ human: false }), thread(), [])).toMatchObject({
       admissible: true,
       strength: 'inferred',
@@ -406,7 +400,10 @@ describe('revalidating a Mandate from the admission table', () => {
       ),
     ),
   )
-  /** docs/002: the Thread must still be received; a listed sender who addresses the agent is explicit; a sender listed since takes the listed cell. */
+  /**
+   * The Thread must still be received; a listed sender who addresses the agent is explicit; a sender listed since
+   * takes the listed cell.
+   */
   function expected({ cell, strength, listed, mode, rule, scope, holds }: (typeof cases)[number]): boolean {
     if (scope === 'none') return false
     if (cell === 'unlistedAddressed' && listed) return true
@@ -473,7 +470,8 @@ describe('revalidate and version', () => {
     expect(setup(nobody).policy.revalidate(mandate)).toBe(false)
     const silent = setup(base, scopes({ chat: { chats: [], directMessages: true } }))
     expect(silent.policy.revalidate(mandate)).toBe(false)
-    // A Mandate from before the gate recorded how it admitted a Trigger holds while its sender is listed and the Source listens.
+    // A Mandate from before the gate recorded how it admitted a Trigger holds while its sender is listed
+    // and the Source listens.
     const listed: MandateBasis = {
       via: 'listed',
       source: 'chat',
@@ -832,7 +830,7 @@ describe('bots and events without a sender', () => {
       strength: 'inferred',
       basis: { via: 'bot', source: 'repo', sender: 'dependabot[bot]', row: 'comments', observation: { mode: 'auto' } },
     })
-    // A bot that addresses the agent still makes no explicit request; on a Thread with tickets it is no follow-up either.
+    // A bot that addresses the agent still makes no explicit request; on a Thread with tickets it is no follow-up.
     expect(policy.gate({ ...comment, addressed: 'mention' }, thread(['ticket']), [ticket])).toMatchObject({
       strength: 'inferred',
       basis: { via: 'bot', addressed: 'mention' },

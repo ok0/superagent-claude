@@ -1,7 +1,6 @@
 // Ported from dsh-superagent-prototype (MIT) tests/effects.spec.ts
 /**
  * The durable effect queue: coalescing, per-kind limits, retries with backoff, health and shutdown.
- * Changes from the reference: the Store path is `db.sqlite` under the test directory as before; cases are added for a rolled-back transaction, one row per kind and key with the default retry, and the `cleanup` kind.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

@@ -1,5 +1,6 @@
 /**
- * Session resume: a ticket that ended or went idle resumes on a person's message with its stored session and worktree, and the prompt-version change decides between resume, a team notice and a new session with a context note (ADR-18).
+ * Session resume: a ticket that ended or went idle resumes on a person's message with its stored session and
+ * worktree, and the prompt-version change decides between resume, a team notice and a new session with a context note.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

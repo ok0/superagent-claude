@@ -1,5 +1,5 @@
 // Ported from dsh-superagent-prototype (MIT) tests/registry.spec.ts
-/** Source registry cases. Changes from the reference: the kind has no display fields; configs come from a reader; scope, channel and find cases are added; the hosting Source cases use the multi-repository kind (Thread keys github:<owner>/<name>#<number>); the instance-list, policy-part and chat-only cases are not ported. */
+/** Source registry cases. */
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import type { OutboundMessage, Trigger } from '../src/core/index.ts'

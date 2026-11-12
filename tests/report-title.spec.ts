@@ -1,4 +1,4 @@
-/** A worker's report title renames its ticket in status and needs; omitting it keeps the title (ADR-25). */
+/** A worker's report title renames its ticket in status and needs; omitting it keeps the title. */
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mention, startRuntime, type Host } from './fixtures/host.ts'

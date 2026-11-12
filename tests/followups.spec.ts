@@ -1,5 +1,8 @@
 // Ported from dsh-superagent-prototype (MIT) tests/followups.spec.ts
-/** Follow-up routing: human messages on subscribed threads go directly to the ticket worker and notify the Router without starting an Eval. Adapted from the reference follow-up spec. */
+/**
+ * Follow-up routing: human messages on subscribed threads go directly to the ticket worker and notify the Router
+ * without starting an Eval.
+ */
 import { afterEach, expect, it } from 'vitest'
 import { REPO, THREAD, message, mention, startRuntime, type Host } from './fixtures/host.ts'
 import { guest } from './fixtures/engine.ts'
@@ -19,7 +22,6 @@ const followups = (host: Host) => host.followups()
 const decides = /its worker decides whether it belongs there/
 
 it('delivers a follow-up to the worker and tells the Router with a card, without an Eval', async () => {
-  // ref L14
   h = await startRuntime()
   const { ticket } = await h.acceptedTicket(mention('1'))
   const reply = followup('2', '顺便把标题也改了')
@@ -48,7 +50,6 @@ it('delivers a follow-up to the worker and tells the Router with a card, without
 })
 
 it('sends a mention that reaches no open ticket, after a person stopped it, to Eval as before', async () => {
-  // ref L35
   h = await startRuntime()
   const { ticket } = await h.acceptedTicket(mention('1'))
   h.runtime.engine.stopTicket(ticket.id)
@@ -58,9 +59,9 @@ it('sends a mention that reaches no open ticket, after a person stopped it, to E
   expect(h.candidates()).toContain('2')
 })
 
-// Skipped (accepted deviation): admission rejects non-listed actors and listed ones are `explicit`, so the guest follow-up scenario of ref L47 is not reachable through the real Runtime; the hand-back/attach behavior is covered by the L135 case.
+// Skipped: admission rejects non-listed actors and listed ones are `explicit`, so a guest follow-up cannot reach
+// the real Runtime; the hand-back/attach behavior is covered by the relay case with the worker's reason.
 it.skip("leaves a delivered follow-up to its ticket's worker: the Router may stop the ticket on it, and route it only once handed back", async () => {
-  // ref L47
   h = await startRuntime()
   const { ticket } = await h.acceptedTicket(mention('1'))
   const other = await h.acceptedTicket(
@@ -88,7 +89,8 @@ it.skip("leaves a delivered follow-up to its ticket's worker: the Router may sto
   expect(h.runtime.engine.reevaluate(guestId)).toBe(true)
   await h.pump()
   expect(h.candidates()).toContain(guestId)
-  // Alice's follow-ups carry her authority once the worker hands them back: one goes to the other ticket, one becomes new work.
+  // Alice's follow-ups carry her authority once the worker hands them back: one goes to the other ticket,
+  // one becomes new work.
   const attach = await settle('5', '这个其实是另一件事的')
   await expect(h!.route({ kind: 'attach', ticket_id: other.ticket.id, trigger_id: attach })).rejects.toThrow(decides)
   await h.workerTool(ticket.id, 'orchestrator_trigger_handback', {
@@ -106,8 +108,8 @@ it.skip("leaves a delivered follow-up to its ticket's worker: the Router may sto
     acknowledgement: '收到，加导出按钮。',
   }
   await expect(h!.route({ kind: 'accept', ...request })).rejects.toThrow(decides)
-  // The attach subscribed the other ticket to this thread, so its worker decides the message too; it is new work once both
-  // hand it back.
+  // The attach subscribed the other ticket to this thread, so its worker decides the message too; it is new
+  // work once both hand it back.
   await h.workerTool(ticket.id, 'orchestrator_trigger_handback', {
     trigger_id: work,
     reason: 'It asks for an export button.',
@@ -128,7 +130,6 @@ it.skip("leaves a delivered follow-up to its ticket's worker: the Router may sto
 })
 
 it('costs the Router one model call for a burst of follow-ups while it works, and two while it idles', async () => {
-  // ref L103
   let holdAt = -1
   let gate = deferred()
   for (const busy of [true, false]) {
@@ -158,7 +159,6 @@ it('costs the Router one model call for a burst of follow-ups while it works, an
 })
 
 it("keeps a follow-up's relay in the effect queue until the Router takes it, and sends it once", async () => {
-  // ref L118
   h = await startRuntime()
   await h.acceptedTicket(mention('1'))
   await h.routerSessions()[0]!.close()
@@ -180,7 +180,6 @@ it("keeps a follow-up's relay in the effect queue until the Router takes it, and
 })
 
 it("relays a message a worker handed back as a candidate with the worker's reason", async () => {
-  // ref L135
   h = await startRuntime()
   const { ticket } = await h.acceptedTicket(mention('1'))
   h.receive(followup('2', '另外把导出按钮也加上'))
@@ -208,7 +207,6 @@ it("relays a message a worker handed back as a candidate with the worker's reaso
 })
 
 it('lets a worker follow a related thread for context, which the Router hears of without waking, and notes a ticket', async () => {
-  // ref L157
   h = await startRuntime()
   const { ticket } = await h.acceptedTicket(mention('1'))
   const injectsBefore = h.injects().length
@@ -241,7 +239,7 @@ it('lets a worker follow a related thread for context, which the Router hears of
   ).toMatchObject({ reason: 'Noted for the worker' })
   await h.idle()
   expect(h.workerInputs(ticket.id)).not.toContain('Note for context only: Ticket B renamed the setting.')
-  // Adapted: a note is an inject input (docs/runtime-contract.md), so it reaches the worker with the next message.
+  // A note is an inject input (docs/runtime-contract.md), so it reaches the worker with the next message.
   h.receive(followup('2', 'thanks'))
   await h.idle()
   const inputs = h.workerInputs(ticket.id)
@@ -252,7 +250,6 @@ it('lets a worker follow a related thread for context, which the Router hears of
 })
 
 it('takes the message a follow-up answers from its Source kind, whichever kind it is', async () => {
-  // ref L179
   h = await startRuntime()
   const parent = mention('1', { text: 'the earlier message' })
   h.runtime.store.triggers.save(parent)
@@ -268,8 +265,7 @@ it('takes the message a follow-up answers from its Source kind, whichever kind i
 })
 
 it('tells the Router of a follow-up to an ended ticket once a new message resumes it, and not when no ticket takes it', async () => {
-  // ref L190
-  // Adapted: this build has no processing pause, so the ended ticket is the one a worker reported ready.
+  // This build has no processing pause, so the ended ticket is the one a worker reported ready.
   h = await startRuntime()
   const { ticket } = await h.acceptedTicket(mention('1'))
   await h.workerTool(ticket.id, 'orchestrator_report', { state: 'ready', summary: 'Done' })
@@ -283,7 +279,6 @@ it('tells the Router of a follow-up to an ended ticket once a new message resume
 })
 
 it('tells the Router nothing of a message it attached to an ended ticket, which resumes for it', async () => {
-  // ref L207
   h = await startRuntime()
   const { ticket } = await h.acceptedTicket(mention('1'))
   await h.workerTool(ticket.id, 'orchestrator_report', { state: 'dropped', summary: 'nothing to do' })
@@ -302,7 +297,6 @@ it('tells the Router nothing of a message it attached to an ended ticket, which 
 })
 
 it('tells the Router of a follow-up an earlier version queued for Eval, when the queue lets it go', async () => {
-  // ref L219
   h = await startRuntime()
   const { ticket } = await h.acceptedTicket(mention('1'))
   const reply = followup('2', '顺便看看日志')
@@ -321,7 +315,6 @@ it('tells the Router of a follow-up an earlier version queued for Eval, when the
 })
 
 it("sends a request on a thread a worker follows only for context to Eval, and marks the worker's copy as context", async () => {
-  // ref L235
   h = await startRuntime()
   const { ticket } = await h.acceptedTicket(mention('1'))
   await h.workerTool(ticket.id, 'orchestrator_thread_follow', { thread: 'chat:t9', reason: 'The same page.' })
@@ -340,7 +333,6 @@ it("sends a request on a thread a worker follows only for context to Eval, and m
 })
 
 it("shows a candidate's message as its workers would read it, with the message it answers", async () => {
-  // ref L250
   h = await startRuntime()
   const { ticket } = await h.acceptedTicket(mention('1'))
   const long = `另外，${'导出按钮的文案也需要改。'.repeat(60)}`
@@ -360,10 +352,9 @@ it("shows a candidate's message as its workers would read it, with the message i
 })
 
 it("keeps a listed member's request on a ticket's thread to that ticket, so it is not done twice", async () => {
-  // ref L264
   h = await startRuntime()
   const { ticket } = await h.acceptedTicket(mention('1', { text: '@bot 修一下设置页保存按钮的文案' }))
-  // The benchmark's case: an addressed request from a listed member on the ticket's own thread.
+  // An addressed request from a listed member on the ticket's own thread.
   h.receive(followup('2', '@bot [W1-a] 概览页的保存按钮也按同样方式改一下', { addressed: 'mention' }))
   await h.idle()
   // The worker has it and decides; the Router hears of it and cannot open a second ticket for it.
@@ -389,7 +380,6 @@ it("keeps a listed member's request on a ticket's thread to that ticket, so it i
 })
 
 it("leaves a follow-up to its ticket's worker after the Router drops the subscriptions of its thread", async () => {
-  // ref L284
   h = await startRuntime()
   const { ticket } = await h.acceptedTicket(mention('1'))
   h.receive(followup('2', '@bot 另外把导出按钮也加上', { addressed: 'mention' }))
@@ -412,7 +402,6 @@ it("leaves a follow-up to its ticket's worker after the Router drops the subscri
 })
 
 it('tells a worker it may hand back a message beyond its ticket or for another one, also when the message resumed it', async () => {
-  // ref L297
   expect(renderInput({ id: 'r', kind: 'resumed', triggerId: 't', at: '' } as never)).toContain(
     'hand it back with orchestrator_trigger_handback',
   )

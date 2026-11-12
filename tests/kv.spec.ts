@@ -1,4 +1,4 @@
-/** KV keys, Versions and the in-memory TextCache across a Store reopen (M6 AC8). */
+/** KV keys, Versions and the in-memory TextCache across a Store reopen. */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -16,7 +16,7 @@ afterEach(() => {
   rmSync(directory, { recursive: true, force: true })
 })
 
-it('keeps KV records across a reopen, and holds only the reference keys without source-specific families', () => {
+it('keeps KV records across a reopen, and holds only the expected key families without source-specific ones', () => {
   const store = new Store(databasePath(directory))
   store.set(KV.runtime.masterId, 'm')
   store.set(KV.sources.labels('chat'), { a: 'A' })
@@ -66,7 +66,7 @@ it('keeps versions across a reopen and never rewrites an earlier revision', () =
   reopened.close()
 })
 
-it('keeps cached texts in memory only, as the reference cache does', () => {
+it('keeps cached texts in memory only', () => {
   new TextCache(100).set('a', 'x')
   expect(new TextCache(100).get('a')).toBeUndefined()
 })

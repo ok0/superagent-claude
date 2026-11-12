@@ -208,7 +208,7 @@ describe('revalidate (AC8)', () => {
       policyOf({ ...auto, policy: { ...auto.policy, rules: copyRule({ enabled: false }) } }).revalidate(mandate),
     ).toBe(false)
     expect(policyOf({ ...auto, policy: { ...auto.policy, allowed: [] } }).revalidate(mandate)).toBe(false)
-    // R8: a changed instruction is reported by policyEffects and does not revoke the Mandate.
+    // A changed instruction is reported by policyEffects and does not revoke the Mandate.
     expect(
       policyOf({
         ...auto,
@@ -241,7 +241,8 @@ describe('policy version (AC8)', () => {
   }
 
   it('does not depend on the order keys were written in, at any depth', () => {
-    // zod keeps record keys in input order (it reorders only z.object keys), so only the canonical sort makes A and B agree.
+    // zod keeps record keys in input order (it reorders only z.object keys), so only the canonical sort
+    // makes A and B agree.
     expect(Object.keys(SettingsSchema.parse(A).policy.admission)).toEqual(['issues', 'ci'])
     expect(Object.keys(SettingsSchema.parse(B).policy.admission)).toEqual(['ci', 'issues'])
     const version = policyVersion(SettingsSchema.parse(A))

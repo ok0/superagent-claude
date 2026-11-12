@@ -1,7 +1,6 @@
 // Ported from dsh-superagent-prototype (MIT) tests/outbox.spec.ts
 /**
  * Outbox delivery when processing is paused or a Source kind registers late.
- * Changes from the reference: runs at unit level with a real Store and Effects and fake channels instead of the Runtime host; the Source is bound through the `OutboxChannels` port; cases are added for receipts across a reopen and for per-Ticket order.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
