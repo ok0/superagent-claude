@@ -1,8 +1,5 @@
 // Ported from dsh-superagent-prototype (MIT) src/core/reasons.ts
-/**
- * Structured reason codes and templates for decisions, filtered triggers, and ended assignments.
- * Policy gates and source scopes may also emit their own literal reason codes.
- */
+/** Policy gates and source scopes may also emit their own literal reason codes. */
 export const REASONS = {
   said: '{text}',
   timeout: 'Assessment timed out',
@@ -13,7 +10,6 @@ export const REASONS = {
   routed: 'Routed to ticket {ticket}',
   explicitRouted: 'Explicit request from an allowed sender routed by the orchestrator',
   humanStop: 'Human asked to stop',
-  legacyImport: 'Imported from the pre-domain-model task record',
   forwarded: 'Forwarded to the worker of the Ticket already on this Thread',
   senderNotMember: "The sender is not on the Source's list",
   retried: 'Retried by a person',

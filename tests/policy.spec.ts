@@ -532,25 +532,25 @@ describe('assessment outcomes', () => {
   })
   it('accepts an inferred candidate on its matched rules in auto mode only, and the Policy admits only enabled matched rules', () => {
     const auto = settings('auto')
-    const outcome = assessmentOutcome(accept(auto), auto, 'inferred')
+    const outcome = assessmentOutcome(accept(auto), auto)
     expect(outcome).toMatchObject({
       kind: 'accept',
       rules: auto.policy.rules.filter(rule => rule.enabled).map(rule => rule.id),
       name: 'fix-copy',
     })
-    expect(assessmentOutcome(accept(settings('observe')), settings('observe'), 'inferred')).toMatchObject({
+    expect(assessmentOutcome(accept(settings('observe')), settings('observe'))).toMatchObject({
       kind: 'ignore',
       reason: { code: 'observed', values: { text: 'asked' } },
       audit: { would_accept: true },
     })
-    expect(assessmentOutcome(accept(auto, false), auto, 'inferred')).toMatchObject({
+    expect(assessmentOutcome(accept(auto, false), auto)).toMatchObject({
       kind: 'ignore',
       reason: { code: 'noRuleMatched' },
     })
-    expect(() => assessmentOutcome({ ...accept(auto), rule_assessments: [] }, auto, 'inferred')).toThrow(
+    expect(() => assessmentOutcome({ ...accept(auto), rule_assessments: [] }, auto)).toThrow(
       'Exactly one assessment for every enabled rule',
     )
-    expect(() => assessmentOutcome({ ...accept(auto), intent_evidence: null }, auto, 'inferred')).toThrow(
+    expect(() => assessmentOutcome({ ...accept(auto), intent_evidence: null }, auto)).toThrow(
       'Acceptance requires intent_evidence',
     )
     const scope = { scope: () => ({ listened: true as const, observed: true }) }
@@ -590,18 +590,18 @@ describe('admission table settings', () => {
     const auto = SettingsSchema.parse({ policy: { acceptMode: 'auto' } })
     const observe = SettingsSchema.parse({ policy: { acceptMode: 'observe' } })
     const off = SettingsSchema.parse({ policy: { acceptMode: 'off' } })
-    expect(assessmentOutcome(assessment, auto, 'explicit')).toMatchObject({ kind: 'accept', title: 'Fix' })
+    expect(assessmentOutcome(assessment, auto)).toMatchObject({ kind: 'accept', title: 'Fix' })
     for (const strength of ['explicit', 'inferred'] as const) {
-      expect(assessmentOutcome(assessment, observe, strength)).toMatchObject({
+      expect(assessmentOutcome(assessment, observe)).toMatchObject({
         kind: 'ignore',
         reason: { code: 'observed' },
         audit: { would_accept: true },
       })
-      expect(assessmentOutcome(assessment, off, strength)).toMatchObject({
+      expect(assessmentOutcome(assessment, off)).toMatchObject({
         kind: 'ignore',
         reason: 'Accept mode is off',
       })
-      expect(assessmentOutcome(assessment, off, strength).audit?.would_accept).toBeUndefined()
+      expect(assessmentOutcome(assessment, off).audit?.would_accept).toBeUndefined()
     }
   })
   it("admits a listed bot that mentions the agent where the Source does not observe its messages, as a listed person's mention needs none", () => {
@@ -650,14 +650,12 @@ describe('rule judgements', () => {
         { rule_id: 'copy', matched: false, reason: 'again' },
       ],
     }
-    expect(() => assessmentOutcome(assessment, parsed, 'inferred')).toThrow(
-      'Exactly one assessment for every enabled rule',
-    )
+    expect(() => assessmentOutcome(assessment, parsed)).toThrow('Exactly one assessment for every enabled rule')
     const once = {
       ...assessment,
       rule_assessments: [assessment.rule_assessments[0]!, { rule_id: 'visual', matched: false, reason: 'no colors' }],
     }
-    expect(assessmentOutcome(once, parsed, 'inferred')).toMatchObject({ kind: 'accept', rules: ['copy'] })
+    expect(assessmentOutcome(once, parsed)).toMatchObject({ kind: 'accept', rules: ['copy'] })
   })
 })
 describe('policy effects', () => {

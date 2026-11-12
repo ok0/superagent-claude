@@ -1,5 +1,4 @@
 // Ported from dsh-superagent-prototype (MIT) src/core/evals.ts
-/** Evals: the Thread-level assessments of queued Triggers, and the Decisions they end with. */
 import { key } from './ids.ts'
 import { UserError } from './errors.ts'
 import { liveTicket, threadKey } from './model.ts'
@@ -10,9 +9,10 @@ import { EnginePart, type EngineOptions } from './part.ts'
 import type { Tickets } from './tickets.ts'
 import type { Replies } from './replies.ts'
 
-/** An outcome for the Eval that holds a Trigger; `evalId` names the Eval it was judged for, so a later Eval refuses it. */
+/**
+ * An outcome for the Eval that holds a Trigger; `evalId` names the Eval it was judged for, so a later Eval refuses it.
+ */
 export type Outcome = AssessmentOutcome & { evalId?: string }
-/** What an Eval ends with, as its Decision records it. */
 interface Finished {
   kind: DecisionKind
   reason: Reason[]
@@ -20,23 +20,16 @@ interface Finished {
   ticketId?: string
   mandate?: Mandate
 }
-/** An outcome's reason: a code it carries, else the words its assessor or person wrote. */
 const reasonOf = (reason: string | Reason): Reason[] => [typeof reason === 'string' ? said(reason) : reason]
 const stronger = (a: Strength, b: Strength): Strength =>
   a === 'explicit' || b === 'explicit' ? 'explicit' : 'inferred'
 /** How many times in a row an expired Eval queues its Triggers again before it is recorded unavailable. */
 const REQUEUES = 2
 
-/**
- * Evals runs the Evals of Threads: it batches a Thread's queued Triggers into one Eval, takes its strength, actor, and basis
- * from the gate, asks the assessor, keeps its deadline through a pause, and records the Decision it ends with: accept, stop,
- * ignore, or unavailable. It depends on Tickets to create the ticket an accept decides and to end the one a stop names; the
- * Engine routes the main Session's decisions, people's replays, worker handbacks, and the pass's Eval work here.
- */
+/** Depends on Tickets to create the ticket an accept decides and to end the one a stop names. */
 export class Evals extends EnginePart {
   private readonly tickets: Tickets
   private readonly replies: Replies
-  // Port note: parameter property expanded to an explicit field (erasableSyntaxOnly); behavior unchanged.
   constructor(options: EngineOptions, tickets: Tickets, replies: Replies) {
     super(options)
     this.tickets = tickets
@@ -90,11 +83,11 @@ export class Evals extends EnginePart {
     this.repo.threads.save(thread)
     this.options.assessor.release?.(id)
   }
-  /** Start one Eval of the Triggers queued on a Thread, judged by the gate, and ask the assessor for it. */
   start(threadKeyValue: string, policy: Policy): void {
     const thread = this.repo.threads.get(threadKeyValue)!
     const at = this.now()
-    // A person's follow-up a ticket still decides is that ticket's: one an older version queued leaves the queue without a Decision.
+    // A person's follow-up a ticket still decides is that ticket's: one an older version queued leaves the queue
+    // without a Decision.
     const delivered = (id: string) => {
       const trigger = this.repo.triggers.get(id)
       return !!trigger && this.owners(trigger).length > 0
@@ -173,16 +166,14 @@ export class Evals extends EnginePart {
     })
     this.options.assessor.request(this.candidateOf(thread))
   }
-  /** The candidate of the Eval that holds `triggerId`, or undefined while no Eval holds it. */
   candidate(triggerId: string): Candidate | undefined {
     const thread = this.holding(triggerId)
     return thread && this.candidateOf(thread)
   }
   /**
-   * Decide a Trigger: the Eval that holds it, or a direct Eval of it alone when none does.
-   * @throws UserError when the Trigger is unknown or not admissible, `outcome.evalId` names an Eval that has finished, a
-   * ticket's worker still decides the Trigger and the outcome is not a stop, or an inferred candidate is accepted outside `auto`
-   * mode or without enabled matching rules.
+   * @throws UserError when the Trigger is unknown or not admissible, `outcome.evalId` names an Eval that has finished,
+   * a ticket's worker still decides the Trigger and the outcome is not a stop, or an inferred candidate is accepted
+   * outside `auto` mode or without enabled matching rules.
    */
   decide(triggerId: string, outcome: Outcome): Decision {
     const trigger = this.repo.triggers.get(triggerId)
@@ -193,7 +184,8 @@ export class Evals extends EnginePart {
     // Prevent a replayed trigger that already created a ticket from spawning a second one.
     const earlier = outcome.kind === 'accept' ? this.accepted(threadKey(trigger.threads[0]!)).get(triggerId) : undefined
     if (earlier) {
-      // Only an Eval started by an earlier version can still hold it; reassess the remaining triggers without it, or ignore it if alone.
+      // Only an Eval started by an earlier version can still hold it; reassess the remaining triggers without it, or
+      // ignore it if alone.
       const others = held?.evaluating?.triggerIds.filter(id => id !== triggerId) ?? []
       if (held && others.length)
         this.reassess(held, { code: 'acceptedBefore', values: { trigger: triggerId } }, [triggerId])
@@ -222,7 +214,6 @@ export class Evals extends EnginePart {
     return this.decideEval(thread, evaluation, outcome)
   }
   /**
-   * Queue a stored Trigger for a fresh Eval on its primary Thread and emit `trigger.requeued`; returns false while an Eval holds it.
    * @throws UserError when the Trigger is unknown.
    */
   reevaluate(triggerId: string): boolean {
@@ -230,7 +221,6 @@ export class Evals extends EnginePart {
     this.emit('trigger.requeued', { triggerId })
     return true
   }
-  /** Queue a Trigger for a fresh Eval on its primary Thread; false while an Eval holds it. */
   private requeue(triggerId: string): boolean {
     const trigger = this.repo.triggers.get(triggerId)
     if (!trigger) throw new UserError('unknownTrigger')
@@ -241,10 +231,10 @@ export class Evals extends EnginePart {
     return true
   }
   /**
-   * Record that a ticket's Executor hands back a Trigger that reached it as beyond the ticket, and queue it for a fresh Eval
-   * when the ticket decided it and no other ticket still does (see `handBack`): the gate judges it as any message on its
-   * Thread, and its candidate carries the reasons, so no requeue notice comes before it. The ticket keeps its Subscription,
-   * and hands a Trigger back once.
+   * Record that a ticket's Executor hands back a Trigger that reached it as beyond the ticket, and queue it for a fresh
+   * Eval when the ticket decided it and no other ticket still does (see `handBack`): the gate judges it as any message
+   * on its Thread, and its candidate carries the reasons, so no requeue notice comes before it. The ticket keeps its
+   * Subscription, and hands a Trigger back once.
    * @returns whether it was queued: false while another ticket decides it, and for one the ticket did not decide.
    */
   handback(ticketId: string, triggerId: string, reason: string): boolean {
@@ -255,10 +245,7 @@ export class Evals extends EnginePart {
       throw new UserError('handedBack')
     return this.handBack(ticketId, this.repo.triggers.get(triggerId)!, reason)
   }
-  /**
-   * Marks an `unavailable` Decision dismissed so the overview lists it no more.
-   * @throws UserError when the Decision is unknown or not `unavailable`.
-   */
+  /** @throws UserError when the Decision is unknown or not `unavailable`. */
   dismiss(decisionId: string): Decision {
     const decision = this.repo.decisions.get(decisionId)
     if (decision?.kind !== 'unavailable') throw new UserError('unknownProblem')
@@ -274,8 +261,8 @@ export class Evals extends EnginePart {
     this.repo.threads.save(thread)
   }
   /**
-   * End the Eval that holds a Trigger routed to a ticket, since the ticket has it now: one that holds other Triggers too
-   * queues them again for a fresh Eval without it.
+   * End the Eval that holds a Trigger routed to a ticket, since the ticket has it now: one that holds other Triggers
+   * too queues them again for a fresh Eval without it.
    */
   routed(triggerId: string, ticketId: string): void {
     const held = this.holding(triggerId)
@@ -284,13 +271,11 @@ export class Evals extends EnginePart {
       this.finish(held, held.evaluating, { kind: 'ignore', reason: [reason] })
     else if (held) this.reassess(held, { ...reason, triggerId }, [triggerId])
   }
-  /** Start the Evals in progress again under the new Policy version, and say that it changed. */
   policyChanged(from: string, to: string): void {
     for (const thread of this.repo.threads.active())
       if (thread.evaluating) this.reassess(thread, { code: 'policyChanged' })
     this.emit('policy.changed', { from, to })
   }
-  /** End a Thread's Eval as unavailable for `reason` and queue its Triggers, except `without`, for a new Eval ahead of the others. */
   private reassess(thread: Thread, reason: Reason, without: string[] = []): Decision {
     const ids = thread.evaluating!.triggerIds.filter(id => !without.includes(id))
     const decision = this.finish(thread, thread.evaluating!, { kind: 'unavailable', reason: [reason] })
@@ -315,8 +300,8 @@ export class Evals extends EnginePart {
     return { evalId, thread, triggers, strength, policyVersion, tickets: this.ticketsOnThread(thread) }
   }
   /**
-   * Record that the queued Triggers `ids` of a Thread start no Eval, for `reason`, and take them out of its queue. Its id
-   * differs from an Eval's, so it never replaces the Decision of an earlier Eval of the same Triggers.
+   * Record that the queued Triggers `ids` of a Thread start no Eval, for `reason`, and take them out of its queue. Its
+   * id differs from an Eval's, so it never replaces the Decision of an earlier Eval of the same Triggers.
    */
   private ignore(thread: Thread, ids: string[], reason: Reason[], policy: Policy, at: string): void {
     const evaluation = {
@@ -335,8 +320,9 @@ export class Evals extends EnginePart {
     delete thread.expired
   }
   /**
-   * The accept Decisions of the Triggers whose primary Thread is `threadKey`, by Trigger: what each one started. An Eval and
-   * its Decision run on its Triggers' primary Thread, so the Thread's Decisions, read by their index, hold them all.
+   * The accept Decisions of the Triggers whose primary Thread is `threadKey`, by Trigger: what each one
+   * started. An Eval and its Decision run on its Triggers' primary Thread, so the Thread's Decisions, read
+   * by their index, hold them all.
    */
   private accepted(threadKey: string): Map<string, Decision> {
     const accepted = new Map<string, Decision>()
@@ -347,9 +333,10 @@ export class Evals extends EnginePart {
     return accepted
   }
   /**
-   * A gate-only Eval of one Trigger, for an outcome decided without a queued Eval, such as on a follow-up that reached a
-   * ticket. It is decided at once, beside an Eval its Thread may have in progress, and takes the Trigger out of the queue.
-   * Its id names the outcome's kind, so a stop and an accept of one message at the same moment are two Decisions.
+   * A gate-only Eval of one Trigger, for an outcome decided without a queued Eval, such as on a follow-up
+   * that reached a ticket. It is decided at once, beside an Eval its Thread may have in progress, and takes
+   * the Trigger out of the queue. Its id names the outcome's kind, so a stop and an accept of one message
+   * at the same moment are two Decisions.
    */
   private directEval(thread: Thread, trigger: Trigger, kind: AssessmentOutcome['kind'], ticketId?: string): Evaluation {
     const policy = this.policy()
@@ -374,7 +361,6 @@ export class Evals extends EnginePart {
       deadline: at,
     }
   }
-  /** Apply an outcome to an Eval of a Thread: the one in progress, or a gate-only one. */
   private decideEval(thread: Thread, evaluation: Evaluation, outcome: AssessmentOutcome): Decision {
     const audit = outcome.audit ? { audit: outcome.audit } : {}
     // Requeue if Policy changed without a live policyChanged call (such as across an upgrade or restart).
@@ -419,14 +405,16 @@ export class Evals extends EnginePart {
     }
     return this.accept(thread, evaluation, outcome)
   }
-  /** An explicit request a person on the list addressed to the agent, which the assessor ignored in its own words, gets one refusal where it was written, while the Policy allows refusals (ADR-24). */
+  /**
+   * An explicit request a person on the list addressed to the agent, which the assessor ignored in its own words, gets
+   * one refusal where it was written, while the Policy allows refusals.
+   */
   private refuse(evaluation: Evaluation, reason: string): void {
     if (evaluation.strength !== 'explicit' || evaluation.basis.via !== 'addressed' || !this.policy().refuses) return
     const trigger = evaluation.primary ? this.repo.triggers.get(evaluation.primary) : undefined
     if (!trigger?.human || !trigger.addressed || !trigger.channel) return
     this.replies.refuse(trigger, reason)
   }
-  /** Record an accept with the Mandate the Eval gives, and have Tickets create its ticket. */
   private accept(
     thread: Thread,
     evaluation: Evaluation,
@@ -448,7 +436,6 @@ export class Evals extends EnginePart {
     this.tickets.create(ticketId, decision.id, mandate, evaluation, outcome, at)
     return decision
   }
-  /** Record an Eval's Decision; the Thread's own Eval ends with it, while a gate-only one leaves the Thread's Eval going. */
   private finish(thread: Thread, evaluation: Evaluation, outcome: Finished): Decision {
     const decision = this.record(thread, evaluation, outcome)
     // Direct (gate-only) evaluations do not clear the thread's active evaluation.

@@ -1,5 +1,4 @@
 // Ported from dsh-superagent-prototype (MIT) src/core/part.ts
-/** Shared base class and configuration for Engine domain parts. */
 import { UserError } from './errors.ts'
 import { followupOwners, reached, threadKey } from './model.ts'
 import type { Thread, ThreadRef, Ticket, Trigger } from './model.ts'
@@ -18,7 +17,9 @@ import type {
 export interface EngineOptions {
   repo: Repositories
   policy: () => Policy
-  /** Decides whether a Source listens to a trigger; one it does not listen to is stored with a `filtered` disposition. */
+  /**
+   * Decides whether a Source listens to a trigger; one it does not listen to is stored with a `filtered` disposition.
+   */
   scope: SourceScope
   assessor: Assessor
   executor: Executor
@@ -29,13 +30,12 @@ export interface EngineOptions {
 }
 
 /**
- * Base class for Intake, Evals, Tickets, Assignments, and Replies providing shared access to repositories, policy, clock, and event emission.
- * Each subclass mutates its own domain aggregates and delegates cross-aggregate changes to sibling parts within the transaction opened by Engine.
+ * Subclasses mutate their own aggregates and delegate cross-aggregate changes to sibling parts, within the
+ * transaction Engine opens.
  */
 export abstract class EnginePart {
   protected readonly repo: Repositories
   protected readonly options: EngineOptions
-  // Port note: parameter property expanded to an explicit field (erasableSyntaxOnly); behavior unchanged.
   constructor(options: EngineOptions) {
     this.options = options
     this.repo = options.repo
@@ -46,7 +46,6 @@ export abstract class EnginePart {
   protected policy(): Policy {
     return this.options.policy()
   }
-  /** The tickets whose worker decides a person's follow-up: see `followupOwners`. */
   protected owners(trigger: Trigger): string[] {
     return followupOwners(trigger, this.repo)
   }
@@ -56,9 +55,9 @@ export abstract class EnginePart {
     if (owners.length) throw new UserError('workerDecides', { tickets: owners.join(', ') })
   }
   /**
-   * Record that a ticket's worker hands back a Trigger that reached the ticket, with why, and queue it for Eval when the
-   * ticket decided it and no other ticket still does. One the ticket did not decide, such as a bot's, one a person sent to
-   * Eval or one on a Thread it follows for context, went to Eval without it.
+   * Record that a ticket's worker hands back a Trigger that reached the ticket, with why, and queue it for Eval when
+   * the ticket decided it and no other ticket still does. One the ticket did not decide, such as a bot's, one a person
+   * sent to Eval or one on a Thread it follows for context, went to Eval without it.
    * @returns whether it was queued.
    */
   protected handBack(ticketId: string, trigger: Trigger, reason: string): boolean {
@@ -68,14 +67,12 @@ export abstract class EnginePart {
     this.repo.triggers.saveDisposition(trigger.id, { ...disposition, handbacks })
     return decided && !this.owners(trigger).length && this.queueForEval(trigger)
   }
-  /** Record that a ticket's worker took a person's message up as within the ticket, by acknowledging or answering it. */
   protected takeUp(ticketId: string, triggerId: string): void {
     const disposition = this.repo.triggers.disposition(triggerId)
     if (disposition && !disposition.acked?.includes(ticketId)) {
       this.repo.triggers.saveDisposition(triggerId, { ...disposition, acked: [...(disposition.acked ?? []), ticketId] })
     }
   }
-  /** Queue a Trigger on its primary Thread for the next Eval, unless it waits there already or an Eval holds it. */
   protected queueForEval(trigger: Trigger): boolean {
     const primary = this.thread(trigger.threads[0]!)
     if (primary.pending.includes(trigger.id) || primary.evaluating?.triggerIds.includes(trigger.id)) return false

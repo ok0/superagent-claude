@@ -1,5 +1,4 @@
 // Ported from dsh-superagent-prototype (MIT) src/core/index.ts
-/** Reusable proactive-agent core: model, ports, engine and in-memory repositories. */
 export * from './model.ts'
 export * from './ports.ts'
 export {

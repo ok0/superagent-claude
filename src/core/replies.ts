@@ -1,5 +1,4 @@
 // Ported from dsh-superagent-prototype (MIT) src/core/replies.ts
-/** The Engine's messages to Channels, each by the rule that allows it. */
 import { key } from './ids.ts'
 import { UserError } from './errors.ts'
 import { latestAssignment, liveTicket, ticketOutcome } from './model.ts'
@@ -8,9 +7,8 @@ import type { ReplyStatus } from './ports.ts'
 import { EnginePart } from './part.ts'
 
 /**
- * A message for a Channel, by purpose: an Executor's acknowledgement of a person's request it works on, the answer to a
- * person's question once the worker reported it, the result of a ticket that is `ready`, `completed`, `merged`, or `dropped`,
- * or the ticket's current `question` for a person (`attention`). When `ticketId` is omitted, the ticket that `triggerId` reached is used.
+ * `result` needs a ticket that is `ready`, `completed`, `merged`, or `dropped`. Without `ticketId`, the ticket
+ * `triggerId` reached is used.
  */
 export type ReplyRequest =
   | { purpose: 'acknowledgement'; ticketId: string; triggerId: string; text: string }
@@ -46,7 +44,11 @@ function readable(sentence: string): string | undefined {
   const joined = kept.join(', ').replace(/[\s.!?。！？]+$/u, '')
   return joined.charAt(0).toUpperCase() + joined.slice(1) + '.'
 }
-/** The refusal a person gets for an explicit request the assessor ignored: the first sentence of its reason that a person can read: internal terms rewritten (`the trigger` → `the message`) or their clauses dropped; a fixed phrase when nothing is left; at most 200 characters (ADR-24, ADR-25). */
+/**
+ * The refusal a person gets for an explicit request the assessor ignored: the first sentence of its reason that a
+ * person can read: internal terms rewritten (`the trigger` → `the message`) or their clauses dropped; a fixed phrase
+ * when nothing is left; at most 200 characters.
+ */
 export function refusalText(reason: string): string {
   let body = REFUSAL_FALLBACK
   for (const sentence of reason.trim().split(SENTENCE)) {
@@ -60,7 +62,6 @@ export function refusalText(reason: string): string {
   return text.length <= 200 ? text : text.slice(0, 199).trimEnd() + '…'
 }
 
-/** The note a person gets once a turn or budget limit stopped the work: which limit, the work so far when there is a pull request, and an invitation to reply (ADR-32). */
 export function limitText(limit: 'turn' | 'budget', pull?: string): string {
   return (
     `I stopped before finishing: the ${limit} limit for this task was reached.` +
@@ -70,28 +71,20 @@ export function limitText(limit: 'turn' | 'budget', pull?: string): string {
 }
 
 /**
- * Replies writes the Engine's messages to Channels through the Outbox port: an acknowledgement, the answer to a person's
- * question, a ticket's result, and its question for a person, each only when its rule allows it, under a deterministic id
- * that keeps it from going out twice (idempotent). The Engine routes `reply` here; Tickets asks it for the acknowledgement
- * an accept carries, and Assignments asks it to withdraw a question a report replaced.
+ * Each message is queued under a deterministic id, so it is never sent twice. Replies to a person go where the person's
+ * message was written, and a result where the latest person's message to the ticket was written.
  */
 export class Replies extends EnginePart {
   /**
-   * Queue a message for the Channel its purpose names: an acknowledgement or an answer goes where that person's message was
-   * written, attention where the message that raised the question was (or to the ticket's starting conversation), and a
-   * result where the latest person's message to the ticket was written, else to the conversation where the ticket started (`result` is allowed only for a ticket in `ready`, `completed`,
-   * `merged`, or `dropped`). Each message is queued at most once (idempotent). An acknowledgement, even one already queued,
-   * records that the ticket's worker took the message up.
-   * @throws UserError when the ticket or trigger is unknown or the purpose's rule refuses it, such as a result of a ticket
-   * that is not ready, completed, merged, or dropped.
+   * An acknowledgement or an answer goes where that person's message was written; attention where the message that
+   * raised the question was, else to the ticket's starting conversation. Each message is queued at most once
+   * (idempotent). An acknowledgement, even one already queued, records that the ticket's worker took the message up.
+   * @throws UserError when the ticket or trigger is unknown or the purpose's rule refuses it, such as a result of a
+   * ticket that is not ready, completed, merged, or dropped.
    */
   reply(request: ReplyRequest): Reply {
     return request.purpose === 'acknowledgement' ? this.acknowledge(request) : this.answer(request)
   }
-  /**
-   * Queue the acknowledgement an accept carries where the message that started the ticket was written, if it has a Channel
-   * and a person wrote it.
-   */
   acknowledgeAccepted(ticketId: string, trigger: Trigger, text: string): void {
     if (trigger.channel && trigger.human)
       this.options.outbox.send({
@@ -102,7 +95,10 @@ export class Replies extends EnginePart {
         ticketId,
       })
   }
-  /** Queue, once per Assignment, the note that a turn or budget limit stopped the work, where the latest person's message to the ticket was written (ADR-23), else where it started; id `limit:<assignmentId>` (ADR-32). */
+  /**
+   * Queue, once per Assignment, the note that a turn or budget limit stopped the work, where the latest person's
+   * message to the ticket was written, else where it started; id `limit:<assignmentId>`.
+   */
   limitStopped(ticket: Ticket, assignmentId: string, limit: 'turn' | 'budget', pull?: string): void {
     const channel = this.replyChannel(ticket)
     if (channel)
@@ -114,11 +110,13 @@ export class Replies extends EnginePart {
         ticketId: ticket.id,
       })
   }
-  /** Withdraw a ticket's question for a person from the outbox, unless it went out already. */
   withdrawAttention(attentionId: string): void {
     this.options.outbox.withdraw(key('attention-reply', attentionId))
   }
-  /** Queue the refusal of a person's explicit request once, where it was written: its id is `refusal:<triggerId>`, so a replay or restart does not send it again. */
+  /**
+   * Queue the refusal of a person's explicit request once, where it was written: its id is `refusal:<triggerId>`, so a
+   * replay or restart does not send it again.
+   */
   refuse(trigger: Trigger, reason: string): void {
     if (!trigger.channel) return
     this.options.outbox.send({
@@ -166,7 +164,6 @@ export class Replies extends EnginePart {
       if (!ticket || !ready) throw new UserError('notReady')
     }
     const attention = request.purpose === 'attention' ? ticket?.attention : undefined
-    // Attention replies must match the ticket's currently open question text.
     if (request.purpose === 'attention' && (!attention || attention.question !== request.question))
       throw new UserError('notAttention')
     if (request.purpose === 'answer' && !trigger?.human) throw new UserError('notQuestion')
@@ -203,7 +200,10 @@ export class Replies extends EnginePart {
   private sourceChannel(ticket: Ticket): ChannelRef | undefined {
     return this.source(ticket)?.channel ?? ticket.channels[0]
   }
-  /** Where a ticket's result goes: the Channel of the latest person's message that reached it on a Thread it works on (not one it follows for context), else the conversation it started in. */
+  /**
+   * Where a ticket's result goes: the Channel of the latest person's message that reached it on a Thread it works on
+   * (not one it follows for context), else the conversation it started in.
+   */
   private replyChannel(ticket: Ticket): ChannelRef | undefined {
     const latest = ticket.inputs.findLast(
       (input): input is Extract<TicketInput, { kind: 'trigger' }> =>

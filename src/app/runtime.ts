@@ -1,5 +1,7 @@
 /**
- * The composition root: Store → Engine (Policy, SourceScope, Assessor, WorkerExecutor, Outbox) → Source kinds → AdmissionFilter in front of Passes → effect handlers → recovery. `start()` recovers interrupted work and starts the loops and Source services; `stop()` first deletes the readiness marker, stops accepting Triggers, and records running Assignments as interrupted before cleaning up within STOP_TIMEOUT_MS (it also works during `start()`, which it waits for after aborting the services' signal). `reload()` re-reads the config file while the runtime runs: the policy part is applied to the next Trigger, startup-only keys are reported and kept, and a refused file keeps the running config. In session mode (`router: 'session'`) the Router session is hosted by `RouterHost` and assesses candidates through `MasterAssessor`; otherwise the assessor is deterministic (`GateAssessor`). The worker instructions are the assembled prompt; worker workspaces are git worktrees (or scratch directories for fake runs) and the worker tools are the executor tools. Each pass also queues the cleanup of ended tickets past retention.endedTicketDays and records the health snapshot the status CLI reads.
+ * `start()` recovers interrupted work and starts the loops; `stop()` records running Assignments as interrupted
+ * within STOP_TIMEOUT_MS. `reload()` applies the policy part to the next Trigger, and a refused config file
+ * keeps the running config.
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -94,7 +96,10 @@ export function jsonLines(write: (line: string) => void, env?: Readonly<Record<s
   }
 }
 
-/** Executor tools; in deterministic Router mode a ready report also queues its summary as the result, in the same transaction that records the report (so no reader or crash sees the ticket ended without its result). */
+/**
+ * Executor tools; in deterministic Router mode a ready report also queues its summary as the result, in the same
+ * transaction that records the report (so no reader or crash sees the ticket ended without its result).
+ */
 export function workerTools(
   host: ExecutorToolsHost,
   ticket: Pick<Ticket, 'id'>,
@@ -174,7 +179,7 @@ export class GateAssessor implements Assessor {
     const candidate = this.host.engine().candidate(triggerId)
     if (candidate?.evalId !== evalId) return
     const settings = this.host.settings()
-    const outcome = assessmentOutcome(deterministicAssessment(candidate, settings), settings, candidate.strength)
+    const outcome = assessmentOutcome(deterministicAssessment(candidate, settings), settings)
     try {
       this.host.engine().decide(triggerId, { ...outcome, evalId })
     } catch (error) {
@@ -187,24 +192,27 @@ export interface RuntimeOptions {
   config: Config
   /** Directory of the config file; team sections are read from <configDir>/prompts/team. */
   configDir?: string
-  /** The config file that `reload` re-reads. */
   configPath?: string
-  /** Environment for loading the config on reload (default process.env). */
   env?: Readonly<Record<string, string | undefined>>
-  /** The startup report of the credential and policy checks; its warnings and consent are recorded in health and logs. */
+  /**
+   * The startup report of the credential and policy checks; its warnings and consent are recorded in health and logs.
+   */
   startup?: StartupReport
   /** The agent account login once the Source read it; reload checks it against policy.allowed. */
   agentLogin?: () => string | undefined
   runtime: AgentRuntime
-  /** Worker workspaces: 'git' worktrees (Claude start) or 'scratch' directories (default; fake runs, no git or network). */
+  /**
+   * Worker workspaces: 'git' worktrees (Claude start) or 'scratch' directories (default; fake runs, no git or network).
+   */
   workspaces?: 'git' | 'scratch'
-  /** 'session' opens the Router session (RouterHost) and assesses through MasterAssessor; 'deterministic' (default) keeps GateAssessor and the ready-summary stand-in. */
+  /**
+   * 'session' opens the Router session (RouterHost) and assesses through MasterAssessor; 'deterministic' (default)
+   * keeps GateAssessor and the ready-summary stand-in.
+   */
   router?: 'session' | 'deterministic'
   /** Reads a GitHub resource for the Router and worker `github/…` reads; the Source assembly point provides it. */
   githubRead?: (repository: string, resource: string, signal?: AbortSignal) => Promise<unknown>
-  /** Remote URLs and clone/fetch authentication for git workspaces; the Source assembly point provides it. */
   access?: RepositoryAccess
-  /** PR writes for worker delivery tools; the Source assembly point provides it. */
   pulls?: PullRequests
   kinds?: readonly SourceKind[]
   services?: readonly SourceService[]
@@ -657,14 +665,23 @@ export class Runtime implements SourceHost {
     this.passes.request()
   }
 
-  /** Re-reads the config file and applies it: the policy part from the next Trigger on (a changed policy version is an input to open tickets), startup-only keys are kept and reported. A refused file changes nothing. `network.allow` and `models.worker` apply to worker sessions opened after the reload; `retention.endedTicketDays` applies from the next retention evaluation. Calls are serialised. */
+  /**
+   * Re-reads the config file and applies it: the policy part from the next Trigger on (a changed policy version is an
+   * input to open tickets), startup-only keys are kept and reported. A refused file changes nothing. `network.allow`
+   * and `models.worker` apply to worker sessions opened after the reload; `retention.endedTicketDays` applies from the
+   * next retention evaluation. Calls are serialised.
+   */
   reload(): Promise<ReloadOutcome> {
     const next = this.reloads.then(() => this.reloadOnce())
     this.reloads = next.catch(() => undefined)
     return next
   }
 
-  /** Reassembles the worker prompt; when its team sections or rules changed, queues a notice with the changed sections for every open worker session (same key per ticket: only the latest is delivered). Returns the number queued. M10 calls it on reload. */
+  /**
+   * Reassembles the worker prompt; when its team sections or rules changed, queues a notice with the changed sections
+   * for every open worker session (same key per ticket: only the latest is delivered). Returns the number queued.
+   * Called on reload.
+   */
   refreshPrompts(): number {
     const routerChange = this.router ? this.prompts.refresh('router') : undefined
     if (routerChange?.notice) {

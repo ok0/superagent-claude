@@ -12,8 +12,7 @@ import type { Repositories } from './ports.ts'
 
 const clone = <T>(value: T): T => structuredClone(value)
 /**
- * In-memory implementation of the Repositories port backed by cloned Map entries so caller mutations do not affect stored state.
- * Provides snapshot-based atomic rollback and matches the ordering semantics of the SQLite store for Engine tests.
+ * Entries are cloned so caller mutations do not reach stored state; `atomic` rolls back to a snapshot on throw.
  */
 export class MemoryRepositories implements Repositories {
   private readonly triggerRows = new Map<string, Trigger>()

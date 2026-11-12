@@ -1,5 +1,4 @@
 // Ported from dsh-superagent-prototype (MIT) src/core/assignments.ts
-/** What the Executor and its workers report about the Assignments that run tickets. */
 import { key } from './ids.ts'
 import { UserError } from './errors.ts'
 import { caughtUp, latestAssignment, latestReport, liveTicket, runningAssignment } from './model.ts'
@@ -8,43 +7,37 @@ import { EnginePart, type EngineOptions } from './part.ts'
 import type { Replies } from './replies.ts'
 import { automatic, type Tickets } from './tickets.ts'
 
-/** What an Assignment reports: a worker's report, or the Executor's own (`waiting` after an idle turn, `failed` after an error). */
+/**
+ * What an Assignment reports: a worker's report, or the Executor's own (`waiting` after an idle turn,
+ * `failed` after an error).
+ */
 export interface WorkerReport {
   state: ReportState
   summary: string
   /** Open question for a person: a string asks it, `null` clears an open one, and `undefined` keeps the current one. */
   question?: string | null
-  /** The person's message whose request raised the question; routes the question to the channel where it was written. */
+  /** The person's message whose request raised the question; routes the question to its channel. */
   askedBy?: string
-  /** The person's question this report answers, which the worker thereby takes up; authorizes the main Session to send an answer reply. */
+  /** The person's question this report answers, which the worker takes up; authorizes an answer reply. */
   answers?: string
-  /** A new ticket title after a person's message changed the request (ADR-25); undefined keeps the current one. */
+  /** A new ticket title after a person's message changed the request; undefined keeps the current one. */
   title?: string
-  /** Host-only: a turn or budget limit stopped the worker. A `blocked` report with it tells the person once (ADR-32). */
+  /** Host-only: a turn or budget limit stopped the worker. A `blocked` report with it tells the person once. */
   limit?: 'turn' | 'budget'
 }
-// Port note: vendor-specific state wording neutralised to "remote state" (charter R11); behavior unchanged.
 const RECOVERY_NOTE =
   'The host restarted during this ticket. Inspect the current worktree, git history and remote state before continuing. Do not repeat an already completed external operation. Finish the original assignment and report its status.'
 
-/**
- * Assignments records what the Executor and its workers report about the Assignments that run tickets: one started, Inputs
- * reached it or failed to, its worker's Session took Inputs into a step, a turn of its worker ended, a host restart
- * interrupted it, and a worker's report with its question for a person. It depends on
- * Tickets to restart or end a ticket and on Replies to withdraw a question a report replaced; the Engine routes the
- * Executor's lifecycle callbacks and its workers' reports here.
- */
+/** Depends on Tickets to restart or end a ticket and on Replies to withdraw a question a report replaced. */
 export class Assignments extends EnginePart {
   private readonly tickets: Tickets
   private readonly replies: Replies
-  // Port note: parameter properties expanded to explicit fields (erasableSyntaxOnly); behavior unchanged.
   constructor(options: EngineOptions, tickets: Tickets, replies: Replies) {
     super(options)
     this.tickets = tickets
     this.replies = replies
   }
 
-  /** Marks a non-ended assignment running, queues a held accept acknowledgement (ADR-32), queues delivery of waiting undelivered inputs on an open ticket, and emits `assignment.started`. */
   started(ticketId: string, assignmentId: string): void {
     const ticket = this.require(ticketId)
     const assignment = ticket.assignments.find(item => item.id === assignmentId)
@@ -62,10 +55,7 @@ export class Assignments extends EnginePart {
     if (liveTicket(ticket) && ticket.undelivered.length) this.options.executor.deliver(ticket, assignment)
     this.emit('assignment.started', { ticketId, assignmentId })
   }
-  /**
-   * Marks `inputIds` delivered on the ticket's running assignment and clears any prior `delivery` failure; ignored if no
-   * longer running. Its worker reads each once its Session takes it into a step (see `read`).
-   */
+  /** Reads are recorded later by `read`, once the worker's Session takes the input into a step. */
   delivered(ticketId: string, assignmentId: string, inputIds: string[]): void {
     const ticket = this.running(ticketId, assignmentId)
     if (!ticket) return
@@ -81,7 +71,6 @@ export class Assignments extends EnginePart {
     delete ticket.delivery
     this.repo.tickets.save(ticket)
   }
-  /** Records when the worker's Session of an open ticket took `inputIds` into a step, from which its model reads them. */
   read(ticketId: string, inputIds: string[]): void {
     const ticket = this.require(ticketId)
     if (!liveTicket(ticket)) return
@@ -96,9 +85,9 @@ export class Assignments extends EnginePart {
     this.repo.tickets.save(ticket)
   }
   /**
-   * A worker's Session stopped at its turn or budget limit (`limit`). A ticket whose latest report is `ready` and whose worker
-   * took up no person's message since keeps that report: the running Assignment carries it, so the ticket shows as ready for
-   * review, and the caller reports nothing (ADR-24). Emits `worker.limit` either way.
+   * A worker's Session stopped at its turn or budget limit (`limit`). A ticket whose latest report is `ready` and whose
+   * worker took up no person's message since keeps that report: the running Assignment carries it, so the ticket shows
+   * as ready for review, and the caller reports nothing. Emits `worker.limit` either way.
    * @returns whether the ticket kept its ready report; false when `assignmentId` no longer runs the open ticket.
    */
   limited(ticketId: string, assignmentId: string, limit: string): boolean {
@@ -121,9 +110,9 @@ export class Assignments extends EnginePart {
     this.repo.tickets.save(ticket)
   }
   /**
-   * Handles a running assignment interrupted by a host restart: restarts it with a recovery note unless its latest report is
-   * `waiting`, `ready`, `blocked`, or `failed` and no input reached its worker after that report that a later finished turn
-   * did not take in (ADR-32), in which case it keeps its session and flushes any waiting undelivered inputs.
+   * Handles a running assignment interrupted by a host restart: restarts it with a recovery note unless its latest
+   * report is `waiting`, `ready`, `blocked`, or `failed` and no input reached its worker after that report that a later
+   * finished turn did not take in, in which case it keeps its session and flushes any waiting undelivered inputs.
    */
   interrupted(ticketId: string, assignmentId: string): void {
     const ticket = this.running(ticketId, assignmentId)
@@ -136,10 +125,8 @@ export class Assignments extends EnginePart {
     else if (ticket.undelivered.length) this.options.executor.deliver(ticket, running)
   }
   /**
-   * Records a worker status report on an open ticket's current assignment, updating `attention`, `answers`, held automated
-   * inputs, and ending the ticket when `dropped` or when `ready` and not waiting on followed threads (`followsDone`).
-   * @throws UserError for an unknown or ended ticket, an ended assignment, a question combined with a ready result or answer,
-   * or a question/answer referencing a non-human or unreached trigger.
+   * @throws UserError for an unknown or ended ticket, an ended assignment, a question combined with a ready result or
+   * answer, or a question/answer referencing a non-human or unreached trigger.
    */
   report(ticketId: string, report: WorkerReport): Ticket {
     const ticket = this.require(ticketId)
@@ -166,7 +153,8 @@ export class Assignments extends EnginePart {
     const attention = report.question === null || report.state === 'ready' ? undefined : asked
     if (attention) ticket.attention = attention
     else delete ticket.attention
-    // A replaced or cleared attention question withdraws any pending unsent reply for the previous question from the outbox.
+    // A replaced or cleared attention question withdraws any pending unsent reply for the previous question
+    // from the outbox.
     if (previous && previous.id !== attention?.id) this.replies.withdrawAttention(previous.id)
     const pull = report.limit && report.state === 'blocked' ? this.ownPullUrl(ticket) : undefined
     const summary = pull ? `${report.summary}. Work so far: ${pull}` : report.summary
@@ -181,7 +169,8 @@ export class Assignments extends EnginePart {
       ticket.undelivered = ticket.undelivered.filter(id => !automatic(ticket.inputs.find(input => input.id === id)))
     this.repo.tickets.save(ticket)
     if (report.limit && report.state === 'blocked') this.replies.limitStopped(ticket, assignment.id, report.limit, pull)
-    // A ticket that follows Threads ends with them: a ready report ends it only once followsDone holds, with that outcome.
+    // A ticket that follows Threads ends with them: a ready report ends it only once followsDone holds,
+    // with that outcome.
     const ready = !ticket.follows?.length ? 'completed' : this.tickets.followsDone(ticket)?.outcome
     // A dropped report after a close the ticket deferred ends it as the close did, which its final notice tells.
     const outcome =
@@ -193,7 +182,10 @@ export class Assignments extends EnginePart {
     if (outcome) this.tickets.end(ticketId, 'executor', outcome, at)
     return this.require(ticketId)
   }
-  /** The web address of the ticket's own thread, from its last own follow: recorded at bind time, else the thread's own address. */
+  /**
+   * The web address of the ticket's own thread, from its last own follow: recorded at bind time, else the
+   * thread's own address.
+   */
   private ownPullUrl(ticket: Ticket): string | undefined {
     const follow = ticket.follows?.findLast(item => item.own)
     if (!follow) return undefined
@@ -201,7 +193,6 @@ export class Assignments extends EnginePart {
     const url = this.repo.threads.get(follow.thread)?.meta.url
     return typeof url === 'string' ? url : undefined
   }
-  /** The ticket, while it is open and `assignmentId` runs it. */
   private running(ticketId: string, assignmentId: string): Ticket | undefined {
     const ticket = this.require(ticketId)
     return liveTicket(ticket) && runningAssignment(ticket)?.id === assignmentId ? ticket : undefined

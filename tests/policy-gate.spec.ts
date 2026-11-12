@@ -97,17 +97,17 @@ describe('bots (AC6)', () => {
 
   it('accepts a bot candidate only in auto mode, on its matched rules', () => {
     const auto = bots('auto')
-    const outcome = assessmentOutcome(accept(auto), auto, 'inferred')
+    const outcome = assessmentOutcome(accept(auto), auto)
     expect(outcome).toMatchObject({ kind: 'accept' })
     expect(outcome.kind === 'accept' && settingsPolicy(auto, scope).admitsInferred(outcome.rules ?? [])).toBe(true)
-    const unmatched = assessmentOutcome(accept(auto, false), auto, 'inferred')
+    const unmatched = assessmentOutcome(accept(auto, false), auto)
     expect(unmatched).toMatchObject({ kind: 'ignore', reason: { code: 'noRuleMatched' } })
     expect(settingsPolicy(auto, scope).admitsInferred([])).toBe(false)
   })
 
   it('records a bot candidate as would_accept in observe mode and never admits it as work', () => {
     const observe = bots('observe')
-    const outcome = assessmentOutcome(accept(observe), observe, 'inferred')
+    const outcome = assessmentOutcome(accept(observe), observe)
     expect(outcome).toMatchObject({ kind: 'ignore', audit: { would_accept: true } })
     expect(outcome.kind).not.toBe('accept')
     const enabled = observe.policy.rules.filter(rule => rule.enabled).map(rule => rule.id)
@@ -126,18 +126,18 @@ describe('accept modes (AC7)', () => {
 
   it('applies the accept mode to an explicit candidate: off ignores, observe records would_accept, auto accepts', () => {
     const off = settings('off')
-    expect(assessmentOutcome(accept(off), off, 'explicit')).toMatchObject({
+    expect(assessmentOutcome(accept(off), off)).toMatchObject({
       kind: 'ignore',
       reason: 'Accept mode is off',
     })
-    expect(assessmentOutcome(accept(off), off, 'explicit')).not.toHaveProperty('audit.would_accept')
+    expect(assessmentOutcome(accept(off), off)).not.toHaveProperty('audit.would_accept')
     const observe = settings('observe')
-    expect(assessmentOutcome(accept(observe), observe, 'explicit')).toMatchObject({
+    expect(assessmentOutcome(accept(observe), observe)).toMatchObject({
       kind: 'ignore',
       audit: { would_accept: true },
     })
     const auto = settings('auto')
-    expect(assessmentOutcome(accept(auto), auto, 'explicit')).toMatchObject({ kind: 'accept' })
+    expect(assessmentOutcome(accept(auto), auto)).toMatchObject({ kind: 'accept' })
   })
 
   it('refuses only in accept mode auto', () => {
@@ -151,7 +151,7 @@ describe('accept modes (AC7)', () => {
     const fromAllowed = SettingsSchema.parse({ policy: { allowed: ['alice'] } })
     expect(fromEmpty.policy.acceptMode).toBe('observe')
     expect(fromAllowed.policy.acceptMode).toBe('observe')
-    expect(assessmentOutcome(accept(fromEmpty), fromEmpty, 'explicit')).toMatchObject({
+    expect(assessmentOutcome(accept(fromEmpty), fromEmpty)).toMatchObject({
       kind: 'ignore',
       audit: { would_accept: true },
     })

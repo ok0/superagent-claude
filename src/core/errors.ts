@@ -87,15 +87,11 @@ export const USER_ERRORS = {
 } as const satisfies Record<string, readonly ['missing' | 'refused', string]>
 export type UserErrorCode = keyof typeof USER_ERRORS
 
-/**
- * Structured error thrown by Engine parts and application services when a caller request is invalid or references missing state.
- * Tool handlers and HTTP routes inspect its code and missing flag to return appropriate status responses, while the web panel localizes the code.
- */
+/** Tool handlers and HTTP routes map `missing` to a status; the web panel localizes `code`. */
 export class UserError extends Error {
   readonly code: UserErrorCode
   readonly values: Record<string, string>
   readonly missing: boolean
-  // Port note: parameter properties expanded to explicit fields (erasableSyntaxOnly); behavior unchanged.
   constructor(code: UserErrorCode, values: Record<string, string> = {}) {
     const [kind, text] = USER_ERRORS[code]
     super(text.replace(/\{(\w+)\}/g, (match, name: string) => values[name] ?? match))

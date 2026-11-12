@@ -1,10 +1,10 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/assessment.ts
 /**
- * Proactive candidate assessment for the Router session: relays candidate cards, serves bounded context reads, and records outcomes.
- * Changes from the reference: the Router session is the only assessor (the deterministic one stays in the Runtime); the
- * repository, image and file reads are removed (D4; GitHub originals are read through orchestrator_read); the thread window is
- * loaded through the kind's TriggerContext with no command runner; every text a read or the context returns is wrapped as
- * external data; the checked-IM-text step is removed.
+ * Proactive candidate assessment for the Router session: relays candidate cards, serves bounded context reads, and
+ * records outcomes. The Router session is the only assessor; the deterministic one stays in the Runtime. The
+ * repository, image and file reads are not offered; GitHub originals are read through orchestrator_read. The thread
+ * window is loaded through the kind's TriggerContext with no command runner. Every text a read or the context returns
+ * is wrapped as external data. The checked-IM-text step is not performed.
  */
 import { z } from 'zod'
 import {
@@ -29,7 +29,6 @@ import { external, relatedTickets, textPage } from './cards.ts'
 import type { Effects } from './effects.ts'
 import { AcknowledgementSchema } from './tools/tool.ts'
 
-/** Schema for a short lowercase kebab-case English ticket worktree name (1–4 words, at most 32 characters). */
 export const WorktreeNameSchema = z
   .string()
   .max(32)
@@ -65,7 +64,6 @@ export const AssessmentFields = z
     reason: z.string().min(1).max(500),
   })
   .strict()
-/** Schema for the Router session's proactive candidate assessment decision (`orchestrator_eval_decide`). */
 export const AssessmentSchema = AssessmentFields.refine(
   value =>
     value.decision !== 'accept' ||
@@ -75,17 +73,14 @@ export const AssessmentSchema = AssessmentFields.refine(
   { message: 'Accepted work requires a short English worktree_name', path: ['worktree_name'] },
 )
 
-/** Character limits in the initial thread window: for the trigger itself, its two nearest neighbours, other window messages, and stub previews. */
 const TRIGGER_CHARS = 4000,
   NEAR_CHARS = 1200,
   WINDOW_CHARS = 400,
   STUB_CHARS = 50
-/** Pages of the thread loaded for the initial window. */
 const CONTEXT_PAGES = 5
 const FINISHED = 'This assessment has finished: it was decided, timed out or restarted'
 const EXPLICIT =
   'This is an explicit request, which is routed instead of assessed: use orchestrator_route with its trigger_id and kind accept, attach, stop or ignore'
-/** Message returned when assessing a Trigger whose Source provides no thread context. */
 const NO_CONTEXT = "This Source gives no Thread context; assess the Trigger's own text and the batch."
 type AdmissionContext = Awaited<ReturnType<typeof admissionContext>>
 interface ReadCache {
@@ -93,18 +88,14 @@ interface ReadCache {
   messages: Map<string, string>
   cursors: Set<string>
 }
-/** Per-evaluation state kept while an Eval runs: served reads cache, loaded thread context (or error), and any in-flight initial load. */
 interface EvalReads {
   cache: ReadCache
   context?: AdmissionContext
   error?: string
   loading?: Promise<void>
 }
-/** Host dependencies used by `MasterAssessor`. */
 export interface AssessorHost {
-  /** Active evaluations in `Engine` that the assessor reads and decides. */
   engine(): Pick<EngineForMainSession, 'candidate' | 'candidateDelivered' | 'decide'>
-  /** Durable effect queue through which candidate assessments are delivered. */
   effects: Pick<Effects, 'enqueue' | 'handle' | 'cancel'>
   settings(): Settings
   /** Whether processing is paused, which holds candidate deliveries. */
@@ -116,7 +107,6 @@ export interface AssessorHost {
   candidateCard(candidate: Candidate): Record<string, unknown>
 }
 
-/** Fields of `orchestrator_eval_read`: a message, the root, the parent, or a page of the thread. */
 export const EvalReadFields = z
   .object({
     trigger_id: z
@@ -142,36 +132,29 @@ export const EvalReadFields = z
       .describe('Text pagination: copy next_offset; keep the other arguments unchanged.'),
   })
   .strict()
-/** Schema for bounded context requests during an active evaluation (`orchestrator_eval_read`). */
 export const EvalReadSchema = EvalReadFields.superRefine((read, ctx) => {
   if (read.message_id !== undefined && read.resource !== 'message')
     ctx.addIssue({ code: 'custom', message: 'message_id is only for message.' })
   if (read.cursor !== undefined && read.resource !== 'thread')
     ctx.addIssue({ code: 'custom', message: 'cursor is only for thread. First page: {resource:"thread"}.' })
 })
-/** Validated arguments for `MasterAssessor.read`. */
 export type EvalRead = z.infer<typeof EvalReadSchema>
-/** Cuts a text to `limit` characters and wraps it as external data from `source`; the cut length is reported with `chars`. */
+/** Wraps the text as external data; `chars` reports the full length when it is cut. */
 function cut(text: string, limit: number, source: string): { text: string } | { text: string; chars: number } {
   return text.length <= limit
     ? { text: external(source, text) }
     : { text: external(source, `${text.slice(0, limit)}…`), chars: text.length }
 }
 
-/**
- * Implements the `Engine` `Assessor` port for proactive candidate evaluation in the Router session.
- * Relays each evaluation's candidate card to the Router session through the durable `assessment` effect, serves bounded thread
- * context reads while the evaluation runs, and converts the Router's assessment into an `AssessmentOutcome` for `Engine.decide`.
- * The Router's `orchestrator_eval*` tools call `context`, `read`, and `decide`.
- */
+/** The Router's `orchestrator_eval*` tools call `context`, `read`, and `decide`. */
 export class MasterAssessor implements Assessor {
-  /** Per-evaluation read caches and thread contexts, keyed by `evalId`. */
   private readonly evals = new Map<string, EvalReads>()
   private readonly host: AssessorHost
   /** Registers the handler that relays each Eval's candidate card, which a busy Router session may delay. */
   constructor(host: AssessorHost) {
     this.host = host
-    // Start the evaluation deadline only after the Router session receives the candidate card, so a busy session does not consume evaluation time.
+    // Start the evaluation deadline only after the Router session receives the candidate card, so a busy session does
+    // not consume evaluation time.
     host.effects.handle(
       'assessment',
       async ({ triggerId }, evalId) => {
@@ -186,11 +169,9 @@ export class MasterAssessor implements Assessor {
       { limit: () => (host.paused() ? 0 : 4) },
     )
   }
-  /** Enqueues an `assessment` effect to deliver `candidate`'s card to the Router session. */
   request(candidate: Candidate): void {
     this.host.effects.enqueue('assessment', candidate.evalId, { triggerId: candidate.triggers[0]!.id })
   }
-  /** Whether `evalId` is still the active evaluation for `trigger`. */
   private live(evalId: string, trigger: Trigger): boolean {
     return this.host.engine().candidate(trigger.id)?.evalId === evalId
   }
@@ -199,7 +180,10 @@ export class MasterAssessor implements Assessor {
     this.evals.delete(evalId)
     this.host.effects.cancel('assessment', evalId)
   }
-  /** Resolve the active evaluation for a trigger; historical triggers have none, and explicit requests are routed instead. */
+  /**
+   * Resolve the active evaluation for a trigger. Historical triggers have none, and explicit requests
+   * are routed instead.
+   */
   private evalFor(triggerId: string): { candidate: Candidate; trigger: Trigger } {
     const candidate = this.host.engine().candidate(triggerId)
     if (!candidate)
@@ -210,7 +194,7 @@ export class MasterAssessor implements Assessor {
     const trigger = candidate.triggers.find(item => item.id === triggerId)!
     return { candidate, trigger }
   }
-  /** Returns or initializes the read cache for `evalId`, seeded with the trigger's own message; throws if `evalId` has finished. */
+  /** @throws when `evalId` has finished. */
   private reads(evalId: string, trigger: Trigger): EvalReads {
     let reads = this.evals.get(evalId)
     if (!reads) {
@@ -228,7 +212,6 @@ export class MasterAssessor implements Assessor {
     }
     return reads
   }
-  /** Loads and caches the initial bounded thread window once per evaluation. */
   private async seed(evalId: string, trigger: Trigger, caller?: AbortSignal): Promise<void> {
     caller?.throwIfAborted()
     const reads = this.reads(evalId, trigger)
@@ -268,11 +251,11 @@ export class MasterAssessor implements Assessor {
     if (!this.live(evalId, trigger)) throw new Error(FINISHED)
   }
   /**
-   * Returns the `orchestrator_eval` payload: the trigger's text once (up to `TRIGGER_CHARS`), batch peers, related tickets on
-   * the thread, the Policy version its Eval was built from, and the initial thread window (the first five messages and five on
-   * either side of the trigger, cut to `WINDOW_CHARS` or `NEAR_CHARS` for its two nearest neighbours, with other loaded messages
-   * as `STUB_CHARS` previews; `orchestrator_eval_read` reads any message in full by ID).
-   * Assessment instructions live in the Router's prompt, not in this payload.
+   * Returns the `orchestrator_eval` payload: the trigger's text once (up to `TRIGGER_CHARS`), batch peers, related
+   * tickets on the thread, the Policy version its Eval was built from, and the initial thread window (the first five
+   * messages and five on either side of the trigger, cut to `WINDOW_CHARS` or `NEAR_CHARS` for its two nearest
+   * neighbours, with other loaded messages as `STUB_CHARS` previews; `orchestrator_eval_read` reads any message in full
+   * by ID). Assessment instructions live in the Router's prompt, not in this payload.
    */
   async context(triggerId: string, signal?: AbortSignal) {
     const { candidate, trigger } = this.evalFor(triggerId)
@@ -334,7 +317,6 @@ export class MasterAssessor implements Assessor {
       thread,
     }
   }
-  /** Serves a bounded, paginated read of the evaluation's message, root, parent, or thread page for `orchestrator_eval_read`. */
   async read(read: EvalRead, signal?: AbortSignal) {
     const { candidate, trigger } = this.evalFor(read.trigger_id)
     await this.seed(candidate.evalId, trigger, signal)
@@ -379,7 +361,6 @@ export class MasterAssessor implements Assessor {
     snapshots.set(cacheKey, body)
     return textPage(read.resource, body, read.offset, 4000)
   }
-  /** Converts the assessment into an outcome under current settings and passes it to `Engine.decide` for policy verification. */
   async decide(
     triggerId: string,
     result: z.infer<typeof AssessmentSchema>,
@@ -387,7 +368,7 @@ export class MasterAssessor implements Assessor {
   ): Promise<{ state: string; ticket_id?: string; reason: string }> {
     const { candidate } = this.evalFor(triggerId)
     signal?.throwIfAborted()
-    const outcome: AssessmentOutcome = assessmentOutcome(result, this.host.settings(), candidate.strength)
+    const outcome: AssessmentOutcome = assessmentOutcome(result, this.host.settings())
     const decision = this.host.engine().decide(triggerId, { ...outcome, evalId: candidate.evalId })
     return {
       state: decision.kind,
@@ -395,7 +376,6 @@ export class MasterAssessor implements Assessor {
       reason: reasonText(decision.reason),
     }
   }
-  /** Drops every evaluation's context and reads when the runtime stops. */
   stop(): void {
     this.evals.clear()
   }

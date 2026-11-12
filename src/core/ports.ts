@@ -1,5 +1,4 @@
 // Ported from dsh-superagent-prototype (MIT) src/core/ports.ts
-/** Ports the core depends on. Sources, policies, assessors, executors, and channels are project-specific. */
 import type {
   Assignment,
   ChannelRef,
@@ -16,13 +15,14 @@ import type {
 } from './model.ts'
 import type { Reason } from './reasons.ts'
 
-/** Gate admission result: either inadmissible with a reason code, or admissible with strength and MandateBasis. */
 export type GateResult =
   { admissible: false; reason: string } | { admissible: true; strength: Strength; basis: MandateBasis }
 
-/** Whether a Source receives a Trigger; `observed` when it also receives messages not addressed to the agent, and `row` the receiving scope the Policy's admission table names, such as a chat. */
+/**
+ * Whether a Source receives a Trigger; `observed` when it also receives messages not addressed to the agent, and `row`
+ * the receiving scope the Policy's admission table names, such as a chat.
+ */
 export type ScopeResult = { listened: true; observed: boolean; row?: string } | { listened: false; reason: string }
-/** Source configuration as the domain sees it: listening scope per trigger or per recorded Mandate basis. */
 export interface SourceScope {
   scope(input: { source: string; meta: Record<string, unknown> }): ScopeResult
 }
@@ -34,11 +34,16 @@ export interface Policy {
   gate(trigger: Trigger, thread: Thread, tickets: Ticket[]): GateResult
   /** Re-check a mandate's gate-layer basis under this policy, such as before an ended ticket resumes. */
   revalidate(mandate: Mandate): boolean
-  /** Whether an inferred candidate may be accepted on the rules its assessment matched: assessments accept, and each rule is enabled. */
+  /**
+   * Whether an inferred candidate may be accepted on the rules its assessment matched: assessments accept, and each
+   * rule is enabled.
+   */
   admitsInferred(rules: readonly string[]): boolean
   /** How long an assessor may take before an eval is recorded as unavailable. */
   evalTimeoutMs: number
-  /** Whether an explicit request that an assessor ignores in its own words gets a refusal reply (accept mode auto only, ADR-24). */
+  /**
+   * Whether an explicit request that an assessor ignores in its own words gets a refusal reply (accept mode auto only).
+   */
   refuses?: boolean
 }
 
@@ -56,7 +61,6 @@ export interface Candidate {
 export type AssessmentOutcome =
   | { kind: 'ignore'; reason: string | Reason; audit?: Record<string, unknown> }
   | { kind: 'unavailable'; reason: string | Reason; audit?: Record<string, unknown> }
-  /** An accept: `rules` the assessment matched, `name` the ticket's requested short name, and `note` a routing note for its worker. */
   | {
       kind: 'accept'
       title: string
@@ -70,7 +74,10 @@ export type AssessmentOutcome =
     }
   | { kind: 'stop'; ticketId: string; reason: string | Reason; audit?: Record<string, unknown> }
 
-/** Semantic judgement. `request` queues the assessment, idempotently per `evalId`; the outcome returns through `Engine.decide`. */
+/**
+ * Semantic judgement. `request` queues the assessment, idempotently per `evalId`.
+ * The outcome returns through `Engine.decide`.
+ */
 export interface Assessor {
   request(candidate: Candidate): void
   /** Called whenever an eval ends, decided or not, so the assessor drops what it kept for it. */
@@ -85,15 +92,18 @@ export interface Executor {
   /** Queue a pending assignment for launch; reports back through `Engine.assignmentStarted` or a `failed` report. */
   start(ticket: Ticket, assignment: Assignment): void
   /**
-   * Queue delivery of the ticket's waiting Inputs to its running assignment; reports back through `Engine.inputsDelivered`
-   * or `Engine.deliveryFailed`, and through `Engine.inputsRead` once its worker's Session takes them into a step.
+   * Queue delivery of the ticket's waiting Inputs to its running assignment; reports back through
+   * `Engine.inputsDelivered` or `Engine.deliveryFailed`, and through `Engine.inputsRead` once its worker's Session
+   * takes them into a step.
    */
   deliver(ticket: Ticket, assignment: Assignment): void
-  /** End an assignment's work, such as cancelling its Session's turn; called after the ticket or assignment has already ended in the domain. */
+  /**
+   * End an assignment's work, such as cancelling its Session's turn; called after the ticket or assignment has already
+   * ended in the domain.
+   */
   stop(ticket: Ticket, assignment: Assignment, reason: string): void
 }
 
-/** A message for a Channel; `ticketId` names the Ticket it is for, when there is one. */
 export interface OutboundMessage {
   id: string
   channel: ChannelRef
@@ -101,19 +111,19 @@ export interface OutboundMessage {
   kind: 'acknowledgement' | 'reply' | 'notice'
   ticketId?: string
 }
-/** A queued message waits (`pending`), went out (`sent`), or was dropped because its conversation can never receive it (`dropped`). */
+/**
+ * A queued message waits (`pending`), went out (`sent`), or was dropped because its conversation can never
+ * receive it (`dropped`).
+ */
 export type ReplyStatus = 'pending' | 'sent' | 'dropped'
 /** The messages queued for Channels; the Engine queues them inside its commands, and a sender delivers them later. */
 export interface Outbox {
   /** Queue a message idempotently; an id queued before keeps its first message. */
   send(message: OutboundMessage): void
-  /** Whether a message was queued, and what became of it. */
   status(id: string): ReplyStatus | undefined
-  /** Withdraw a message that has not gone out. */
   withdraw(id: string): void
 }
 
-/** What the Engine reports after a change, by event type. */
 export interface DomainEvents {
   'trigger.received': { triggerId: string; threads: string[] }
   'eval.started': { evalId: string; threadKey: string; triggerIds: string[]; strength: Strength }

@@ -1,7 +1,7 @@
 // Ported from dsh-superagent-prototype (MIT) src/policy.ts
 /**
- * Runtime settings schemas, assessment validation, and policy gate evaluation.
- * Who may originate work is one global list of logins, compared without case; a bot on it is an inferred candidate at most.
+ * Who may originate work is one global list of logins, compared without case; a bot on it is an inferred
+ * candidate at most.
  */
 import { LIMITS } from './limits.ts'
 import { z } from 'zod'
@@ -13,19 +13,17 @@ import {
   type Policy,
   type PolicyEffect,
   type SourceScope,
-  type Strength,
   type Thread,
   type Ticket,
   type Trigger,
   type ActorRef,
   type GateResult,
 } from '../core/index.ts'
-// Port note: infra is not importable from policy (architecture rule); sameName re-declared in actors.ts
+// infra is not importable from policy (architecture rule), so sameName is re-declared in actors.ts
 import { isBot, sameName } from './actors.ts'
 
 export const RuleIdSchema = z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/)
 export const RuleMatchSchema = z.object({ rule_id: RuleIdSchema, reason: z.string().trim().min(1).max(500) }).strict()
-export type RuleMatch = z.infer<typeof RuleMatchSchema>
 export const RuleAssessmentSchema = RuleMatchSchema.extend({ matched: z.boolean() }).strict()
 export type RuleAssessment = z.infer<typeof RuleAssessmentSchema>
 export const AdmissionDirectionSchema = z
@@ -37,7 +35,6 @@ export const AdmissionDirectionSchema = z
   })
   .strict()
 export type AdmissionDirection = z.infer<typeof AdmissionDirectionSchema>
-/** Check whether an assessment established implementation intent and a settled target without open design decisions. */
 export function directionAllowed(value: unknown): value is AdmissionDirection {
   const result = AdmissionDirectionSchema.safeParse(value)
   return (
@@ -59,17 +56,11 @@ export interface Assessment {
   worktree_name?: string
 }
 /**
- * Validate an assessment against enabled rules and convert it into an engine `AssessmentOutcome`.
- * Acceptance requires a settled direction, at least one matched enabled rule, and `intent_evidence`. Accepts only in `auto` mode;
- * `observe` records `would_accept`, and `off` ignores and records nothing, for explicit and inferred candidates alike.
- * The `strength` argument is kept for caller compatibility and no longer changes the result.
+ * Accepts only in `auto` mode; `observe` records `would_accept`, and `off` ignores and records nothing, for explicit
+ * and inferred candidates alike.
  * @throws when `rule_assessments` does not cover every enabled rule exactly once, or an accept omits `intent_evidence`.
  */
-export function assessmentOutcome(
-  assessment: Assessment,
-  settings: Pick<Settings, 'policy'>,
-  strength: Strength,
-): AssessmentOutcome {
+export function assessmentOutcome(assessment: Assessment, settings: Pick<Settings, 'policy'>): AssessmentOutcome {
   const enabled = settings.policy.rules.filter(rule => rule.enabled)
   const judged = assessment.rule_assessments
   const ids = new Set(judged.map(item => item.rule_id))
@@ -87,7 +78,6 @@ export function assessmentOutcome(
   if (!assessment.intent_evidence) throw new Error('Acceptance requires intent_evidence')
   const { title, scope, worktree_name: name } = assessment
   const mode = settings.policy.acceptMode
-  // Port note: the accept mode bears on every candidate (spec R3, PAC2); the reference applied it to inferred ones only.
   if (mode === 'off') return { kind: 'ignore', audit, reason: 'Accept mode is off' }
   if (mode === 'observe') {
     const proposal = { title, scope, worktree_name: name }
@@ -144,7 +134,6 @@ export const AdmissionRowSchema: z.ZodType<AdmissionRow> = z
   })
   .strict()
 export const AdmissionTableSchema = z.record(z.string(), AdmissionRowSchema)
-// Port note: one global allowed list and admission table (charter A10); acceptMode replaces eval.mode; bots are named on the same list
 export const PolicyConfigSchema = z
   .object({
     allowed: z.array(LoginSchema).default([]),
@@ -161,7 +150,6 @@ export const EvalConfigSchema = z
     timeoutSeconds: z.number().int().min(LIMITS.evalTimeoutSeconds.min).max(LIMITS.evalTimeoutSeconds.max).default(120),
   })
   .strict()
-// Port note: source instances, executor and models move to the config file (M10)
 export const SettingsSchema = z
   .object({
     paused: z.boolean().default(false),
@@ -172,7 +160,6 @@ export const SettingsSchema = z
 export type Settings = z.infer<typeof SettingsSchema>
 
 export const POLICY_REVISION = 'mandate-v3'
-// Port note: key-order independent (spec R5)
 /** JSON with object keys sorted at every depth; array order is kept. */
 function canonical(value: unknown): string {
   return JSON.stringify(value, (_key, item: unknown) =>
@@ -184,21 +171,19 @@ function canonical(value: unknown): string {
   )
 }
 /**
- * Compute a version hash for settings that affect work authorization.
- * Changes to models, concurrency, pause state, or polling intervals do not invalidate existing decisions.
+ * Hashes only the settings that affect work authorization; model, concurrency, pause and polling changes
+ * keep decisions valid.
  */
 export function policyVersion(settings: Settings): string {
   const { rules, acceptMode, allowed, admission } = settings.policy
   return key(POLICY_REVISION, canonical({ rules, acceptMode, allowed, admission }))
 }
-// Port note: a bot is allowed by naming it on the allowed list; the entry itself names the sender, so listedBot and senderName are removed
-/** The allowed-list entry naming `actor`, compared without case; the list is global, so `actor.source` is not consulted. */
+/** Compared without case. The list is global, so `actor.source` is not consulted. */
 export function allowedSender(settings: Settings, actor: ActorRef): string | undefined {
   return settings.policy.allowed.find(entry => sameName(entry, actor.id))
 }
 export const anyoneAllowed = (settings: Settings): boolean => settings.policy.allowed.length > 0
 
-/** Check whether a thread has tickets of its own (excluding context-only subscriptions). */
 const participating = (thread: Thread, tickets: Ticket[]): boolean =>
   [...thread.subscriptions, ...tickets.map(ticket => ticket.id)].some(id => !thread.context?.includes(id))
 const listened = (sources: SourceScope, source: string, meta: Record<string, unknown>) =>
@@ -218,7 +203,6 @@ function admissionOf(settings: Settings, row: string | undefined, cell: Admissio
 }
 const STRENGTH: Readonly<Record<Admission, number>> = { ignore: 0, inferred: 1, explicit: 2 }
 
-/** Compute how a settings change from `old` to `now` affects the authorization or matched rules of each open ticket. */
 export function policyEffects(
   tickets: readonly Ticket[],
   old: Settings,
@@ -239,7 +223,8 @@ export function policyEffects(
     })
     const effect: PolicyEffect = rules.length ? { rules } : {}
     if (before.revalidate(ticket.mandate) && !after.revalidate(ticket.mandate)) {
-      // With the previous accept mode and rules, the Mandate holds unless the sender or receiving scope lost authorization.
+      // With the previous accept mode and rules, the Mandate holds unless the sender or receiving scope
+      // has lost authorization.
       const asBefore = { ...now, policy: { ...now.policy, acceptMode: old.policy.acceptMode, rules: old.policy.rules } }
       if (!settingsPolicy(asBefore, scope(now)).revalidate(ticket.mandate)) {
         Object.assign(effect, { requesterAllowed: false, requester: ticket.mandate.actor })
@@ -254,11 +239,10 @@ export function policyEffects(
   }
   return effects
 }
-/** Build the active Policy for gating incoming Triggers and revalidating existing Ticket Mandates. */
 export function settingsPolicy(settings: Settings, sources: SourceScope): Policy {
   const version = policyVersion(settings)
   const mode = settings.policy.acceptMode
-  /** Gate non-human triggers: only listed bots (as inferred candidates) and senderless system/CI events may pass; other bots are rejected. */
+  /** Only listed bots (as inferred candidates) and senderless system/CI events pass; other bots are rejected. */
   const machineGate = (trigger: Trigger): GateResult => {
     const bot = trigger.actor.id ? allowedSender(settings, trigger.actor) : undefined
     if (trigger.actor.id && !bot) return { admissible: false, reason: 'not_human' }
@@ -290,7 +274,7 @@ export function settingsPolicy(settings: Settings, sources: SourceScope): Policy
     paused: settings.paused,
     evalTimeoutMs: settings.eval.timeoutSeconds * 1000,
     gate(trigger: Trigger, thread, tickets) {
-      // Port note: a `[bot]` login is a bot even if a Source marked it human (spec R2)
+      // A `[bot]` login is a bot even if a Source marked it human.
       if (isBot(trigger)) return machineGate(trigger)
       const allowed = allowedSender(settings, trigger.actor)
       const scope = listened(sources, trigger.source, trigger.meta)
@@ -317,9 +301,11 @@ export function settingsPolicy(settings: Settings, sources: SourceScope): Policy
         cell,
         ...(trigger.addressed ? { addressed: trigger.addressed } : {}),
       }
-      // Check explicit admission cells before thread follow-ups so a thread's tickets never weaken an explicit request to a follow-up.
+      // Check explicit admission cells before thread follow-ups so a thread's tickets never weaken an explicit request
+      // to a follow-up.
       if (admission === 'explicit') return { admissible: true, strength: 'explicit', basis }
-      // Direct-message threads belong to one sender (no follow-up for others), and inferred follow-ups require an accept mode other than off (when off, the table decides).
+      // Direct-message threads belong to one sender (no follow-up for others), and inferred follow-ups require an
+      // accept mode other than off (when off, the table decides).
       if (
         !(trigger.addressed === 'direct' && !allowed) &&
         (allowed || mode !== 'off') &&
@@ -344,31 +330,28 @@ export function settingsPolicy(settings: Settings, sources: SourceScope): Policy
       rules.length > 0 &&
       rules.every(id => settings.policy.rules.some(rule => rule.enabled && rule.id === id)),
     revalidate(mandate: Mandate) {
-      // Revalidation rules follow docs/002 (Eval path; Resume revalidates).
+      // The Eval path and Resume both revalidate.
       const { basis } = mandate
       const { source } = basis
       const current = source && basis.scope ? listened(sources, source, basis.scope) : undefined
       if (current && !current.listened) return false
       const rulesOn = (rules: string[] | undefined) =>
         (rules ?? []).every(id => settings.policy.rules.some(rule => rule.enabled && rule.id === id))
-      // Explicit follow-ups remain valid; inferred follow-ups require auto mode and enabled matched rules.
       if (basis.via === 'followup') return mandate.strength === 'explicit' || (mode === 'auto' && rulesOn(basis.rules))
-      // A bot's candidate holds only while the bot remains on the allowed list and passes the observation checks below.
       if (basis.via === 'bot' && !allowedSender(settings, mandate.actor)) return false
-      // An admission-table Mandate holds while the sender's current cell still grants at least the original strength.
       if (basis.via === 'admission') {
         const { cell } = basis
         const listed = !!allowedSender(settings, mandate.actor)
         // A listed sender who addresses the agent is always explicit and uses no table cell.
         if (cell === 'unlistedAddressed' && listed) return true
-        // A sender added to the allowed list since acceptance moves to the listed cell, and still undergoes observation checks below.
+        // A sender added to the allowed list since acceptance moves to the listed cell, and still undergoes
+        // observation checks below.
         const now = cell === 'unlistedUnaddressed' && listed ? 'listedUnaddressed' : cell
         if (now === 'listedUnaddressed' && !listed) return false
         const admission = admissionOf(settings, current?.listened ? current.row : undefined, now)
         if (STRENGTH[admission] < STRENGTH[mandate.strength]) return false
         if (mandate.strength === 'explicit') return true
       } else if (basis.via !== 'bot' && !allowedSender(settings, mandate.actor)) return false
-      // Observed/inferred Mandates hold only while auto mode is active and all matched rules remain enabled.
       if ((basis.via === 'admission' || basis.via === 'listed' || basis.via === 'bot') && basis.observation)
         return mode === 'auto' && rulesOn(basis.rules)
       return true
