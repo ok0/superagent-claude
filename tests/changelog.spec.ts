@@ -44,7 +44,10 @@ function repo(): string {
   dirs.push(dir)
   git(dir, ['init', '-q'])
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }, null, 2) + '\n')
-  writeFileSync(join(dir, 'CHANGELOG.md'), readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8'))
+  const root = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8')
+  const first = root.search(/^## \[/m)
+  const preamble = first === -1 ? root : root.slice(0, first).trimEnd() + '\n'
+  writeFileSync(join(dir, 'CHANGELOG.md'), preamble)
   git(dir, ['add', '.'])
   commit(dir, 'chore: init')
   return dir
