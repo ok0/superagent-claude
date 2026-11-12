@@ -1,4 +1,7 @@
-/** Worker delivery tools: publish opens one PR and binds it, review replies, auto-merge only when allowed, close without merge, and every policy refusal before any git or gh call. Runs against the scripted gh fixture. */
+/**
+ * Worker delivery tools: publish opens one PR and binds it, review replies, auto-merge only when allowed,
+ * close without merge, and every policy refusal before any git or gh call. Runs against the scripted gh fixture.
+ */
 import { describe, expect, it, vi } from 'vitest'
 import { deliveryTools, issueOf, linkIssue, type DeliveryToolsHost } from '../src/app/tools/delivery.ts'
 import type { ToolSpec } from '../src/executor/contract.ts'

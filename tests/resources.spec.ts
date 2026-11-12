@@ -1,4 +1,7 @@
-/** Router and worker resources: ticket, trigger, thread, GitHub and skill reads, scope checks, and external-data delimiters. */
+/**
+ * Router and worker resources: ticket, trigger, thread, GitHub and skill reads, scope checks,
+ * and external-data delimiters.
+ */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

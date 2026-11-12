@@ -1,4 +1,7 @@
-/** Router session at runtime level: candidates are relayed and decided through the Router's tools, batching, unanswered Evals, follow-ups and worker reports. */
+/**
+ * Router session at runtime level: candidates are relayed and decided through the Router's tools, batching,
+ * unanswered Evals, follow-ups and worker reports.
+ */
 import { afterEach, describe, expect, it } from 'vitest'
 import { THREAD, mention, message, startRuntime, type Host } from './fixtures/host.ts'
 import { guest } from './fixtures/engine.ts'

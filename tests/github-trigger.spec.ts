@@ -1,4 +1,7 @@
-/** GitHub Trigger normalization: repository keys, address parsing, the six event kinds, and the person/bot signal the policy gate consumes. */
+/**
+ * GitHub Trigger normalization: repository keys, address parsing, the six event kinds, and the person/bot
+ * signal the policy gate consumes.
+ */
 import { describe, expect, it } from 'vitest'
 import { threadKey, type Thread } from '../src/core/index.ts'
 import {

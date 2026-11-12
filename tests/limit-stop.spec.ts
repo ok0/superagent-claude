@@ -1,5 +1,6 @@
 /**
- * A turn or budget limit that stops a worker: the person gets one note with the limit and the work so far, a ready result stays ready, and a person's reply continues the ticket under a new Assignment with fresh limits.
+ * A turn or budget limit that stops a worker: the person gets one note with the limit and the work so far,
+ * a ready result stays ready, and a person's reply continues the ticket under a new Assignment with fresh limits.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

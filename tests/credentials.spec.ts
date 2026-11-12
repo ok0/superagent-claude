@@ -1,4 +1,7 @@
-/** Credential resolution per auth mode: only the selected mode's variables reach the runtime, refusals carry names only. */
+/**
+ * Credential resolution per auth mode: only the selected mode's variables reach the runtime,
+ * refusals carry names only.
+ */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { AUTH_ENV, type AuthMode } from '../src/runtimes/claude/options.ts'

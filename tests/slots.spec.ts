@@ -1,5 +1,6 @@
 /**
- * Worker slot accounting: normal slots, the extra slot for a person, and waiting wakes that take a freed slot before a launch.
+ * Worker slot accounting: normal slots, the extra slot for a person, and waiting wakes that take a freed slot
+ * before a launch.
  */
 import { expect, it } from 'vitest'
 import { Slots } from '../src/executor/slots.ts'

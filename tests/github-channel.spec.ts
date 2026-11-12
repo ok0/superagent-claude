@@ -1,4 +1,7 @@
-/** The GitHub Channel: replies go to the addressed repository only, a re-sent message posts once, and a deleted target is gone. */
+/**
+ * The GitHub Channel: replies go to the addressed repository only, a re-sent message posts once,
+ * and a deleted target is gone.
+ */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

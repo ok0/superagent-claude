@@ -1,5 +1,7 @@
 /**
- * The AdmissionFilter in front of the Engine: allowed senders and listed bots pass, every other Trigger is recorded as rejected and never reaches the Engine, the same for every authentication mode, and a CI transition passes only on a thread an allowed ticket follows.
+ * The AdmissionFilter in front of the Engine: allowed senders and listed bots pass, every other Trigger is
+ * recorded as rejected and never reaches the Engine, the same for every authentication mode, and a CI
+ * transition passes only on a thread an allowed ticket follows.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

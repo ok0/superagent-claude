@@ -1,4 +1,7 @@
-/** The Kubernetes manifest: one replica with Recreate, non-root and hardened, probes and grace period, empty Secret, and its verbatim copy in docs/deploy.md. */
+/**
+ * The Kubernetes manifest: one replica with Recreate, non-root and hardened, probes and grace period,
+ * empty Secret, and its verbatim copy in docs/deploy.md.
+ */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'

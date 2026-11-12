@@ -1,5 +1,6 @@
 /**
- * --log-format text|json: json writes only JSON lines on stdout and nothing on stderr, text keeps today's output, secrets become [redacted].
+ * --log-format text|json: json writes only JSON lines on stdout and nothing on stderr, text keeps
+ * today's output, secrets become [redacted].
  */
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'

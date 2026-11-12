@@ -1,4 +1,8 @@
-/** Session-mode daemon over the fake gh with real git worktrees: publish opens one PR and binds it; a PR follow-up comment reaches the same ticket, worktree, branch and session, and the next publish only pushes; the PR body closes the issue, and the follow-up's result goes to the PR, not the issue. */
+/**
+ * Session-mode daemon over the fake gh with real git worktrees: publish opens one PR and binds it; a PR
+ * follow-up comment reaches the same ticket, worktree, branch and session, and the next publish only
+ * pushes; the PR body closes the issue, and the follow-up's result goes to the PR, not the issue.
+ */
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

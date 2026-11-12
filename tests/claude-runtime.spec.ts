@@ -1,4 +1,7 @@
-/** Claude runtime adapter over a stubbed SDK query: session ids, followup, inject and steer delivery, interrupt, failure, close, probe and the MCP bridge. */
+/**
+ * Claude runtime adapter over a stubbed SDK query: session ids, followup, inject and steer delivery,
+ * interrupt, failure, close, probe and the MCP bridge.
+ */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { executorTools, type ExecutorToolsHost } from '../src/app/tools/executor.ts'

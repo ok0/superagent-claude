@@ -1,5 +1,6 @@
 /**
- * The whole daemon over the scripted fake runtime: a mention from an allowed sender opens one Ticket, and the acceptance mode decides whether it does.
+ * The whole daemon over the scripted fake runtime: a mention from an allowed sender opens one Ticket,
+ * and the acceptance mode decides whether it does.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

@@ -1,4 +1,7 @@
-/** Replays recorded Claude SDK message sequences through the event mapper and checks the runtime events, costs and background counts they produce. */
+/**
+ * Replays recorded Claude SDK message sequences through the event mapper and checks the runtime events,
+ * costs and background counts they produce.
+ */
 import { describe, expect, it } from 'vitest'
 import { EventMapper, outcomeOf, subagentMessage } from '../src/runtimes/claude/events.ts'
 import { RECORDED, replay, type Step } from './fixtures/claude-recorded.ts'

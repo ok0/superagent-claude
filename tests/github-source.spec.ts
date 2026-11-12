@@ -1,4 +1,7 @@
-/** The GitHub polling Source over the fake gh: start probes, per-repository cursors and health, the six event kinds, failure isolation, interval and abort. */
+/**
+ * The GitHub polling Source over the fake gh: start probes, per-repository cursors and health, the six
+ * event kinds, failure isolation, interval and abort.
+ */
 import { afterEach, expect, it } from 'vitest'
 import type { Thread, Ticket } from '../src/core/index.ts'
 import { githubSource, type GithubSourceOptions } from '../src/sources/github/source.ts'

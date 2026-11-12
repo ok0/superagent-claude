@@ -1,5 +1,7 @@
 /**
- * The operator commands against a real process: status and needs answer while the daemon runs (with the health snapshot it wrote), and the built entry runs both on a seeded state directory with exit 0 and no token in the output.
+ * The operator commands against a real process: status and needs answer while the daemon runs (with the
+ * health snapshot it wrote), and the built entry runs both on a seeded state directory with exit 0 and no
+ * token in the output.
  */
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'

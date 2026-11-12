@@ -1,4 +1,7 @@
-/** Status rules of the sandbox spike item: PASS, BLOCKED when the sandbox or the network is not usable, FAIL only when a live sandbox lets the disallowed domain through. */
+/**
+ * Status rules of the sandbox spike item: PASS, BLOCKED when the sandbox or the network is not usable, FAIL only
+ * when a live sandbox lets the disallowed domain through.
+ */
 import { describe, expect, it } from 'vitest'
 import { networkStatus, spikeSandbox, staticSandboxAvailable } from '../spikes/sdk/items/r19-sandbox-secrets.ts'
 

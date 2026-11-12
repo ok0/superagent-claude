@@ -1,5 +1,6 @@
 /**
- * SIGTERM while an Assignment runs: readiness off, running work recorded as interrupted, exit 0 within 15 s; the restart resumes it with the recovery note and posts no comment twice.
+ * SIGTERM while an Assignment runs: readiness off, running work recorded as interrupted, exit 0 within 15 s; the
+ * restart resumes it with the recovery note and posts no comment twice.
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'

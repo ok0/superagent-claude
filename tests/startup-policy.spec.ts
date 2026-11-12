@@ -1,5 +1,7 @@
 /**
- * The startup rules: credential mode, policy and agent-account refusals, the subscription consent and shared-use warning, the sandbox rule, repository access, and the same checks through the GitHub Source hook and the CLI (exit code 2).
+ * The startup rules: credential mode, policy and agent-account refusals, the subscription consent and shared-use
+ * warning, the sandbox rule, repository access, and the same checks through the GitHub Source hook and the CLI
+ * (exit code 2).
  */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

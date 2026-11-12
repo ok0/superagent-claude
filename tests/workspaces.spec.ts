@@ -1,4 +1,7 @@
-/** Git workspaces: worktrees on agent branches over a shared clone, reuse of uncommitted files, hooks disabled, and repository access failures reported as failed reports. */
+/**
+ * Git workspaces: worktrees on agent branches over a shared clone, reuse of uncommitted files, hooks disabled, and
+ * repository access failures reported as failed reports.
+ */
 import { execFileSync } from 'node:child_process'
 import {
   chmodSync,

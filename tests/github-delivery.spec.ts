@@ -1,4 +1,7 @@
-/** Host-side pull request writes: one PR per branch (adopted when open), review-thread replies with resolve, auto-merge enabled but never merged, and close with a reason. Runs against the scripted gh fixture. */
+/**
+ * Host-side pull request writes: one PR per branch (adopted when open), review-thread replies with resolve,
+ * auto-merge enabled but never merged, and close with a reason. Runs against the scripted gh fixture.
+ */
 import { describe, expect, it } from 'vitest'
 import { CliError } from '../src/infra/commands.ts'
 import { githubPullRequests } from '../src/sources/github/delivery.ts'

@@ -1,4 +1,7 @@
-/** Startup order: the agent's child cleanup runs and finishes before restart recovery starts, and a stopped child is logged. */
+/**
+ * Startup order: the agent's child cleanup runs and finishes before restart recovery starts,
+ * and a stopped child is logged.
+ */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

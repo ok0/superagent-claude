@@ -1,5 +1,7 @@
 /**
- * Config reload while the Runtime runs: a policy change reaches open tickets as a policy-changed input without cancelling them, a refused file keeps the running config, rule violations refuse the whole change, startup-only keys are kept and reported, prompts are refreshed on success only, and SIGHUP reloads the daemon.
+ * Config reload while the Runtime runs: a policy change reaches open tickets as a policy-changed input without
+ * cancelling them, a refused file keeps the running config, rule violations refuse the whole change, startup-only
+ * keys are kept and reported, prompts are refreshed on success only, and SIGHUP reloads the daemon.
  */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

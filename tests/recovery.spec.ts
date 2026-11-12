@@ -1,5 +1,7 @@
 /**
- * Restart recovery: a running Assignment is restarted with the recovery note first unless its worker is settled and caught up, tickets recover oldest first under the slot rule, and recovery queues one launch per ticket; idle settled tickets keep their stored session and take no slot until an Input arrives.
+ * Restart recovery: a running Assignment is restarted with the recovery note first unless its worker is settled
+ * and caught up, tickets recover oldest first under the slot rule, and recovery queues one launch per ticket;
+ * idle settled tickets keep their stored session and take no slot until an Input arrives.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

@@ -1,4 +1,8 @@
-/** The assembled daemon in session mode with the GitHub Source over the fake gh: the Router session accepts a mention, the host posts the acknowledgement, the Router posts the result, and re-polling or re-sending adds no comment. */
+/**
+ * The assembled daemon in session mode with the GitHub Source over the fake gh: the Router session accepts
+ * a mention, the host posts the acknowledgement, the Router posts the result, and re-polling or re-sending
+ * adds no comment.
+ */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

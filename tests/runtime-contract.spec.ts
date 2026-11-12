@@ -1,4 +1,7 @@
-/** Runs the runtime-neutral contract suite against the scripted FakeRuntime, and checks that the fake's delays go through the injected timers. */
+/**
+ * Runs the runtime-neutral contract suite against the scripted FakeRuntime, and checks that the fake's delays go
+ * through the injected timers.
+ */
 import { describe, expect, it } from 'vitest'
 import { FakeRuntime, type FakeScript } from '../src/runtimes/fake/runtime.ts'
 import { waitUntil } from './fixtures/async.ts'

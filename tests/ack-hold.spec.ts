@@ -1,5 +1,6 @@
 /**
- * The acknowledgement an accept carries is held on the ticket until its Assignment starts, so a ticket that waits for a slot posts none, and one stopped before it launched never posts it.
+ * The acknowledgement an accept carries is held on the ticket until its Assignment starts, so a ticket
+ * that waits for a slot posts none, and one stopped before it launched never posts it.
  */
 import { expect, it } from 'vitest'
 import { key } from '../src/core/index.ts'

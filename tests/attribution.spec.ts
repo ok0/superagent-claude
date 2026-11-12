@@ -1,4 +1,4 @@
-/** AI attribution: the shared line rule strips agent output, and check-commits rejects a superset of what stripping removes. */
+/** AI attribution: the shared line rule strips agent output; check-commits rejects a superset of what it removes. */
 import { describe, expect, it } from 'vitest'
 import { checkMessage } from '../scripts/check-commits.ts'
 import { isAiAttributionLine, stripAiAttribution } from '../src/infra/text.ts'

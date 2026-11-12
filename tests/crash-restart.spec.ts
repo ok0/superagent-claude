@@ -1,5 +1,6 @@
 /**
- * Daemon-level forced stops: `start --fake` as a child process over the file-backed fake gh, SIGKILLed while an Assignment runs or around a reply post, restarted on the same stateDir.
+ * Daemon-level forced stops: `start --fake` as a child process over the file-backed fake gh, SIGKILLed
+ * while an Assignment runs or around a reply post, restarted on the same stateDir.
  */
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'

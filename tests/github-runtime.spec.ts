@@ -1,4 +1,7 @@
-/** The assembled daemon with the GitHub Source over the fake gh and the fake runtime: an allowed sender's mention gets exactly one reply in its repository. */
+/**
+ * The assembled daemon with the GitHub Source over the fake gh and the fake runtime: an allowed sender's
+ * mention gets exactly one reply in its repository.
+ */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

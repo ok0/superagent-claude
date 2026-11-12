@@ -1,5 +1,6 @@
 /**
- * Worker slots under load: at most the slot maximum runs at once, a person's message wakes an idle ticket ahead of a waiting launch; an idle ticket holds no slot.
+ * Worker slots under load: at most the slot maximum runs at once, a person's message wakes an idle ticket ahead of
+ * a waiting launch; an idle ticket holds no slot.
  */
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

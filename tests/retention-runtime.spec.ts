@@ -1,5 +1,7 @@
 /**
- * Retention and the health snapshot in the Runtime: an ended ticket past retention.endedTicketDays loses its worker record and workspace on a pass, a person's later message on the thread prepares a new workspace, each pass writes the health snapshot, and a reload applies a changed endedTicketDays without a restart.
+ * Retention and the health snapshot in the Runtime: an ended ticket past retention.endedTicketDays loses its worker
+ * record and workspace on a pass, a person's later message on the thread prepares a new workspace, each pass writes
+ * the health snapshot, and a reload applies a changed endedTicketDays without a restart.
  */
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

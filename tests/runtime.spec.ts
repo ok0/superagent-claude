@@ -1,5 +1,6 @@
 /**
- * The Runtime's lifecycle: stop within its timeout, stop giving up after it, restart with recovery after a restart, the single-process lock, and start with no Source.
+ * The Runtime's lifecycle: stop within its timeout, stop giving up after it, restart with recovery after a restart,
+ * the single-process lock, and start with no Source.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

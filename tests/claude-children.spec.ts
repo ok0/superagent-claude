@@ -1,4 +1,7 @@
-/** Child process tracking for the Claude runtime: the children file round trip, recording and removing spawned children, stopping only recorded Claude CLI children, and passing the tracking spawn to the SDK. */
+/**
+ * Child process tracking for the Claude runtime: the children file round trip, recording and removing
+ * spawned children, stopping only recorded Claude CLI children, and passing the tracking spawn to the SDK.
+ */
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

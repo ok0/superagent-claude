@@ -1,5 +1,6 @@
 /**
- * Team prompt sections changed while worker sessions are open: the host queues one notice per open ticket, injected into the running session without starting a turn.
+ * Team prompt sections changed while worker sessions are open: the host queues one notice per open ticket,
+ * injected into the running session without starting a turn.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

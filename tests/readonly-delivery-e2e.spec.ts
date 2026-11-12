@@ -1,4 +1,8 @@
-/** Session-mode daemon over the fake gh with real git worktrees on a repository the agent account cannot write: events, replies and worktrees work, publish returns published: false with no push, PR or bind and the worker reports blocked; an event from an unlisted repository is rejected. */
+/**
+ * Session-mode daemon over the fake gh with real git worktrees on a repository the agent account cannot write:
+ * events, replies and worktrees work, publish returns published: false with no push, PR or bind and the worker
+ * reports blocked; an event from an unlisted repository is rejected.
+ */
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

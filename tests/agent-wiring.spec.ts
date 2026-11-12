@@ -1,5 +1,6 @@
 /**
- * The agent choice for start: the Claude runtime with git workspaces or the fake runtime with scratch directories, the adapter env per auth mode, and the executor tools exposed to worker sessions.
+ * The agent choice for start: the Claude runtime with git workspaces or the fake runtime with scratch
+ * directories, the adapter env per auth mode, and the executor tools exposed to worker sessions.
  */
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
