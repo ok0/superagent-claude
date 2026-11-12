@@ -1,8 +1,7 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/cache.ts
 /**
  * In-memory LRU cache bounded by total UTF-16 code units, always retaining the most recently inserted entry.
- * Runtime uses separate instances to cache paginated resource snapshots for `orchestrator_read` and resolved message links for search and cards.
- * Changes from the reference: the constructor parameter is a declared field, assigned in the constructor body.
+ * Runtime uses separate instances for paginated resource snapshots (`orchestrator_read`) and resolved message links.
  */
 export class TextCache {
   private readonly texts = new Map<string, string>()

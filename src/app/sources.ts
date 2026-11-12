@@ -1,4 +1,9 @@
-/** The Source kinds this build installs: the GitHub Source when SUPERAGENT_CLAUDE_GITHUB_TOKEN is set (the token reaches only the gh calls as GH_TOKEN). The single assembly point that names the hosting service outside its Source plugin; a missing or blank token refuses startup (agent-token), and the account and access checks run through the Source startup hook; the token also authenticates the host's clone and fetch calls for git workspaces and the host's pull request writes (env-scoped header, never in worker sessions or git config). */
+/**
+ * The Source kinds this build installs: the GitHub Source when SUPERAGENT_CLAUDE_GITHUB_TOKEN is set.
+ * The token reaches only the gh calls, as GH_TOKEN. A missing or blank token refuses startup.
+ * The token also authenticates the host's clone and fetch calls and pull request writes, through an
+ * env-scoped header that never reaches worker sessions or git config.
+ */
 import { Buffer } from 'node:buffer'
 import type { Config } from './config.ts'
 import { StartupRefused } from './config.ts'
@@ -14,7 +19,10 @@ import { githubPullRequests, type PullRequests } from '../sources/github/deliver
 
 export const GITHUB_TOKEN_ENV = 'SUPERAGENT_CLAUDE_GITHUB_TOKEN'
 
-/** Repository access for git workspaces: remote URLs without credentials; the token authenticates only the clone and fetch calls through an env-scoped header. Without a token git tries unauthenticated. */
+/**
+ * Repository access for git workspaces: remote URLs carry no credentials.
+ * The token authenticates only the clone and fetch calls, through an env-scoped header.
+ */
 export function repositoryAccess(env: Readonly<Record<string, string | undefined>>): RepositoryAccess {
   const token = env[GITHUB_TOKEN_ENV]?.trim()
   const encoded = token ? Buffer.from(`x-access-token:${token}`).toString('base64') : ''

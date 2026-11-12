@@ -1,5 +1,5 @@
 /**
- * The agent runtime, workspace choice and Router mode for `start`: the Claude runtime with git worktrees and a Router session, or the scripted fake runtime with scratch directories and the deterministic assessor; the adapter env carries only the inherited whitelist and the selected auth mode's variables.
+ * The adapter env carries only the inherited whitelist and the selected auth mode's variables.
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'

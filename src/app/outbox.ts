@@ -1,7 +1,7 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/outbox.ts
 /**
  * Reliable outbound message delivery backed by persistent receipts and retried reply effects.
- * Changes from the reference: the Outbox depends on the local `OutboxChannels` port instead of `SourceRegistry` and `Commands`; the IM length check is dropped; the constructor parameter is a declared field.
+ * Channel access goes through the `OutboxChannels` port.
  */
 import type { ChannelRef } from '../core/index.ts'
 import type { OutboundMessage, Outbox as OutboxPort, ReplyStatus } from '../core/index.ts'
@@ -25,9 +25,10 @@ export interface OutboxHost {
 }
 
 /**
- * Persists outbound channel messages as receipts and delivers them sequentially through `Effects` and the `OutboxChannels` port.
- * Implements the core `Outbox` port for `Engine` and source contexts, ensuring per-conversation ordering for each ticket until an earlier message fails repeatedly.
- * Messages wait while processing is paused or their source is unavailable, and settle as dropped when the target conversation is ignored or gone.
+ * Persists outbound channel messages as receipts and delivers them through `Effects` and `OutboxChannels`.
+ * Each ticket keeps per-conversation ordering until an earlier message fails repeatedly.
+ * Messages wait while processing is paused or their source is unavailable, and settle as dropped
+ * when the target conversation is ignored or gone.
  */
 export class Outbox implements OutboxPort {
   private readonly host: OutboxHost
@@ -38,7 +39,7 @@ export class Outbox implements OutboxPort {
       retry: [5000, 300_000],
     })
   }
-  /** Record a message receipt and enqueue its delivery effect atomically; duplicate message IDs are ignored. */
+  /** Records a message receipt and enqueues its delivery effect atomically; duplicate message IDs are ignored. */
   send(message: OutboundMessage): void {
     const { store, effects } = this.host
     store.atomic(() => {
@@ -57,20 +58,24 @@ export class Outbox implements OutboxPort {
   sent(): Promise<void> {
     return this.host.effects.idle('reply')
   }
-  /** Reply crash rule: the reply effect row is deleted only after the receipt settles, so a process stopped after its Source accepted the message but before `settle` runs this again on restart; each channel must find a message it already sent by its id and return `sent` without sending again (the channel's pre-send marker lookup on the hosting service looks for its id marker before every post). A stop before the send sends it once after restart. */
+  /**
+   * Crash rule: the reply effect row is deleted only after the receipt settles. A process stopped after the
+   * Source accepted the message but before `settle` runs sends it again on restart, so each channel must find
+   * a message it already sent by its id and return `sent` without sending again. A stop before the send
+   * sends it once after restart.
+   */
   private async deliver(id: string): Promise<void> {
     const { store, channels } = this.host
     const receipt = store.receipts.get(id)
     if (receipt?.status !== 'pending') return
     if (!channels.enabled(receipt.channel.source)) throw new Later('The Source is off or not installed')
-    // Hold later messages for the same ticket and conversation behind an earlier pending message until it exceeds the failure threshold.
     if (store.receipts.behind(id, FAILURES_BEFORE_ERROR))
       throw new Later('An earlier message of this ticket to this conversation waits')
     if (!channels.allowed(receipt.channel)) {
       store.receipts.settle(receipt, 'channelIgnored')
       return
     }
-    // A permanently unreachable target (such as a recalled message or deleted Issue) settles as `channelGone` so its receipt prevents retries.
+    // A permanently unreachable target settles as `channelGone`, so its receipt prevents retries.
     const result = await channels.send(receipt)
     if (result === 'waiting') throw new Later('The Source is not installed')
     store.receipts.settle(receipt, result === 'gone' ? 'channelGone' : 'sent')

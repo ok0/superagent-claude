@@ -1,9 +1,7 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/tools/main.ts
 /**
- * Router session tools for routing triggers, assessing candidates, sending replies, and managing tickets and threads.
- * Changes from the reference: `orchestrator_route` `accept` honors the host accept mode (observe records what it would accept,
- * off ignores), so no tool bypasses it (D3); the eval reads are `message|root|parent|thread` (D4); the settings, policy-sync and
- * prompt tools are removed (ADR-9); the IM word limit is `HUMAN_WORDS`; an unexpected error is a refusal to retry, not a log line.
+ * `orchestrator_route` `accept` honors the host accept mode (observe records what it would accept, off ignores),
+ * so no tool bypasses it. An unexpected error is a refusal to retry.
  */
 import { z } from 'zod'
 import {
@@ -48,13 +46,12 @@ export interface MainToolsHost {
   assessor: Pick<MasterAssessor, 'context' | 'read' | 'decide'>
   settings(): Settings
   read(resource: string, offset: number, limit: number | undefined, signal: AbortSignal): Promise<unknown>
-  /** Schedules a pass to carry out work queued by an Engine command (such as an Eval or ticket resume). */
+  /** Schedules a pass to carry out work queued by an Engine command, such as an Eval or a ticket resume. */
   requestPass(): void
   sendReplies(): Promise<void>
   /** Runs an Engine command initiated by the Router session without emitting self-notifications. */
   quietly<T>(run: () => T): T
 }
-/** Schedules an Engine pass to execute the recorded routing decision and formats the tool response. */
 function routed(
   host: MainToolsHost,
   result: { decision?: DecisionKind; reason: string; ticketId?: string | undefined },
@@ -72,15 +69,14 @@ const fromDecision = (decision: Decision) => ({
   reason: reasonText(decision.reason),
   ticketId: decision.ticketId,
 })
-/** A ticket the tool names must exist and still be open. */
 function openTicket(host: MainToolsHost, id: string): void {
   const ticket = host.store.tickets.get(id)
   if (!ticket) throw new UserError('unknownTicket')
   if (ticket.ended) throw new UserError('ticketEnded')
 }
 /**
- * One routing decision of `orchestrator_route`. The schema holds only its shape: each kind's fields are checked as its item
- * runs (`FIELDS`), so an item that lacks one, or whose value breaks a limit, is refused alone.
+ * One routing decision. The schema holds only its shape; each kind's fields are checked as its item runs (`FIELDS`),
+ * so an item that lacks one, or whose value breaks a limit, is refused alone.
  */
 const RouteItemSchema = z
   .object({
@@ -118,7 +114,6 @@ const RouteItemSchema = z
 type RouteItem = z.infer<typeof RouteItemSchema>
 type Kind = RouteItem['kind']
 type Field = Exclude<keyof RouteItem, 'kind' | 'trigger_id'>
-/** Each field's check, the kinds whose items read it and those that need it; an item of another kind leaves it unread. */
 const FIELDS: Record<Field, { check: z.ZodType; reads: readonly Kind[]; needs: readonly Kind[] }> = {
   ticket_id: { check: z.string(), reads: ['attach', 'stop'], needs: ['attach', 'stop'] },
   title: { check: z.string().max(200), reads: ['accept'], needs: ['accept'] },
@@ -127,7 +122,6 @@ const FIELDS: Record<Field, { check: z.ZodType; reads: readonly Kind[]; needs: r
   note: { check: RoutingNoteSchema, reads: ['accept', 'attach'], needs: [] },
   reason: { check: z.string().max(500), reads: ['ignore', 'stop'], needs: ['ignore'] },
 }
-/** Why an item cannot run: a field its kind needs is missing, or one it reads breaks its limit. */
 function invalid(item: RouteItem): string | undefined {
   for (const [field, { check, reads, needs }] of Object.entries(FIELDS) as [Field, (typeof FIELDS)[Field]][]) {
     const value = item[field]
@@ -143,8 +137,8 @@ function invalid(item: RouteItem): string | undefined {
 }
 type Routed = { decision?: DecisionKind; reason: string; ticketId?: string | undefined; triggerIds?: readonly string[] }
 /**
- * Carry out one routing decision as its Engine command, in a transaction of its own. `decided` holds the Triggers that this
- * call's earlier items decided, with their batches.
+ * Carries out one routing decision as its Engine command, in a transaction of its own.
+ * `decided` holds the Triggers that this call's earlier items decided, with their batches.
  */
 function route(
   host: MainToolsHost,
@@ -153,13 +147,13 @@ function route(
 ): Routed | { refused: string } {
   const note = item.note ? { note: item.note } : {}
   // A Trigger an earlier item decided went with that item's Decision, also as a member of its batch.
-  // A stop of it for another ticket is the Engine's to judge.
+  // Whether a stop of it for another ticket applies is the Engine's to judge.
   const earlier = decided.get(item.trigger_id)
   if (earlier && item.kind === 'ignore')
     return { refused: `Decided in this call with ${earlier}, whose Decision took its batch` }
   switch (item.kind) {
     case 'accept': {
-      // The host accept mode bears on every accept: observe records what would be accepted, off ignores it.
+      // The host accept mode applies to every accept: observe records what would be accepted, off ignores it.
       const mode = host.settings().policy.acceptMode
       if (mode !== 'auto') {
         const decision = host.engine().decide(
@@ -184,7 +178,7 @@ function route(
         name: item.worktree_name!,
         ...note,
       })
-      // A Decision that created no ticket is the item's refusal; one that existed before keeps what it was accepted with.
+      // A Decision that created no ticket is the item's refusal. One that existed before keeps its accepted state.
       if (decision.kind !== 'accept' || !decision.ticketId)
         return { refused: `Ticket was not created: ${reasonText(decision.reason)}` }
       if (decision.id === before) {
@@ -203,7 +197,7 @@ function route(
         ticketId: ticket.id,
       }
     }
-    // Through `engine.decide`, so only a person's message the gate admits with explicit strength stops a ticket.
+    // Through `engine.decide`: only a person's message that the gate admits with explicit strength stops a ticket.
     case 'stop': {
       const decision = host.engine().decide(item.trigger_id, {
         kind: 'stop',
@@ -219,8 +213,8 @@ function route(
   }
 }
 /**
- * `orchestrator_route`: routing decisions for several triggers in one call, in order. Each runs as its own Engine command; one
- * that is refused, or fails, is answered so, and the others still run.
+ * `orchestrator_route`: routing decisions for several triggers in one call, in order.
+ * Each runs as its own Engine command. One that is refused or fails is answered so; the others still run.
  */
 function routeTool(host: MainToolsHost): ToolSpec {
   return tool({
@@ -313,7 +307,8 @@ export function mainTools(host: MainToolsHost): ToolSpec[] {
         "Queue a trigger for a fresh assessment, such as after its Source's access changed; a follow-up that reached a ticket comes back only from its worker.",
       schema: z.object({ trigger_id: z.string() }).strict(),
       execute: async args => {
-        // A follow-up that reached a ticket is its worker's to judge, which hands back what is not its own; a person may still requeue it.
+        // A follow-up that reached a ticket is its worker's to judge, and the worker hands back what is not its own.
+        // A person may still requeue it.
         const trigger = host.store.triggers.get(args.trigger_id)
         if (!trigger) throw new UserError('unknownTrigger')
         const owners = followupOwners(trigger, host.store)

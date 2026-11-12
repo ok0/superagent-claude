@@ -1,6 +1,4 @@
-/**
- * The config file `superagent-claude.json`: this build reads every blueprint §3 key. The policy part maps onto the policy Settings (`paused` and `eval` keep their defaults; they are not file keys).
- */
+/** The policy part maps onto the policy Settings (`paused` and `eval` keep their defaults; they are not file keys). */
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
@@ -159,7 +157,8 @@ const byLogin = (a: string, b: string): number => {
 }
 
 /**
- * Map the config policy onto Settings. The allowed list is sorted here (app layer) so that its order does not change the policy version; the case of each login is kept, and `src/policy/**` is not changed (comparison is case-insensitive, the hash covers the given entries).
+ * Maps the config policy onto Settings. The allowed list is sorted here so that its order does not change
+ * the policy version. The case of each login is kept; comparison is case-insensitive.
  */
 export function settingsOf(config: Config): Settings {
   const { allowed, acceptMode, rules, admission } = config.policy

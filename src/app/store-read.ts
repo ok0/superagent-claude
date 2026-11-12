@@ -1,8 +1,5 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/store-read.ts
-/**
- * Read-only Store queries for views, tools, and Source polling.
- * Changes from the reference: `openReadOnly` (with `keys`) and `writerActive` are added for the CLI.
- */
+/** `openReadOnly` and `writerActive` serve the CLI. */
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { checkSync } from 'proper-lockfile'
 import type { Decision, Thread, Trigger } from '../core/index.ts'
@@ -190,7 +187,10 @@ export function storeReads(db: DatabaseSync) {
           values('SELECT value FROM thread INDEXED BY thread_subscribed WHERE subscribed IS NOT NULL ORDER BY rowid'),
   }
 }
-/** A read-only view of the database for the CLI; it cannot write and takes no lock, so it reads while the daemon writes (WAL). */
+/**
+ * A read-only view of the database for the CLI. It cannot write and takes no lock,
+ * so it reads while the daemon writes (WAL).
+ */
 export interface StoreReader {
   readonly db: DatabaseSync
   readonly read: ReturnType<typeof storeReads>
@@ -220,7 +220,10 @@ export function openReadOnly(path: string): StoreReader {
     },
   }
 }
-/** Whether a writer (the daemon) holds the single-writer lock on the database at path; it takes no lock. A lock older than the Store's stale time counts as not held, and so does a lock whose recorded owner process is gone. */
+/**
+ * Whether a writer (the daemon) holds the single-writer lock on the database at `path`. Takes no lock itself.
+ * A lock older than the Store's stale time counts as not held, and so does a lock whose recorded owner is gone.
+ */
 export function writerActive(path: string): boolean {
   try {
     return checkSync(path, { realpath: false, stale: 30_000 }) && !lockOwnerGone(path)

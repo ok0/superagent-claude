@@ -1,5 +1,6 @@
 /**
- * The canonical host tool names (blueprint §2): the Router's 11 and the Worker's 10; `orchestrator_read` is in both, so 20 unique names. Prompts, skills and the tool registrations (M11, M14) use these names; the model sees them as `mcp__superagent__<name>`.
+ * The canonical host tool names. Prompts, skills and tool registrations use these names;
+ * the model sees them as `mcp__superagent__<name>`.
  */
 export const ROUTER_TOOLS = [
   'orchestrator_read',

@@ -1,6 +1,3 @@
-/**
- * Read models of the status and needs CLI over the read-only database: running work, idle sessions and waiting work, recent errors, repository access, consent, and the tickets that need a person; and the masking of secret values in their output.
- */
 import {
   latestAssignment,
   latestReport,
@@ -57,7 +54,10 @@ function thread(reader: StoreReader, key: string): Thread | undefined {
   return row ? (JSON.parse(String(row.value)) as Thread) : undefined
 }
 
-/** When a running Assignment's Session went idle: its last turn ended (idleAt), nothing waits to be delivered, and no message delivered to it is unread or was read after that. */
+/**
+ * When a running Assignment's Session went idle: its last turn ended (idleAt), nothing waits to be delivered,
+ * and no message delivered to it is unread or was read after that.
+ */
 function idleSince(ticket: Ticket, assignment: Assignment): string | undefined {
   const at = assignment.idleAt
   if (!at || ticket.undelivered.length > 0) return undefined

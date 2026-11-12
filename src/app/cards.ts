@@ -1,10 +1,7 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/cards.ts
 /**
- * Compact, bounded model-facing projections of triggers, tickets, threads, and decisions; full texts stay behind readable resources.
- * Changes from the reference: `external()` wraps every trigger text a card carries as untrusted data; `pr_number` and the PR
- * link are removed (M16 publishes pull requests); the input and batch resource links are removed, so `inputLine`
- * names a trigger, a decision (for the Router only) or a short text, and `ticketDetails` drops the batch, transcript,
- * assignment and result links, carrying the latest report's summary instead; `threadCard` labels a thread by its metadata.
+ * Full texts stay behind readable resources. Every trigger text a card carries is wrapped by `external()`
+ * as untrusted data.
  */
 import {
   latestReport,
@@ -24,7 +21,10 @@ import { wrapExternal } from './prompts.ts'
 export function external(source: string, text: string): string {
   return wrapExternal({ source, text })
 }
-/** Collapses whitespace and truncates text for display previews while keeping code, angle brackets, and links intact for model readers. */
+/**
+ * Collapses whitespace and truncates text for display previews, keeping code, angle brackets, and links intact
+ * for model readers.
+ */
 export function preview(text: string): string {
   return text.replace(/\s+/g, ' ').slice(0, 160)
 }
@@ -51,7 +51,7 @@ export function triggerCard(trigger: Trigger, disposition?: TriggerDisposition) 
       : {}),
   }
 }
-/** The states a ticket card shows: an open ticket's stage (docs/003), and an ended ticket's outcome. */
+/** The states a ticket card shows: an open ticket's stage, and an ended ticket's outcome. */
 export const TICKET_STATES = [
   'person/delivery',
   'person/answer',
@@ -102,7 +102,7 @@ export function ticketCard(ticket: Ticket) {
 export const INPUTS = 10,
   ASSIGNMENTS = 3
 const INPUT_TEXT = 80
-/** Summarizes a ticket input inline: a trigger by its ID, a decision for the Router only, and a short text as written; longer texts by preview. */
+/** A decision shows for the Router only; a trigger shows by its ID. */
 export function inputLine(ticket: Ticket, input: TicketInput, worker = false) {
   const names =
     input.kind === 'trigger' || input.kind === 'resumed'
@@ -158,9 +158,9 @@ export interface TicketThread {
   context?: true
   bound?: true
 }
-/** Projects a ticket with its threads and first pages of assignments and inputs, omitting decision IDs for workers. */
+/** Workers get no decision IDs. */
 export function ticketDetails(ticket: Ticket, threads: TicketThread[], worker = false) {
-  // Drop card preview because the latest report's preview is already shown on the first assignment entry.
+  // The card preview is dropped: the latest report's preview is already shown on the first assignment entry.
   const { preview: _preview, ...card } = ticketCard(ticket)
   return {
     ...card,

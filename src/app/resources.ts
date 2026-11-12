@@ -1,10 +1,10 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/resources.ts
 /**
- * Paginated resources that orchestrator_read serves to the Router session and to a ticket's worker, so large bodies stay out of
- * model prompts until they are requested.
- * Changes from the reference: the source-specific, settings, prompt, model, decision and transcript routes are removed; the
- * Router session has `tickets` and the worker has its own ticket only; `github/…` reads go through the configured GitHub reader
- * with the repository checked against the configured list; text bodies of triggers and GitHub originals are wrapped as external data.
+ * Paginated resources that orchestrator_read serves to the Router session and to a ticket's worker,
+ * so large bodies stay out of model prompts until they are requested.
+ * The Router session sees `tickets`; the worker sees its own ticket only. `github/…` reads go through the
+ * configured GitHub reader, with the repository checked against the configured list.
+ * Text bodies of triggers and GitHub originals are wrapped as external data.
  */
 import { UserError, key, reached, threadKey, type Ticket, type Trigger } from '../core/index.ts'
 import { configured } from '../sources/github/trigger.ts'
@@ -79,7 +79,7 @@ function list<T>(offset: number, limit: number | undefined, fetch: (offset: numb
   const items = fetch(offset, size + 1)
   return { items: items.slice(0, size), next_offset: items.length > size ? offset + size : null }
 }
-/** Whether a worker's ticket may read a trigger: it reached the ticket, started it, or is on a thread the ticket follows. */
+/** Whether a worker's ticket may read a trigger: it reached the ticket, started it, or is on a followed thread. */
 const readable = (host: ResourceHost, ticket: Ticket, found: Trigger): boolean =>
   reached(ticket, found, key => host.store.threads.get(key)) ||
   ticket.origin.triggerIds.includes(found.id) ||
@@ -100,7 +100,10 @@ const triggerLine = (item: Trigger) => ({
   chars: item.text.length,
   read: `trigger/${item.id}`,
 })
-/** The threads a ticket is tied to: those it is subscribed to (context-only ones marked) and those its own source bound it to. */
+/**
+ * The threads a ticket is tied to: those it is subscribed to (context-only ones marked),
+ * and those its own source bound it to.
+ */
 function ticketThreads(host: ResourceHost, ticket: Ticket): TicketThread[] {
   const bound = new Set((ticket.follows ?? []).map(follow => follow.thread))
   const subscribed = host.store.threads.list().filter(item => item.subscriptions.includes(ticket.id))
@@ -114,7 +117,10 @@ function ticketThreads(host: ResourceHost, ticket: Ticket): TicketThread[] {
     ...[...bound].filter(thread => !subscribed.some(item => item.key === thread)).map(thread => marked(thread, false)),
   ]
 }
-/** Resolves a GitHub resource's repository: explicit in the name, or implicit from the ticket (worker) or the one configured repository (Router). */
+/**
+ * Resolves a GitHub resource's repository: explicit in the name, implicit from the ticket (worker),
+ * or the one configured repository (Router).
+ */
 function githubRepository(
   host: ResourceHost,
   resource: string,
@@ -136,8 +142,10 @@ function githubRepository(
 }
 
 /**
- * Read a paginated resource for the Router session (`ticketId` undefined) or a ticket's worker. Unknown names are tool errors.
- * @throws {Error} for a resource the caller may not read or that does not exist; `UserError` for a missing or unreached trigger or ticket.
+ * Reads a paginated resource for the Router session (`ticketId` undefined) or a ticket's worker.
+ * Unknown names are tool errors.
+ * @throws {Error} for a resource the caller may not read or that does not exist;
+ * `UserError` for a missing or unreached trigger or ticket.
  */
 export async function readResource(
   host: ResourceHost,
@@ -166,14 +174,14 @@ export async function readResource(
     if (!id || id.includes('/')) throw new Error('Unknown resource')
     const found = trigger(host, id, ticketId)
     const ticket = ticketId ? host.store.tickets.get(ticketId) : undefined
-    // A worker sees its own ticket only, and neighbouring triggers only where they reached it too.
+    // A worker sees its own ticket only, and other triggers only where they reached it too.
     const shown = (item: Trigger | undefined) => (item && (!ticket || readable(host, ticket, item)) ? item : undefined)
     const disposition = host.store.triggers.disposition(found.id)
     const visible =
       disposition && ticket
         ? { ...disposition, decisionId: undefined, fanout: disposition.fanout.filter(item => item === ticket.id) }
         : disposition
-    // The card omits the preview and self-reference because this resource returns the full text.
+    // The card omits the preview and self-reference, since this resource returns the full text.
     const { preview: _preview, chars: _chars, read: _read, ...card } = triggerCard(found, visible)
     const neighbours = host.store.read.neighbours(threadKey(found.threads[0]!), found.at, found.id)
     const around = { before: shown(neighbours.before), after: shown(neighbours.after) }

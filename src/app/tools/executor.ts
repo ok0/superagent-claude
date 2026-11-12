@@ -1,9 +1,7 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/tools/executor.ts
 /**
- * Worker Session tools for acknowledging requests, managing threads, handing back out-of-scope triggers, and reporting status.
- * Changes from the reference: `orchestrator_read` is restored (M14) over the injected reader; the delivery tools are restored (M16) in
- * `delivery.ts`; `pr_number` is removed (publish binds the PR thread) and `sendReplies` is removed; a GitHub thread must name a configured repository; a followed
- * thread is announced to the Router session through `notify` (M14); the report relay is the Runtime's (M14).
+ * A GitHub thread must name a configured repository.
+ * A followed thread is announced to the Router session through `notify`.
  */
 import { z } from 'zod'
 import { type EngineForExecutor, type WorkerReport } from '../../core/index.ts'
@@ -22,7 +20,7 @@ export interface ExecutorToolsHost {
   >
   ticket(id: string): Pick<Ticket, 'ended' | 'follows'> | undefined
   read?(resource: string, offset: number, limit: number | undefined, signal: AbortSignal): Promise<unknown>
-  /** Announces a change to the Router session; present when the Router session runs. */
+  /** Announces a change to the Router session. Present when the Router session runs. */
   notify?(notice: Notice): void
   repositories?(): readonly string[]
   delivery?: DeliveryHost

@@ -1,5 +1,6 @@
 /**
- * Retention of ended tickets: after retention.endedTicketDays a durable cleanup effect removes the ticket's workspace and its worker record (R27).
+ * Retention of ended tickets: after retention.endedTicketDays a durable cleanup effect removes the ticket's
+ * workspace and its worker record.
  */
 import type { WorkerStore } from '../executor/worker-store.ts'
 import type { WorkspaceProvider } from '../executor/workspaces.ts'
@@ -16,11 +17,13 @@ export interface RetentionHost {
   /** The current retention.endedTicketDays; read on every evaluation so that a reload applies to the next one. */
   days: () => number
   now?: () => number
-  /** Called after a ticket's workspace and worker record are removed. */
   cleaned?: (ticketId: string) => void
 }
 
-/** True when the ticket ended at a parseable time at least `days` days before `now`. A ticket with no ended time, or one that does not parse, never expires. */
+/**
+ * True when the ticket ended at a parseable time at least `days` days before `now`.
+ * A ticket with no ended time, or one that does not parse, never expires.
+ */
 export function expired(ticket: { ended?: { at: string } }, days: number, now: number): boolean {
   const at = ticket.ended ? Date.parse(ticket.ended.at) : NaN
   return Number.isFinite(at) && now - at >= days * DAY_MS
@@ -36,7 +39,10 @@ export class Retention {
     host.effects.handle('cleanup', payload => this.cleanup(payload.ticketId))
   }
 
-  /** Queues a cleanup for each ended ticket that still has a worker record and has expired, unless one is already waiting. Returns how many were queued. */
+  /**
+   * Queues a cleanup for each expired ended ticket that still has a worker record, unless one is already waiting.
+   * Returns how many were queued.
+   */
   evaluate(): number {
     const rows = this.host.store.db
       .prepare(
@@ -55,7 +61,10 @@ export class Retention {
     return queued
   }
 
-  /** Removes the worker record, then the workspace, of an ended expired ticket. A ticket that is open again, unknown or not expired is left alone. Safe to repeat. */
+  /**
+   * Removes the worker record, then the workspace, of an expired ended ticket.
+   * A ticket that is open again, unknown, or not expired is left alone. Safe to repeat.
+   */
   async cleanup(ticketId: string): Promise<void> {
     const ticket = this.host.store.tickets.get(ticketId)
     if (!ticket || !expired(ticket, this.host.days(), this.now())) return

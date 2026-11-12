@@ -1,4 +1,8 @@
-/** The worker's host-side delivery tools: publish (push + PR, binds its Thread; a new PR's body closes the issue the ticket started from), review-thread reply, auto-merge, close. Policy is checked before any git or GitHub call: live ticket, configured repository, a PR this ticket bound, delivery.allowAutoMerge. Publish first re-checks push permission and returns published: false without any write when it is missing; repository access errors file a failed report. */
+/**
+ * Policy is checked before any git or GitHub call: live ticket, configured repository, a PR this ticket bound,
+ * and delivery.allowAutoMerge. Publish re-checks push permission first and returns `published: false`
+ * without any write when it is missing. Repository access errors file a failed report.
+ */
 import { z } from 'zod'
 import type { EngineForExecutor } from '../../core/index.ts'
 import { liveTicket, type Ticket, type Trigger } from '../../core/model.ts'
@@ -21,9 +25,12 @@ export interface DeliveryHost {
   push(ticketId: string, options: PushOptions): Promise<PushResult>
   pulls?: PullRequests
   allowAutoMerge(): boolean
-  /** The push permission recorded at startup (repo-access), undefined when none. */
+  /** The push permission recorded at startup (repo-access); undefined when none. */
   recordedPush?(repository: string): boolean | undefined
-  /** The issue in a repository that the ticket's origin Trigger is on, undefined when the origin is a pull request or not a GitHub issue. */
+  /**
+   * The issue that the ticket's origin Trigger is on. Undefined when the origin is a pull request
+   * or not a GitHub issue.
+   */
   originIssue?(ticketId: string): { repository: string; number: number } | undefined
 }
 
@@ -34,7 +41,7 @@ export interface DeliveryToolsHost {
   delivery?: DeliveryHost
 }
 
-/** The issue a Trigger is on: its meta names a repository and a number and isPr is false (an issue or an issue comment). */
+/** The issue a Trigger is on: its meta names a repository and a number, and `isPr` is false. */
 export function issueOf(
   trigger: Pick<Trigger, 'meta'> | undefined,
 ): { repository: string; number: number } | undefined {
@@ -48,8 +55,8 @@ export function issueOf(
     : undefined
 }
 /**
- * A pull request body that closes `issue` on merge: unchanged when the issue is in another repository or the body already
- * has a closing keyword (close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved, any case, optional colon) before
+ * A pull request body that closes `issue` on merge. Unchanged when the issue is in another repository, or when the
+ * body already has a closing keyword (close/fix/resolve and their forms, any case, optional colon) before
  * `#n`, `owner/repo#n` or the issue URL. Otherwise `Closes #n` is appended once, after a blank line.
  */
 export function linkIssue(

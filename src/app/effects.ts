@@ -1,7 +1,7 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/effects.ts
 /**
  * Signals that an effect cannot run right now, such as when processing is paused or all worker slots are full.
- * Effects reschedules the row after the initial retry delay without incrementing its failure count, and the WorkerExecutor throws it from launch and delivery handlers.
+ * Effects reschedules the row after the initial retry delay without incrementing its failure count.
  */
 export class Later extends Error {}
 /** Consecutive failures before an effect kind reports an error, matching the Sources poll failure threshold. */
@@ -10,7 +10,7 @@ import type { HealthBoard, HealthEntry } from '../infra/health.ts'
 import type { Store } from './store.ts'
 
 export interface EffectPayloads {
-  /** Build an Eval's candidate card and relay it to the Router session; the key is the Eval ID. */
+  /** Builds an Eval's candidate card and relays it to the Router session; the key is the Eval ID. */
   assessment: { triggerId: string }
   /** Launch a pending Assignment; the key is the Assignment ID. */
   launch: { ticketId: string; assignmentId: string }
@@ -20,9 +20,9 @@ export interface EffectPayloads {
   relay: { text: string }
   /** Inject a notice into the Router session without waking it; the key names what it reports, such as `prompts`. */
   notice: { value: Record<string, unknown>; summary: string }
-  /** Send a message for a Channel through its Source; the key is the message ID, whose receipt the Outbox keeps. */
+  /** Sends a message for a Channel through its Source; the key is the message ID, whose receipt the Outbox keeps. */
   reply: Record<string, never>
-  /** Remove an ended Ticket's worktree and worker record after retention; the key is the Ticket ID. */
+  /** Removes an ended Ticket's worktree and worker record after retention; the key is the Ticket ID. */
   cleanup: { ticketId: string }
 }
 export type EffectKind = keyof EffectPayloads
@@ -34,11 +34,14 @@ interface Handler<K extends EffectKind> {
   retry: readonly [number, number]
   /** Effects run one at a time in queue order, and a failed one holds back later rows of the same kind. */
   ordered: boolean
-  /** When true, repeated failures do not mark the effect kind's health entry as `error` (used when failures are already surfaced on a ticket). */
+  /** When true, repeated failures do not mark the kind's health entry as `error`: they are shown on a ticket. */
   quiet: boolean
 }
 type Options<K extends EffectKind> = Partial<Pick<Handler<K>, 'limit' | 'retry' | 'ordered' | 'quiet'>>
-/** `seq` preserves the row's queue position; `generation` increments on payload updates so a running attempt does not delete a newer payload. */
+/**
+ * `seq` preserves the row's queue position. `generation` increments on payload updates, so a running attempt
+ * does not delete a newer payload.
+ */
 interface Row {
   key: string
   value: string
@@ -50,9 +53,8 @@ interface Row {
 type Task = { kind: EffectKind; key: string; done: Promise<void> }
 
 /**
- * Durable SQLite-backed queue that persists side effects inside command transactions and dispatches them after commit.
- * Coordinates per-kind handlers, concurrency limits, exponential backoff, and health reporting for the Assessor, WorkerExecutor, RouterHost and Outbox.
- * Changes from the reference: the constructor parameters are declared fields, assigned in the constructor body; a `cleanup` effect kind is added; comments name the Router session and WorkerExecutor.
+ * Durable SQLite-backed queue that persists side effects inside command transactions
+ * and dispatches them after commit.
  */
 export class Effects {
   private readonly handlers = new Map<EffectKind, Handler<never>>()
@@ -62,7 +64,7 @@ export class Effects {
   private readonly broken = new Set<EffectKind>()
   private seq: number
   private scheduled = false
-  /** Effects run only between `start` and `drain`; rows queued before `start` wait, such as while setup is incomplete. */
+  /** Effects run only between `start` and `drain`. Rows queued before `start` wait, e.g. while setup is incomplete. */
   private started = false
   private stopped = false
   private readonly store: Store
@@ -74,7 +76,7 @@ export class Effects {
     this.now = now
     this.seq = Number(store.db.prepare('SELECT IFNULL(MAX(seq), 0) AS seq FROM effect').get()?.seq ?? 0)
   }
-  /** Upserts an effect in the caller's transaction, coalescing with any waiting row of the same kind and key while keeping its queue position. */
+  /** Upserts an effect in the caller's transaction, coalescing with a waiting row of the same kind and key. */
   enqueue<K extends EffectKind>(kind: K, key: string, payload: EffectPayloads[K]): void {
     this.store.db
       .prepare(
@@ -122,7 +124,10 @@ export class Effects {
       this.dispatch()
     })
   }
-  /** Resolves once no effect of `kind` (or of any kind) is running and none can start because none is due or `limit()` has no room. */
+  /**
+   * Resolves once no effect of `kind` (or of any kind) is running, and none can start
+   * because none is due or `limit()` has no room.
+   */
   async idle(kind?: EffectKind): Promise<void> {
     for (;;) {
       this.dispatch()
@@ -141,7 +146,8 @@ export class Effects {
     for (const [kind, handler] of this.handlers) {
       try {
         const running = new Set([...this.tasks].filter(task => task.kind === kind).map(task => task.key))
-        // Ordered kinds block behind their oldest row even when it is not yet due; limit() is queried only after ready rows exist.
+        // Ordered kinds block behind their oldest row even when it is not yet due.
+        // limit() is queried only after ready rows exist.
         const rows = (handler.ordered
           ? this.store.db
               .prepare(

@@ -1,7 +1,7 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/store.ts
 /**
  * SQLite persistence for domain aggregates, key-value state, and the channel outbox.
- * Changes from the reference: settings methods and the upgrade path for older schemas are removed; the schema is fixed at version 1; the Store takes a single-writer lock on the database file; `databasePath` is added; a `worker` table for worker session records is added; a `prompt_version` table records assembled prompt versions; a lock whose recorded owner pid no longer runs is taken over at once.
+ * The Store holds a single-writer lock on the database file.
  */
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -31,18 +31,23 @@ export interface TimelinePlace {
   at: string
   id: string
 }
-/** Why a message was dropped: its conversation can never receive it (`channelGone`), or its Source no longer listens to it (`channelIgnored`). */
+/**
+ * Why a message was dropped: its conversation can never receive it (`channelGone`),
+ * or its Source no longer listens to it (`channelIgnored`).
+ */
 export type DropReason = 'channelGone' | 'channelIgnored'
-/** Outbound message receipt tracked in the outbox from the moment it is queued (`pending`, `sent`, or `dropped`); delivery attempt counts live on its `reply` effect. */
+/**
+ * Outbound message receipt tracked in the outbox from the moment it is queued
+ * (`pending`, `sent`, or `dropped`); delivery attempt counts live on its `reply` effect.
+ */
 export interface Receipt extends OutboundMessage {
   status: ReplyStatus
   dropped?: { at: string; reason: DropReason }
 }
 /** A dropped outbound message receipt, with the timestamp and reason it was dropped. */
 export type Dropped = Receipt & { dropped: { at: string; reason: DropReason } }
-/** Why the AdmissionFilter refused a Trigger: its actor is not allowed, it is a bot, its repository is not configured, or it names no ticket. */
+/** Why the AdmissionFilter refused a Trigger. */
 export type RejectionReason = 'rejected-actor' | 'rejected-bot' | 'rejected-repo' | 'no-ticket'
-/** A Trigger the AdmissionFilter refused, with its repository (empty when it names none), actor, time and reason. */
 export interface RejectedTrigger {
   triggerId: string
   repository: string
@@ -50,10 +55,7 @@ export interface RejectedTrigger {
   at: string
   reason: RejectionReason
 }
-/**
- * Generated columns and partial indexes defining active working sets so passes scan only active rows.
- * `schemaSql` declares them in the version 1 tables, and SQLite computes them from the stored JSON rows.
- */
+/** Generated columns and partial indexes for active working sets, computed by SQLite from the stored JSON rows. */
 const SETS: Record<string, Record<string, string>> = {
   ticket: {
     open: "INTEGER AS (CASE WHEN value -> '$.ended' IS NULL THEN 1 END)",
@@ -75,12 +77,10 @@ const SETS: Record<string, Record<string, string>> = {
 }
 /** Schema version this build reads and writes; a database stored at any other version is refused. */
 export const SCHEMA_VERSION = 1
-/** File name of the SQLite database inside the state directory. */
 export const DATABASE_FILE = 'superagent-claude.db'
-/** Path of the SQLite database file inside `stateDir`. */
 export const databasePath = (stateDir: string): string => join(stateDir, DATABASE_FILE)
 
-/** Table, column and index DDL for schema version 1, with the working-set columns and indexes from `SETS`. */
+// push_remote is unused but stays: databases written by 0.1.0 have this column.
 function schemaSql(): string {
   const extra = (table: string): string =>
     Object.entries(SETS[table] ?? {})
@@ -114,7 +114,6 @@ function schemaSql(): string {
   `
 }
 
-/** Maps a `rejected_trigger` row to its RejectedTrigger. */
 function toRejected(row: Record<string, SQLInputValue>): RejectedTrigger {
   return {
     triggerId: String(row.trigger_id),
@@ -127,12 +126,15 @@ function toRejected(row: Record<string, SQLInputValue>): RejectedTrigger {
 
 /** The file next to the database that names the pid holding its single-writer lock. */
 const ownerFile = (path: string): string => `${path}.owner`
-/** The process that holds the single-writer lock on the database: its pid and, when recorded, the host it runs on. */
+/** The lock holder recorded in the owner file; `host` is absent for pid-only files. */
 export interface LockOwner {
   pid: number
   host?: string
 }
-/** The lock owner recorded on `path` (undefined when the file is missing or names no positive pid); a legacy pid-only file has no host. */
+/**
+ * The recorded lock owner, or undefined when the file is missing or names no positive pid.
+ * An owner without a host is checked as a local process.
+ */
 export function lockOwner(path: string): LockOwner | undefined {
   let text: string
   try {
@@ -146,7 +148,8 @@ export function lockOwner(path: string): LockOwner | undefined {
   return host ? { pid, host } : { pid }
 }
 /**
- * True when the lock on `path` names an owner pid that no longer runs on this host (it was killed and left its lock behind).
+ * True when the lock on `path` names an owner pid that no longer runs on this host,
+ * i.e. the owner was killed and left its lock behind.
  * A lock recorded on another host is never taken over at once.
  */
 export function lockOwnerGone(path: string): boolean {
@@ -160,10 +163,7 @@ export function lockOwnerGone(path: string): boolean {
     return (error as NodeJS.ErrnoException).code === 'ESRCH'
   }
 }
-/**
- * Takes the single-writer lock on `path`; a lock held by another process is reported as a clear error. Returns the release function.
- * A lock left by a killed process is taken over at once when its recorded owner pid no longer runs; otherwise the 30 s stale rule applies.
- */
+/** A lock whose recorded owner pid no longer runs is taken over at once; otherwise the 30 s stale rule applies. */
 function lockDatabase(path: string, report: (error: unknown) => void): () => void {
   const take = () =>
     lockSync(path, {
@@ -203,18 +203,20 @@ function lockDatabase(path: string, report: (error: unknown) => void): () => voi
 }
 
 /**
- * SQLite backing store implementing domain `Repositories`, read queries, outbox receipts and key-value state.
- * Opening it takes a single-writer lock on the database file. The schema starts at version 1, and a database stored at any other version is refused.
+ * Opening takes a single-writer lock on the database file.
+ * A database stored at any version other than `SCHEMA_VERSION` is refused.
  */
 export class Store implements Repositories {
   readonly db: DatabaseSync
   /** Receives errors thrown by `afterCommit` callbacks and lock release without failing the committed transaction. */
   private readonly report: (error: unknown) => void
-  /** Releases the single-writer lock on the database file. */
   private readonly unlock: () => void
   /**
-   * Opens or creates the SQLite database at `path` under the single-writer lock. Waits up to 5 s for a lock another connection holds (such as a reader during crash recovery) instead of failing at once.
-   * @throws When another process holds the lock, when the stored schema is not `SCHEMA_VERSION`, or when the database cannot be opened; in every case the lock is released and the SQLite handle is closed so a later attempt can open it.
+   * Opens or creates the SQLite database at `path` under the single-writer lock.
+   * Waits up to 5 s for a lock another connection holds (such as a reader during crash recovery).
+   * @throws When another process holds the lock, when the stored schema is not `SCHEMA_VERSION`,
+   * or when the database cannot be opened. In every case the lock is released and the SQLite handle
+   * is closed so a later attempt can open it.
    */
   constructor(path: string, report: (error: unknown) => void = () => {}) {
     this.report = report
@@ -245,12 +247,10 @@ export class Store implements Repositories {
       throw error
     }
   }
-  /** Closes the underlying SQLite database connection and releases the single-writer lock. */
   close(): void {
     this.db.close()
     this.unlock()
   }
-  /** Parses JSON `value` columns returned by `sql`. */
   private values<T>(sql: string, ...parameters: SQLInputValue[]): T[] {
     return this.db
       .prepare(sql)
@@ -264,11 +264,13 @@ export class Store implements Repositories {
     for (const ref of trigger.threads) insert.run(threadKey(ref), trigger.id, trigger.at, trigger.human ? 1 : 0)
   }
   private depth = 0
-  /** Callbacks queued to run once the outermost transaction commits, indexed by savepoint level; rolling back a level discards its callbacks. */
+  /** Post-commit callbacks, indexed by savepoint level; rolling back a level discards its callbacks. */
   private readonly committed: (() => void)[][] = []
   /**
-   * Executes `operation` in a savepoint transaction (nested inside the current transaction if any); a failure rolls back its changes.
-   * Post-commit callbacks run only after the outermost transaction commits, and callback errors are reported without failing the committed transaction.
+   * Executes `operation` in a savepoint transaction (nested inside the current one if any);
+   * a failure rolls back its changes.
+   * Post-commit callbacks run only after the outermost transaction commits. Callback errors are reported
+   * without failing the committed transaction.
    */
   atomic<T>(operation: () => T): T {
     const level = this.depth++
@@ -299,26 +301,24 @@ export class Store implements Repositories {
     return value
   }
   /**
-   * Schedules `action` to run once the outermost transaction commits, or immediately if outside a transaction;
-   * callbacks queued inside a transaction that rolls back are discarded and never run.
-   * Use `afterCommit` for immediate in-memory follow-ups to a committed write (such as refreshing health or cancelling an in-memory turn) that cannot wait for the effect queue and need not survive a restart; use `Effects` for durable side effects that must survive a crash.
+   * Schedules `action` to run once the outermost transaction commits, or immediately if outside a transaction.
+   * Callbacks queued inside a transaction that rolls back are discarded and never run.
+   * Use `afterCommit` only for in-memory follow-ups that need not survive a restart;
+   * use `Effects` for durable side effects.
    */
   afterCommit(action: () => void): void {
     if (this.depth) this.committed[this.depth - 1]!.push(action)
     else action()
   }
-  /** Reads a typed KV record by its key in `KV`. */
   get<V>(name: Key<V>): V | undefined {
     const row = this.db.prepare('SELECT value FROM kv WHERE key=?').get(name)
     return row === undefined ? undefined : (JSON.parse(String(row.value)) as V)
   }
-  /** Writes a typed KV record under `name`. */
   set<V>(name: Key<V>, value: V): void {
     this.db
       .prepare('INSERT INTO kv VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
       .run(name, JSON.stringify(value))
   }
-  /** Deletes the KV record at `name`. */
   delete(name: string): void {
     this.db.prepare('DELETE FROM kv WHERE key=?').run(name)
   }
@@ -374,7 +374,10 @@ export class Store implements Repositories {
         .all()
         .map(row => JSON.parse(String(row.value)) as Thread),
     active: (): Thread[] => this.values('SELECT value FROM thread WHERE active = 1 ORDER BY rowid'),
-    /** Updates human-facing thread metadata (`label`, `url`, and `facts`, where `null` removes a fact by ID); no-op if the thread does not exist. */
+    /**
+     * Updates human-facing thread metadata. `null` in `facts` removes that fact by ID.
+     * No-op if the thread does not exist.
+     */
     describe: (
       keyValue: string,
       patch: { label?: string; url?: string; facts?: Record<string, ThreadFact | null> },
@@ -394,7 +397,10 @@ export class Store implements Repositories {
       }
       if (JSON.stringify(meta) !== JSON.stringify(thread.meta)) this.threads.save({ ...thread, meta })
     },
-    /** Atomically sets or removes (`undefined`) source-specific metadata keys on a thread after re-reading it; no-op if the thread does not exist. */
+    /**
+     * Atomically sets or removes (`undefined`) source-specific metadata keys after re-reading the thread.
+     * No-op if the thread does not exist.
+     */
     patchMeta: (keyValue: string, patch: Record<string, unknown>): void =>
       this.atomic(() => {
         const thread = this.threads.get(keyValue)
@@ -478,7 +484,10 @@ export class Store implements Repositories {
     /** Pending message receipts, oldest first. */
     waiting: (): Receipt[] =>
       this.values("SELECT value FROM outbox WHERE value ->> '$.status' = 'pending' ORDER BY rowid"),
-    /** True if an earlier message for the same ticket and conversation is still pending with fewer than `failures` consecutive failed `reply` effect attempts. */
+    /**
+     * True if an earlier message for the same ticket and conversation is still pending,
+     * with fewer than `failures` failed `reply` effect attempts.
+     */
     behind: (id: string, failures: number): boolean =>
       !!this.db
         .prepare(
@@ -502,8 +511,8 @@ export class Store implements Repositories {
       )
     },
     /**
-     * Marks a pending receipt as sent or dropped (with drop reason and timestamp), recreating the receipt if the message
-     * was withdrawn while being sent so its ID cannot be queued again.
+     * Marks a pending receipt as sent or dropped (with drop reason and timestamp).
+     * Recreates the receipt if the message was withdrawn while being sent, so its ID cannot be queued again.
      */
     settle: (message: OutboundMessage, outcome: 'sent' | DropReason): void => {
       const settled =

@@ -1,5 +1,9 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/prompts.ts
-/** Role prompts assembled from host rules, packaged built-in parts, policy rules, the team's three sections and wrapped external text, with immutable versions and a report of built-in default changes. Changes from the reference: parts are ordered host > built-in > rule > team > external data; the team sections are files under <configDir>/prompts/team; overrides of other built-in parts, team skills, the environment and policy-template parts, revisions and the save/preview API are removed; versions are content hashes in the prompt_version table. */
+/**
+ * Role prompts assembled from host rules, packaged built-in parts, policy rules, the team's three sections,
+ * and wrapped external text. Parts are ordered host > built-in > rule > team > external data.
+ * Versions are immutable content hashes stored in the prompt_version table.
+ */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
@@ -367,7 +371,11 @@ export function noticeText(previous: Assembled, next: Assembled): string | undef
   return NOTICE_HEADER + texts.join('\n\n')
 }
 
-/** Classifies the change from a stored prompt version to the current assembly: fixed when the role or a host, built-in or skill part changed (a new session is needed), team when only rule or team sections changed (a notice is enough), same otherwise (ADR-18). */
+/**
+ * Classifies the change from a stored prompt version to the current assembly: `fixed` when the role or a host,
+ * built-in or skill part changed (a new session is needed); `team` when only rule or team sections changed
+ * (a notice is enough); `same` otherwise.
+ */
 export function promptChange(stored: PromptRecord | undefined, current: Assembled): PromptChange {
   if (!stored || stored.role !== current.role) return { kind: 'fixed' }
   const now = [

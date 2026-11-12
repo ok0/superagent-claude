@@ -1,9 +1,8 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/links.ts, with triggerMessage from src/executor/dsh.ts
 /**
- * Trigger messages as workers and the Router read them, and the candidate card the Router assesses.
- * Changes from the reference: no source message link lookup (the host has no link reader, so candidate cards carry no
- * source_url beyond the trigger's own URL); `triggerMessage` takes no link and cuts text at TRIGGER_CHARS
- * behind a `trigger/<id>` read; every trigger text is wrapped as external data; the accept mode comes from the settings.
+ * There is no source message link lookup: candidate cards carry no source_url beyond the trigger's own URL.
+ * `triggerMessage` cuts text at TRIGGER_CHARS behind a `trigger/<id>` read.
+ * Every trigger text is wrapped as external data.
  */
 import { threadKey, type Candidate, type Ticket, type Trigger } from '../core/index.ts'
 import type { Settings } from '../policy/policy.ts'
@@ -13,7 +12,6 @@ import type { Store } from './store.ts'
 
 export const TRIGGER_CHARS = 600
 
-/** Formats a trigger for a worker or the Router: author, thread, timestamp, text cut at TRIGGER_CHARS, and the message it replies to. */
 export function triggerMessage(trigger: Trigger, note?: string, repliesTo?: Trigger) {
   const cut = trigger.text.length > TRIGGER_CHARS ? `${trigger.text.slice(0, TRIGGER_CHARS)}…` : undefined
   return {
@@ -45,7 +43,7 @@ export function repliedTo(
   const parent = host.sources.repliesTo(trigger)
   return parent === undefined ? undefined : host.store.triggers.get(parent)
 }
-/** Finds tickets subscribed to threads referenced in `trigger.text` (such as `#12` or URLs) that are not already in `known`. */
+/** Finds tickets subscribed to threads that `trigger.text` references (such as `#12` or URLs), excluding `known`. */
 function referencedTickets(host: LinkHost, trigger: Trigger, known: readonly Ticket[]): Ticket[] {
   const threads = (trigger.text.match(/#\d+|https?:\/\/[^\s)>\]]+/g) ?? []).flatMap(
     reference => host.sources.find(reference).threads,
@@ -54,7 +52,6 @@ function referencedTickets(host: LinkHost, trigger: Trigger, known: readonly Tic
   for (const ticket of known) ids.delete(ticket.id)
   return [...ids].flatMap(id => host.store.tickets.get(id) ?? []).slice(0, 4)
 }
-/** Builds the Router's candidate card with routing metadata, handback history, and related or referenced tickets. */
 export function candidateCard(host: LinkHost, candidate: Candidate): Record<string, unknown> {
   const primary = candidate.triggers.at(-1)!
   const delivered = host.store.triggers.disposition(primary.id)?.fanout ?? []
@@ -67,7 +64,7 @@ export function candidateCard(host: LinkHost, candidate: Candidate): Record<stri
       reason: item.reason,
     })),
   )
-  // Format the primary trigger like a worker input (including the message it replies to) and summarize earlier batch triggers as cards.
+  // The primary trigger is formatted like a worker input; earlier batch triggers are summarized as cards.
   const others = candidate.triggers.filter(trigger => trigger.id !== primary.id)
   return {
     ...triggerMessage(primary, undefined, repliedTo(host, primary)),

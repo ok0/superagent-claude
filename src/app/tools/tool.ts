@@ -1,9 +1,4 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/tools/tool.ts
-/**
- * Shared tool primitives and schemas for the worker tools.
- * Changes from the reference: tools are the runtime-neutral `ToolSpec` (arguments are parsed with the schema before `execute`);
- * `readTool` restored (M14) taking the grammar string; `IM_WORDS` is replaced by `HUMAN_WORDS` here; the human_action rule is added.
- */
 import { z } from 'zod'
 import type { ToolSpec } from '../../executor/contract.ts'
 import { wordCount } from '../../infra/text.ts'
@@ -55,7 +50,7 @@ export const HumanActionSchema = z
       ctx.addIssue({ code: 'custom', message: `human_action must be one concrete question for a person: ${problem}` })
   })
 
-/** The `orchestrator_read` tool: one page of a resource the grammar lists, read through `read`. */
+/** The `orchestrator_read` tool: one page of a resource that the grammar lists, read through `read`. */
 export function readTool(
   description: string,
   grammar: string,

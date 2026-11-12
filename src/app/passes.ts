@@ -1,8 +1,5 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/passes.ts
-/**
- * Coordinates periodic and on-demand orchestration passes that drive due effects and Engine evaluations.
- * Changes from the reference: the interval timer and clock are injectable through `PassesHost`; the constructor parameter is a declared field; the `Settings` and HTTP route mentions are dropped from the class doc; an optional afterPass hook runs at the end of each pass.
- */
+/** Periodic and on-demand orchestration passes that drive due effects and Engine evaluations. */
 import type { Engine, ReceiveResult, Trigger } from '../core/index.ts'
 import type { HealthEntry } from '../infra/health.ts'
 import type { Effects } from './effects.ts'
@@ -30,14 +27,13 @@ export interface PassesHost {
   readonly timers?: Timers
   configured(): boolean
   closing(): boolean
-  /** Runs at the end of every pass (retention evaluation and the health snapshot, M18). */
+  /** Runs at the end of every pass (retention evaluation and the health snapshot). */
   afterPass?(): void
 }
 
 /**
- * Schedules and serializes orchestration passes that kick due `Effects` and advance `Engine` evaluations.
- * `Runtime` manages its lifecycle, while sources and tools trigger immediate passes when new work arrives or state changes.
- * Updates the runtime `HealthEntry` when a pass fails and clears the error once a subsequent pass succeeds.
+ * Serializes passes; sources and tools request immediate passes. A failed pass sets the health entry to error,
+ * and the next successful pass clears it.
  */
 export class Passes {
   private timer: unknown

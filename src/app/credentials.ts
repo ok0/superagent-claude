@@ -1,5 +1,6 @@
 /**
- * Startup credential and policy checks: resolves the selected auth mode into the environment the runtime may receive, and applies the startup rules that need the config, the agent account or the runtime probe. Names are reported, values never.
+ * Resolves the selected auth mode into the environment the runtime may receive.
+ * Names are reported, values never.
  */
 import { createHash } from 'node:crypto'
 import { AUTH_ENV, type AuthMode } from '../runtimes/claude/options.ts'
@@ -17,7 +18,10 @@ export interface StartupReport {
   consent?: { at: string; allowedHash: string }
 }
 
-/** Per mode, the requirements; a requirement is met when every variable of one of its alternatives is set (non-blank). All names are in AUTH_ENV[mode]. */
+/**
+ * Per mode, the requirements. A requirement is met when every variable of one of its alternatives is set (non-blank).
+ * All names are in AUTH_ENV[mode].
+ */
 export const REQUIRED_ENV: Record<AuthMode, readonly (readonly (readonly string[])[])[]> = {
   'api-key': [[['ANTHROPIC_API_KEY']]],
   subscription: [[['CLAUDE_CODE_OAUTH_TOKEN']]],

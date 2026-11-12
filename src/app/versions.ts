@@ -1,14 +1,9 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/versions.ts
-/**
- * Versioned record storage backed by numbered snapshots and a current-revision pointer in the Store KV table.
- * Changes from the reference: the constructor parameters are declared fields, assigned in the constructor body; the settings-history mention is dropped from the class doc.
- */
 import type { Family, Key } from './kv.ts'
 import type { Store } from './store.ts'
 
 /**
- * Manages numbered snapshots of a versioned record in the `Store` key-value table with a pointer key tracking the active revision.
- * Each save writes a new snapshot and advances the pointer atomically, keeping full history without duplicating the active record.
+ * Each save writes a new snapshot and advances the pointer atomically, keeping full history.
  * Used by `Prompts` for versioned prompt configuration.
  */
 export class Versions<V extends { revision: number }> {
@@ -44,7 +39,7 @@ export class Versions<V extends { revision: number }> {
       return version
     })
   }
-  /** Stores a snapshot without advancing the current revision pointer (e.g., to record an initial built-in baseline). */
+  /** Stores a snapshot without advancing the current revision pointer, e.g. for an initial built-in baseline. */
   keep(version: V): void {
     this.store.set(this.family(version.revision), version)
   }
