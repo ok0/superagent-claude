@@ -1,7 +1,8 @@
 /**
  * Policy is checked before any git or GitHub call: live ticket, configured repository, a PR this ticket bound,
  * and delivery.allowAutoMerge. Publish re-checks push permission first and returns `published: false`
- * without any write when it is missing. Repository access errors file a failed report.
+ * without any write when it is missing. Then the host review decision may stop it with `review_required`, again without any write.
+ * Repository access errors file a failed report.
  */
 import { z } from 'zod'
 import type { EngineForExecutor } from '../../core/index.ts'
@@ -32,7 +33,12 @@ export interface DeliveryHost {
    * or not a GitHub issue.
    */
   originIssue?(ticketId: string): { repository: string; number: number } | undefined
+  /** The pre-publish review decision; undefined, or no method, means publish proceeds. */
+  review?(ticketId: string): Promise<{ changedLines: number; round: number } | undefined>
 }
+
+const REVIEW_REASON =
+  'Run the superagent-reviewer subagent before publishing, give it the original request and the human constraints, apply only bug and missing-requirement findings, then call orchestrator_publish again'
 
 export interface DeliveryToolsHost {
   engine(): Pick<EngineForExecutor, 'bindThread' | 'report'>
@@ -116,7 +122,7 @@ export function deliveryTools(host: DeliveryToolsHost, ticketId: string): ToolSp
     tool({
       name: 'orchestrator_publish',
       description:
-        "Push this ticket's commits and open its pull request, or reuse the open one for the branch; never force-pushes. Binds the PR thread to this ticket. Returns published: false, pushing nothing, when the agent account has no write access to the repository.",
+        "Push this ticket's commits and open its pull request, or reuse the open one for the branch; never force-pushes. Binds the PR thread to this ticket. Returns published: false, pushing nothing, when the agent account has no write access to the repository. Returns published: false with review_required, pushing nothing, when the host requires a review first: run the superagent-reviewer subagent, then publish again.",
       schema: z
         .object({
           title: z.string().trim().min(1).max(256),
@@ -151,6 +157,16 @@ export function deliveryTools(host: DeliveryToolsHost, ticketId: string): ToolSp
             next: `Report blocked with one human_action asking a person to give the agent account write access to ${repository}`,
           }
         }
+        const review = await deliveryHost().review?.(ticketId)
+        if (review)
+          return {
+            published: false,
+            review_required: true,
+            repository,
+            changed_lines: review.changedLines,
+            review_round: review.round,
+            reason: REVIEW_REASON,
+          }
         let pushed: PushResult
         try {
           pushed = await deliveryHost().push(ticketId, { coAuthors: args.coAuthors })

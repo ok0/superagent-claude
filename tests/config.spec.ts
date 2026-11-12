@@ -40,6 +40,7 @@ describe('config file', () => {
       security: { trustRepoConfig: false, allowUnsandboxed: false, weakerNestedSandbox: false },
       retention: { endedTicketDays: 14 },
       models: {},
+      review: { enabled: true, minChangedLines: 50, maxPerTicket: 3 },
       stateDir: '/home/test/.superagent-claude',
     })
   })
@@ -60,9 +61,11 @@ describe('config file', () => {
       security: { trustRepoConfig: true, allowUnsandboxed: true, weakerNestedSandbox: true },
       retention: { endedTicketDays: 7 },
       models: { router: 'r', worker: 'w' },
+      review: { enabled: false, minChangedLines: 10, maxPerTicket: 1 },
       stateDir: 'state',
     })
     const config = loadConfig(path, ENV)
+    expect(config.review).toEqual({ enabled: false, minChangedLines: 10, maxPerTicket: 1 })
     expect(config.auth).toEqual({ mode: 'subscription', owner: 'Alice', acceptSubscriptionSharedUseRisk: true })
     expect(config.delivery).toEqual({ allowAutoMerge: true })
     expect(config.network).toEqual({ allow: ['example.com'] })
@@ -100,6 +103,11 @@ describe('config file', () => {
       [{ ...base, security: { allowUnsandboxed: 'yes' } }, 'security.allowUnsandboxed'],
       [{ ...base, security: { weakerNestedSandbox: 'yes' } }, 'security.weakerNestedSandbox'],
       [{ ...base, network: { allow: 'x' } }, 'network.allow'],
+      [{ ...base, review: { minChangedLines: 0 } }, 'review.minChangedLines'],
+      [{ ...base, review: { minChangedLines: -1 } }, 'review.minChangedLines'],
+      [{ ...base, review: { maxPerTicket: 1.5 } }, 'review.maxPerTicket'],
+      [{ ...base, review: { enabled: 'yes' } }, 'review.enabled'],
+      [{ ...base, review: { extra: 1 } }, 'review'],
     ]
     for (const [value, text] of cases) {
       const path = write(value)

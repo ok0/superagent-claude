@@ -97,6 +97,14 @@ export const ConfigSchema = z
       })
       .strict()
       .default({}),
+    review: z
+      .object({
+        enabled: z.boolean().default(true),
+        minChangedLines: z.number().int().min(1).default(50),
+        maxPerTicket: z.number().int().min(1).default(3),
+      })
+      .strict()
+      .default({ enabled: true, minChangedLines: 50, maxPerTicket: 3 }),
     stateDir: z.string().trim().min(1).default(DEFAULT_STATE_DIR),
   })
   .strict()

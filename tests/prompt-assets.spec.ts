@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { packagePath } from '../src/infra/paths.ts'
+import { loadBuiltins } from '../src/app/prompts.ts'
 import { MCP_TOOL_PREFIX, ROUTER_TOOLS, TOOL_NAMES, WORKER_TOOLS, toolNameViolations } from '../src/app/tool-names.ts'
 
 const ASSETS = [
@@ -176,5 +177,43 @@ describe('ported prompt and skill assets', () => {
     expect(body(read('prompts/router.md'))).toContain(
       'without internal terms such as ticket, worker, hand back, Eval, trigger or assignment',
     )
+  })
+})
+
+describe('reviewer prompt', () => {
+  it('ships the reviewer prompt with its tools and the FINDINGS line', () => {
+    const path = packagePath('prompts/reviewer.md')
+    expect(existsSync(path), path).toBe(true)
+    const text = read('prompts/reviewer.md')
+    expect(text.split('\n')[0]).not.toMatch(HEADER)
+    expect(toolNameViolations(text)).toEqual([])
+    for (const pattern of FORBIDDEN) expect(text.match(pattern), String(pattern)).toBeNull()
+    for (const token of [
+      'mcp__superagent__git_inspect',
+      'Read',
+      'Glob',
+      'Grep',
+      'FINDINGS bug=<n> missing=<n> style=<n>',
+      'original request',
+      'human constraints',
+    ]) {
+      expect(text, token).toContain(token)
+    }
+    expect(text).not.toMatch(/\bBash\b/)
+    expect(loadBuiltins().files.reviewer).toContain('FINDINGS bug=<n> missing=<n> style=<n>')
+  })
+
+  it('the worker prompt runs the reviewer only on review_required and applies only bug and missing findings', () => {
+    const worker = body(read('prompts/worker.md'))
+    for (const token of [
+      'review_required',
+      'superagent-reviewer',
+      'original request',
+      'human constraints',
+      'only its bug and missing findings',
+      'never style',
+    ]) {
+      expect(worker, token).toContain(token)
+    }
   })
 })

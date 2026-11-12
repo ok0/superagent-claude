@@ -1,9 +1,11 @@
 /**
  * Maps a SessionSpec to the SDK Options: a whitelisted environment, the builtin tool sets, the fixed permission posture
- * (dontAsk, never bypass), the guard and read hooks, the worker-only Agent with the subagent guard,
+ * (dontAsk, never bypass), the guard and read hooks, the worker-only Agent with the subagent guard
+ * and the definitions of host-declared subagents with their read-only guard,
  * the sandbox and the limits.
  */
 import type {
+  AgentDefinition,
   Options,
   HookCallback,
   HookCallbackMatcher,
@@ -15,7 +17,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk'
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve, relative, isAbsolute, dirname, basename, join } from 'node:path'
-import type { SessionSpec } from '../../executor/contract.ts'
+import type { SessionSpec, SubagentSpec } from '../../executor/contract.ts'
 import { subprocessEnv, INHERITED_ENV } from '../../infra/env.ts'
 import { mcpToolName } from './mcp.ts'
 
@@ -50,10 +52,22 @@ export const SUBAGENT_TYPES: readonly string[] = ['general-purpose', 'Explore', 
 export const HOST_TOOL_PREFIX = mcpToolName('')
 
 const AGENT_NOT_ALLOWED = 'Agent is not allowed in this session'
-const SUBAGENT_TYPE = `Only these subagent types are allowed: ${SUBAGENT_TYPES.join(', ')}`
 const SUBAGENT_ISOLATION = 'Subagent isolation is not allowed'
 const SUBAGENT_NESTED = 'A subagent cannot start another subagent'
 const SUBAGENT_HOST_TOOL = 'Host tools are only available to the main worker, not to subagents'
+export const SUBAGENT_DISALLOWED = [
+  'Bash',
+  'Write',
+  'Edit',
+  'NotebookEdit',
+  AGENT_TOOL,
+  'WebFetch',
+  'WebSearch',
+  'AskUserQuestion',
+] as const
+const SUBAGENT_READ_ONLY = 'The reviewer may only read files and inspect git history'
+const SUBAGENT_NOT_ADMITTED =
+  'Review is not available now: call it only after orchestrator_publish returns review_required'
 
 /** Turns off CLI commit and PR attribution through the flag settings layer; settingSources stays as it is. */
 export const ATTRIBUTION_OFF = {
@@ -191,11 +205,56 @@ function globLiteralPrefix(pattern: string): string {
   return parts.join('/')
 }
 
+function subagentTypes(spec: SessionSpec): string[] {
+  return [...SUBAGENT_TYPES, ...(spec.subagents ?? []).map(s => s.name)]
+}
+
+function subagentOf(spec: SessionSpec, type: unknown): SubagentSpec | undefined {
+  return typeof type === 'string' ? spec.subagents?.find(s => s.name === type) : undefined
+}
+
+function permittedTools(sub: SubagentSpec): string[] {
+  return [...(sub.tools === 'read' ? READ_TOOLS : []), ...sub.hostTools.map(t => mcpToolName(t))]
+}
+
+export function agentDefinitions(
+  spec: SessionSpec,
+  allowed: readonly string[],
+): Record<string, AgentDefinition> | undefined {
+  if (spec.role !== 'worker' || !spec.subagents?.length) return undefined
+  return Object.fromEntries(
+    spec.subagents.map(s => [
+      s.name,
+      {
+        description: s.description,
+        prompt: s.instructions,
+        tools: permittedTools(s).filter(t => allowed.includes(t)),
+        disallowedTools: [...SUBAGENT_DISALLOWED],
+      },
+    ]),
+  )
+}
+
+export function agentResponseText(response: unknown): string {
+  if (typeof response === 'string') return response
+  if (typeof response !== 'object' || response === null || !('content' in response)) return ''
+  const content = (response as { content: unknown }).content
+  if (typeof content === 'string') return content
+  if (Array.isArray(content))
+    return content
+      .flatMap(item =>
+        typeof (item as { text?: unknown } | null)?.text === 'string' ? [(item as { text: string }).text] : [],
+      )
+      .join('\n')
+  return ''
+}
+
 export function guardDecision(
   spec: SessionSpec,
   toolName: string,
   input: unknown,
   agentId?: string,
+  agentType?: string,
 ): string | undefined {
   const args = (input ?? {}) as Record<string, unknown>
   if (toolName === AGENT_TOOL) {
@@ -204,12 +263,18 @@ export function guardDecision(
     if (args.isolation !== undefined) return SUBAGENT_ISOLATION
     if (
       args.subagent_type !== undefined &&
-      !(typeof args.subagent_type === 'string' && SUBAGENT_TYPES.includes(args.subagent_type))
+      !(typeof args.subagent_type === 'string' && subagentTypes(spec).includes(args.subagent_type))
     )
-      return SUBAGENT_TYPE
+      return `Only these subagent types are allowed: ${subagentTypes(spec).join(', ')}`
     return undefined
   }
-  if (agentId !== undefined && toolName.startsWith(HOST_TOOL_PREFIX)) return SUBAGENT_HOST_TOOL
+  if (agentId !== undefined) {
+    const sub = subagentOf(spec, agentType)
+    if (sub) {
+      if (!permittedTools(sub).includes(toolName)) return SUBAGENT_READ_ONLY
+      if (toolName.startsWith(HOST_TOOL_PREFIX)) return undefined
+    } else if (toolName.startsWith(HOST_TOOL_PREFIX)) return SUBAGENT_HOST_TOOL
+  }
   if (toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit') {
     const path = toolName === 'NotebookEdit' ? args.notebook_path : args.file_path
     if (typeof path !== 'string') return 'A file path is required'
@@ -244,28 +309,81 @@ export function foregroundInput(input: unknown): Record<string, unknown> {
 
 export function sdkOptions(spec: SessionSpec, ctx: OptionsContext): Options {
   const tools = builtinTools(spec.builtins)
+  const allowed = [
+    ...tools.allowed,
+    ...(spec.role === 'worker' ? [AGENT_TOOL] : []),
+    ...spec.tools.map(t => mcpToolName(t.name)),
+  ]
+  const agents = agentDefinitions(spec, allowed)
   const guard: HookCallback = async input => {
     if (input.hook_event_name !== 'PreToolUse') return {}
     const agentId =
       typeof (input as { agent_id?: unknown }).agent_id === 'string'
         ? (input as { agent_id: string }).agent_id
         : undefined
-    const reason = guardDecision(spec, input.tool_name, input.tool_input, agentId)
+    const agentType =
+      typeof (input as { agent_type?: unknown }).agent_type === 'string'
+        ? (input as { agent_type: string }).agent_type
+        : undefined
+    const deny = (reason: string) => {
+      try {
+        agentId === undefined ? ctx.onDeny?.(input.tool_name, reason) : ctx.onDeny?.(input.tool_name, reason, agentId)
+      } catch {}
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse' as const,
+          permissionDecision: 'deny' as const,
+          permissionDecisionReason: reason,
+        },
+      }
+    }
+    const reason = guardDecision(spec, input.tool_name, input.tool_input, agentId, agentType)
     if (reason === undefined) {
-      if (input.tool_name === AGENT_TOOL)
+      if (input.tool_name === AGENT_TOOL) {
+        const sub =
+          agentId === undefined
+            ? subagentOf(spec, (input.tool_input as Record<string, unknown> | undefined)?.subagent_type)
+            : undefined
+        if (sub) {
+          let admitted: { preamble: string } | undefined
+          try {
+            admitted = await sub.admit()
+          } catch {
+            admitted = undefined
+          }
+          if (!admitted) return deny(SUBAGENT_NOT_ADMITTED)
+          const original = foregroundInput(input.tool_input)
+          const prompt = typeof original.prompt === 'string' ? original.prompt : ''
+          return {
+            hookSpecificOutput: {
+              hookEventName: 'PreToolUse',
+              updatedInput: { ...original, prompt: admitted.preamble + '\n\n' + prompt },
+            },
+          }
+        }
         return { hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: foregroundInput(input.tool_input) } }
+      }
       return {}
     }
-    try {
-      agentId === undefined ? ctx.onDeny?.(input.tool_name, reason) : ctx.onDeny?.(input.tool_name, reason, agentId)
-    } catch {}
-    return {
-      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason },
-    }
+    return deny(reason)
   }
   const read: HookCallback = async input => {
     if (typeof (input as { agent_id?: unknown }).agent_id === 'string') return {}
     ctx.onRead()
+    return {}
+  }
+  const finished: HookCallback = async input => {
+    if (
+      input.hook_event_name !== 'PostToolUse' ||
+      input.tool_name !== AGENT_TOOL ||
+      typeof (input as { agent_id?: unknown }).agent_id === 'string'
+    )
+      return {}
+    try {
+      subagentOf(spec, (input.tool_input as Record<string, unknown> | undefined)?.subagent_type)?.finished?.(
+        agentResponseText(input.tool_response),
+      )
+    } catch {}
     return {}
   }
   const preToolUse: HookCallbackMatcher = { hooks: [guard], onFailure: 'block' }
@@ -279,16 +397,18 @@ export function sdkOptions(spec: SessionSpec, ctx: OptionsContext): Options {
     abortController: ctx.abortController,
     systemPrompt:
       spec.role === 'worker' ? { type: 'preset', preset: 'claude_code', append: spec.instructions } : spec.instructions,
-    allowedTools: [
-      ...tools.allowed,
-      ...(spec.role === 'worker' ? [AGENT_TOOL] : []),
-      ...spec.tools.map(t => mcpToolName(t.name)),
-    ],
+    allowedTools: allowed,
     disallowedTools: spec.role === 'worker' ? tools.disallowed : [...tools.disallowed, AGENT_TOOL],
     canUseTool: async toolName => ({ behavior: 'deny', message: `${toolName} is not allowed in this session` }),
     mcpServers: ctx.mcp ? { superagent: ctx.mcp } : {},
     strictMcpConfig: true,
-    hooks: { PreToolUse: [preToolUse], UserPromptSubmit: [readMatcher], PostToolBatch: [readMatcher] },
+    ...(agents ? { agents } : {}),
+    hooks: {
+      PreToolUse: [preToolUse],
+      UserPromptSubmit: [readMatcher],
+      PostToolBatch: [readMatcher],
+      ...(agents ? { PostToolUse: [{ matcher: AGENT_TOOL, hooks: [finished] }] } : {}),
+    },
     ...(ctx.sandbox
       ? {
           sandbox: {

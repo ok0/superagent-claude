@@ -326,6 +326,7 @@ describe('daemon forced stops', () => {
       'security',
       'retention',
       'models',
+      'review',
       'stateDir',
     ])
   })

@@ -34,21 +34,31 @@ Limits: `workers.maxTurns` and `workers.maxBudgetUsd`.
 
 ## Subagents
 
-Only worker sessions may use the `Agent` tool; the router may not. No custom subagent definitions are passed.
+Only worker sessions may use the `Agent` tool; the router may not. Worker sessions get one custom subagent definition, `superagent-reviewer`; the router gets none.
 
 A subagent runs inside the worker's CLI process: same environment (no extra variables or secrets), sandbox and network allow list, allow/deny lists, `dontAsk` mode and `PreToolUse` guard. It can never have more access than its worker.
 
-Allowed types: subagent type omitted or one of `general-purpose`, `Explore`, `Plan`; repository-defined agents (loadable with `security.trustRepoConfig`) are refused.
+Allowed types: subagent type omitted or one of `general-purpose`, `Explore`, `Plan`, `superagent-reviewer`; repository-defined agents (loadable with `security.trustRepoConfig`) are refused.
 
 `isolation` is refused; a subagent cannot start another subagent.
 
-Subagents cannot call host tools (`mcp__superagent__*`): status reports, human questions and publishing stay with the worker.
+Subagents cannot call host tools (`mcp__superagent__*`): status reports, human questions and publishing stay with the worker. The one exception is `mcp__superagent__git_inspect` for `superagent-reviewer`.
 
 Inside a subagent the guard applies the same rules: no writes outside the worktree, no `git push` / `gh`, no `/proc` reads.
 
 Subagents run in the foreground (`run_in_background: false` is forced), so they finish inside the worker's turn; their cost counts toward `workers.maxBudgetUsd`; `workers.maxTurns` counts only the worker's turns. A subagent's `model` / `effort` choice is not restricted; the worker's budget limit bounds it.
 
 Guard denials inside a subagent are logged as `worker.tool_denied` with an `agentId` field; worker denials have no `agentId`.
+
+### Pre-publish reviewer
+
+When `orchestrator_publish` returns `review_required`, the worker may start `superagent-reviewer`. The guard admits that `Agent` call only while a host-decided review is pending, once per pending review, and the review counts from that moment.
+
+Its tools are `Read`, `Glob`, `Grep` and `mcp__superagent__git_inspect`. Its definition also disallows `Bash`, `Write`, `Edit`, `NotebookEdit`, `Agent` and the web tools, and the `PreToolUse` guard denies every other tool for a call whose `agent_type` is `superagent-reviewer`. The denial is made in the hook, not in `canUseTool`: tools listed in the worker's allow list skip `canUseTool`.
+
+The host puts a brief before its prompt: the original request, the human messages since, and the host diff (at most 60,000 characters, with a truncation marker), each as external data. Only the counts of its final `FINDINGS` line are logged, as `worker.review`.
+
+`git_inspect` boundary: only `diff`, `log`, `show` and `blame`. Revisions and paths are validated and passed after `--end-of-options` and `--`. The host builds the argv and runs git without a shell, with no pager, no optional locks, `core.fsmonitor=false`, `--no-ext-diff --no-textconv --no-color`, against the ticket worktree's git directory, with no token in the environment, a 10 s timeout and an output cap of 64 KiB and a line limit. It cannot write, run external diff drivers or textconv filters. The worker can call it too.
 
 ## Secrets
 

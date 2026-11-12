@@ -17,6 +17,20 @@ export interface ToolSpec {
   schema: z.ZodObject
   execute(args: unknown, signal: AbortSignal): Promise<unknown>
 }
+/** A named subagent the worker may start. Runtime-neutral: the adapter maps it to its own agent definitions. */
+export interface SubagentSpec {
+  name: string
+  description: string
+  instructions: string
+  /** Built-in tools: 'read' means file read and search only. */
+  tools: 'read'
+  /** Host tool names, without the MCP prefix, that this subagent may call. */
+  hostTools: readonly string[]
+  /** Decided right before the subagent starts. undefined refuses the call. */
+  admit(): Promise<{ preamble: string } | undefined>
+  /** The subagent's final text output once it returns. */
+  finished?(output: string): void
+}
 export interface SessionSpec {
   key: string
   role: 'router' | 'worker'
@@ -29,6 +43,7 @@ export interface SessionSpec {
   resume?: string
   model?: string
   env: Record<string, string>
+  subagents?: SubagentSpec[]
 }
 /** What a session reports back to the host, in order. */
 export type RuntimeEvent =

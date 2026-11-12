@@ -71,6 +71,7 @@ import type { PullRequests } from '../sources/github/delivery.ts'
 import { GITHUB_STATE } from '../sources/github/source.ts'
 import { TextCache } from './cache.ts'
 import { KV } from './kv.ts'
+import { Reviews } from './review.ts'
 
 export const STOP_TIMEOUT_MS = 10_000
 
@@ -385,6 +386,18 @@ export class Runtime implements SourceHost {
               access: options.access!,
             })
           : new ScratchWorkspaces({ stateDir: config.stateDir, repositoryOf })
+      const cwdOf = (id: string): string =>
+        this.workspaces instanceof Workspaces ? this.workspaces.worktreePath(id) : ''
+      const reviews = new Reviews({
+        kv: store,
+        ticket: id => store.tickets.get(id),
+        trigger: id => store.triggers.get(id),
+        config: () => this.current.review,
+        workspaces: this.workspaces,
+        instructions: () => this.prompts.builtin('reviewer'),
+        now,
+        log: record => this.log(record),
+      })
       const notifyRouter = (notice: Notice): void => {
         const [name, value, summary] = notice
         const text = JSON.stringify(value)
@@ -404,11 +417,7 @@ export class Runtime implements SourceHost {
             read: (resource, offset, limit, signal) =>
               readResource(this.resources, resource, offset, limit, ticket.id, signal),
             repositories: () => this.current.repositories,
-            inspect: (id, request) =>
-              this.workspaces.inspect(
-                this.workspaces instanceof Workspaces ? this.workspaces.worktreePath(id) : '',
-                request,
-              ),
+            inspect: (id, request) => this.workspaces.inspect(cwdOf(id), request),
             ...(session ? { notify: notifyRouter } : {}),
             delivery: {
               repositoryOf: id => repositoryOf(store.tickets.get(id)!),
@@ -424,6 +433,7 @@ export class Runtime implements SourceHost {
               ...(options.pulls ? { pulls: options.pulls } : {}),
               allowAutoMerge: () => this.current.delivery.allowAutoMerge,
               recordedPush: repository => store.get(GITHUB_STATE.access(repository))?.push,
+              review: id => reviews.check(id, cwdOf(id)),
             },
           }
           return session ? executorTools(host, ticket) : workerTools(host, ticket, operation => store.atomic(operation))
@@ -434,6 +444,7 @@ export class Runtime implements SourceHost {
         launchNote: (_ticket, workspace) =>
           writeAccessNote(workspace.repository, this.store.get(GITHUB_STATE.access(workspace.repository))),
         history: cwd => this.workspaces.history(cwd),
+        subagents: ticket => reviews.subagentsFor(ticket, cwdOf(ticket.id)),
       }
       this.executor = new WorkerExecutor({
         store,

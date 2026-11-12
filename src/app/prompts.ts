@@ -58,6 +58,7 @@ export const PROMPT_FILES: readonly string[] = [
   'worker',
   'work',
   'handoff-worker',
+  'reviewer',
   'team/communication',
   'team/scope',
   'team/delivery',
@@ -448,5 +449,8 @@ export class Prompts {
   }
   skill(name: 'github'): string {
     return name === 'github' ? this.builtins.skill : ''
+  }
+  builtin(name: 'reviewer'): string {
+    return this.builtins.files[name] ?? ''
   }
 }

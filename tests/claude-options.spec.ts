@@ -5,13 +5,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { query, type HookCallbackMatcher, type Options, type SpawnedProcess } from '@anthropic-ai/claude-agent-sdk'
-import type { SessionSpec, ToolSpec } from '../src/executor/contract.ts'
+import type { SessionSpec, SubagentSpec, ToolSpec } from '../src/executor/contract.ts'
 import {
   AUTH_ENV,
   CLAUDE_INHERITED_ENV,
   ALWAYS_DISALLOWED,
   ATTRIBUTION_OFF,
   SUBAGENT_TYPES,
+  agentResponseText,
   claudeEnv,
   builtinTools,
   guardDecision,
@@ -22,6 +23,7 @@ import {
 } from '../src/runtimes/claude/options.ts'
 import { mcpTools, mcpServer, mcpToolName, toolHandler } from '../src/runtimes/claude/mcp.ts'
 import { WORKER_TOOLS } from '../src/app/tool-names.ts'
+import { toolDeniedRecord } from '../src/app/agent.ts'
 
 const MODES: AuthMode[] = ['api-key', 'subscription', 'bedrock', 'vertex']
 
@@ -670,5 +672,237 @@ describe('subagents', () => {
       { signal },
     )
     expect(onRead).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('reviewer subagent', () => {
+  const READ_ONLY = 'The reviewer may only read files and inspect git history'
+  const gitInspectTool: ToolSpec = {
+    name: 'git_inspect',
+    description: 'git',
+    schema: z.object({}),
+    execute: async () => ({ ok: true }),
+  }
+  const publishTool: ToolSpec = {
+    name: 'orchestrator_publish',
+    description: 'publish',
+    schema: z.object({}),
+    execute: async () => ({ ok: true }),
+  }
+  const reviewer = (admit = vi.fn(async () => undefined), finished = vi.fn()): SubagentSpec => ({
+    name: 'superagent-reviewer',
+    description: 'reviews',
+    instructions: 'review it',
+    tools: 'read',
+    hostTools: ['git_inspect'],
+    admit,
+    finished,
+  })
+  const withReviewer = (sub: SubagentSpec) =>
+    spec({ tools: [reportTool, publishTool, gitInspectTool], subagents: [sub] })
+  const hookInput = (tool_name: string, tool_input: unknown, agent_id?: string) => ({
+    hook_event_name: 'PreToolUse',
+    tool_name,
+    tool_input,
+    session_id: 's',
+    transcript_path: 't',
+    cwd: '/work/t1',
+    tool_use_id: 'u',
+    ...(agent_id !== undefined ? { agent_id } : {}),
+  })
+  const reviewerInput = (tool_name: string, tool_input: unknown, agent_type = 'superagent-reviewer') => ({
+    ...hookInput(tool_name, tool_input, 'r1'),
+    agent_type,
+  })
+  const mainInput = (tool_name: string, tool_input: unknown) => hookInput(tool_name, tool_input)
+  type Decision = {
+    hookSpecificOutput?: {
+      permissionDecision?: string
+      permissionDecisionReason?: string
+      updatedInput?: Record<string, unknown>
+    }
+  }
+  const decide = async (options: Options, input: unknown): Promise<Decision> =>
+    (await hookFn(options.hooks!.PreToolUse)(input, 'u', { signal: new AbortController().signal })) as Decision
+
+  it('the reviewer definition is read-only and a subset of the worker allow set', () => {
+    const options = sdkOptions(withReviewer(reviewer()), ctx('api-key'))
+    const definition = options.agents!['superagent-reviewer']!
+    expect(definition.tools).toEqual(['Read', 'Glob', 'Grep', 'mcp__superagent__git_inspect'])
+    expect(definition.disallowedTools).toEqual(
+      expect.arrayContaining(['Bash', 'Write', 'Edit', 'NotebookEdit', 'Agent', 'WebFetch', 'WebSearch']),
+    )
+    for (const tool of definition.tools!) expect(options.allowedTools).toContain(tool)
+    expect(definition.prompt).toBe('review it')
+
+    const without = sdkOptions(spec({ subagents: [reviewer()] }), ctx('api-key'))
+    expect(without.agents!['superagent-reviewer']!.tools).toEqual(['Read', 'Glob', 'Grep'])
+
+    const router = sdkOptions(
+      spec({ role: 'router', builtins: { fs: 'none', shell: false, web: false }, subagents: [reviewer()] }),
+      ctx('api-key'),
+    )
+    expect('agents' in router).toBe(false)
+    expect(router.hooks!.PostToolUse).toBeUndefined()
+  })
+
+  it('the reviewer guard denies everything but reading and git_inspect, without canUseTool', async () => {
+    const onDeny = vi.fn()
+    const options = sdkOptions(withReviewer(reviewer()), ctx('api-key', { onDeny }))
+    expect(options.canUseTool).toBeDefined()
+    delete (options as { canUseTool?: unknown }).canUseTool
+
+    const denied: [string, unknown][] = [
+      ['Bash', { command: 'git log' }],
+      ['Write', { file_path: '/work/t1/a.ts' }],
+      ['Edit', { file_path: '/work/t1/a.ts' }],
+      ['NotebookEdit', { notebook_path: '/work/t1/a.ipynb' }],
+      ['Agent', { prompt: 'p', description: 'd' }],
+      ['mcp__superagent__orchestrator_publish', {}],
+      ['mcp__superagent__orchestrator_report', {}],
+    ]
+    for (const [tool, input] of denied) {
+      const out = await decide(options, reviewerInput(tool, input))
+      const reason = out.hookSpecificOutput?.permissionDecisionReason
+      expect(out.hookSpecificOutput?.permissionDecision).toBe('deny')
+      expect(reason).toBe(tool === 'Agent' ? 'A subagent cannot start another subagent' : READ_ONLY)
+      expect(onDeny).toHaveBeenCalledWith(tool, reason, 'r1')
+      const record = toolDeniedRecord({ key: 'worker-T1', tool, reason: reason!, agentId: 'r1' }, 'now')
+      expect(record).toMatchObject({ event: 'worker.tool_denied', agentId: 'r1' })
+    }
+
+    const allowed: [string, unknown][] = [
+      ['Read', { file_path: '/work/t1/a.ts' }],
+      ['Glob', { pattern: '**/*.ts' }],
+      ['Grep', { pattern: 'x' }],
+      ['mcp__superagent__git_inspect', { command: 'log' }],
+    ]
+    for (const [tool, input] of allowed) expect(await decide(options, reviewerInput(tool, input))).toEqual({})
+
+    expect(guardDecision(withReviewer(reviewer()), 'Bash', { command: 'ls' }, 'r1', 'superagent-reviewer')).toBe(
+      READ_ONLY,
+    )
+  })
+
+  it('another subagent type keeps the host tool ban, git_inspect included', async () => {
+    const options = sdkOptions(withReviewer(reviewer()), ctx('api-key'))
+    const tool = 'mcp__superagent__git_inspect'
+    const general = await decide(options, {
+      ...hookInput(tool, { command: 'log' }, 'r1'),
+      agent_type: 'general-purpose',
+    })
+    expect(general.hookSpecificOutput?.permissionDecisionReason).toBe(
+      'Host tools are only available to the main worker, not to subagents',
+    )
+    const untyped = await decide(options, hookInput(tool, { command: 'log' }, 'r1'))
+    expect(untyped.hookSpecificOutput?.permissionDecisionReason).toBe(
+      'Host tools are only available to the main worker, not to subagents',
+    )
+  })
+
+  it('no bare allowedTools entry gives the reviewer a tool its guard denies', async () => {
+    const options = sdkOptions(withReviewer(reviewer()), ctx('api-key'))
+    const definition = options.agents!['superagent-reviewer']!
+    expect(options.allowedTools).toContain('Bash')
+    const table: Record<string, unknown> = {
+      Write: { file_path: '/work/t1/a.ts' },
+      Edit: { file_path: '/work/t1/a.ts' },
+      NotebookEdit: { notebook_path: '/work/t1/a.ipynb' },
+      Read: { file_path: '/work/t1/a.ts' },
+      Bash: { command: 'git log' },
+    }
+    for (const entry of options.allowedTools!) {
+      const name = entry.replace(/\(.*$/s, '')
+      const input = table[name] ?? { prompt: 'p', description: 'd', command: 'log' }
+      const out = await decide(options, reviewerInput(name, input))
+      const guardAllows = !out.hookSpecificOutput?.permissionDecision
+      expect(guardAllows).toBe(definition.tools!.includes(name))
+      if (!guardAllows) {
+        expect(definition.tools).not.toContain(name)
+        expect(definition.disallowedTools!.includes(name) || name.startsWith('mcp__superagent__')).toBe(true)
+      }
+    }
+  })
+
+  it('the reviewer Agent call is admitted once, foreground, with the preamble first', async () => {
+    const admit = vi.fn().mockResolvedValueOnce({ preamble: 'HOST BRIEF' }).mockResolvedValue(undefined)
+    const onDeny = vi.fn()
+    const options = sdkOptions(withReviewer(reviewer(admit)), ctx('api-key', { onDeny }))
+    const call = mainInput('Agent', {
+      prompt: 'check it',
+      description: 'd',
+      subagent_type: 'superagent-reviewer',
+      run_in_background: true,
+    })
+
+    const first = await decide(options, call)
+    expect(first.hookSpecificOutput?.updatedInput?.prompt).toBe('HOST BRIEF\n\ncheck it')
+    expect(first.hookSpecificOutput?.updatedInput?.run_in_background).toBe(false)
+    expect(first.hookSpecificOutput?.permissionDecision).toBeUndefined()
+
+    const second = await decide(options, call)
+    const reason = 'Review is not available now: call it only after orchestrator_publish returns review_required'
+    expect(second.hookSpecificOutput?.permissionDecision).toBe('deny')
+    expect(second.hookSpecificOutput?.permissionDecisionReason).toBe(reason)
+    expect(onDeny).toHaveBeenLastCalledWith('Agent', reason)
+
+    const refusing = sdkOptions(withReviewer(reviewer(vi.fn(async () => undefined))), ctx('api-key'))
+    expect((await decide(refusing, call)).hookSpecificOutput?.permissionDecision).toBe('deny')
+
+    const rejecting = sdkOptions(
+      withReviewer(
+        reviewer(
+          vi.fn(async () => {
+            throw new Error('no')
+          }),
+        ),
+      ),
+      ctx('api-key'),
+    )
+    expect((await decide(rejecting, call)).hookSpecificOutput?.permissionDecision).toBe('deny')
+
+    const agentInput = { prompt: 'p', description: 'd', subagent_type: 'superagent-reviewer' }
+    expect(guardDecision(spec(), 'Agent', agentInput)).toContain('Only these subagent types')
+    expect(guardDecision(withReviewer(reviewer()), 'Agent', agentInput)).toBeUndefined()
+  })
+
+  it('the Agent PostToolUse hook passes the reviewer output to finished', async () => {
+    const signal = new AbortController().signal
+    const finished = vi.fn()
+    const options = sdkOptions(withReviewer(reviewer(undefined, finished)), ctx('api-key'))
+    const post = (tool_input: unknown, agent_id?: string) =>
+      hookFn(options.hooks!.PostToolUse)(
+        {
+          hook_event_name: 'PostToolUse',
+          tool_name: 'Agent',
+          tool_input,
+          tool_response: {
+            content: [
+              { type: 'text', text: 'ok' },
+              { type: 'text', text: 'FINDINGS bug=1 missing=0 style=1' },
+            ],
+          },
+          session_id: 's',
+          transcript_path: 't',
+          cwd: '/work/t1',
+          tool_use_id: 'u',
+          ...(agent_id !== undefined ? { agent_id } : {}),
+        },
+        'u',
+        { signal },
+      )
+
+    await post({ subagent_type: 'superagent-reviewer', prompt: 'p', description: 'd' })
+    expect(finished).toHaveBeenCalledTimes(1)
+    expect(finished).toHaveBeenCalledWith('ok\nFINDINGS bug=1 missing=0 style=1')
+
+    await post({ subagent_type: 'general-purpose', prompt: 'p', description: 'd' })
+    await post({ subagent_type: 'superagent-reviewer', prompt: 'p', description: 'd' }, 'r1')
+    expect(finished).toHaveBeenCalledTimes(1)
+
+    expect(agentResponseText('x')).toBe('x')
+    expect(agentResponseText({})).toBe('')
+    expect(agentResponseText(null)).toBe('')
+    expect(sdkOptions(spec(), ctx('api-key')).hooks!.PostToolUse).toBeUndefined()
   })
 })

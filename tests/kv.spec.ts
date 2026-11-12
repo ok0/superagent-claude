@@ -27,7 +27,7 @@ it('keeps KV records across a reopen, and holds only the expected key families w
   expect(reopened.get(KV.sources.labels('chat'))).toEqual({ a: 'A' })
   expect(reopened.get(KV.sessions.prompts('router'))).toEqual([1, 2])
   expect(reopened.keys(KV.sources.labels)).toEqual(['source-labels:chat'])
-  expect(Object.keys(KV)).toEqual(['health', 'store', 'runtime', 'sessions', 'sources'])
+  expect(Object.keys(KV)).toEqual(['health', 'store', 'runtime', 'sessions', 'review', 'sources'])
   expect(
     Object.values(KV).flatMap(group =>
       Object.values(group).map(entry => (typeof entry === 'string' ? entry : entry.prefix)),
@@ -39,6 +39,7 @@ it('keeps KV records across a reopen, and holds only the expected key families w
     'router-prompt-version',
     'runtime-ready',
     'session-prompts:',
+    'review:',
     'source-labels:',
   ])
   reopened.close()

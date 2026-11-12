@@ -27,6 +27,7 @@ import {
   type RuntimeEvent,
   type RuntimeInput,
   type SessionSpec,
+  type SubagentSpec,
   type ToolSpec,
 } from './contract.ts'
 import type { Slots } from './slots.ts'
@@ -53,6 +54,7 @@ export interface WorkerDeps {
   history?(cwd: string): Promise<string>
   /** A host note for a fresh launch, such as missing write access. */
   launchNote?(ticket: Ticket, workspace: Workspace): string | undefined
+  subagents?(ticket: Ticket): SubagentSpec[]
 }
 export interface WorkerTimers {
   setTimeout(run: () => void, ms: number): unknown
@@ -279,6 +281,7 @@ export class WorkerExecutor implements Executor {
     record?: WorkerRecord,
   ): Promise<SessionSpec> {
     const model = this.model()
+    const subagents = this.deps.subagents?.(ticket) ?? []
     return {
       key: workerKey(ticket.id),
       role: 'worker',
@@ -289,6 +292,7 @@ export class WorkerExecutor implements Executor {
       network: { allow: [...this.network()] },
       limits: remainingLimits(this.limits, record?.assignmentId === assignment.id ? record : undefined),
       env: this.deps.env?.(ticket) ?? {},
+      ...(subagents.length ? { subagents } : {}),
       ...(resume ? { resume } : {}),
       ...(model ? { model } : {}),
     }

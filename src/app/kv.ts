@@ -17,6 +17,7 @@ export function family<V, A extends unknown[] = [string]>(
 }
 
 import type { HealthSnapshot } from '../infra/health.ts'
+import type { ReviewState } from './review.ts'
 
 /** The readiness marker the daemon writes once started: its pid and when it became ready. */
 export interface RuntimeReady {
@@ -45,6 +46,8 @@ export const KV = {
    * The last entry (`.at(-1)`) is its active revision.
    */
   sessions: { prompts: family<number[], [session: string]>('session-prompts:') },
+  /** Reviews: per-Ticket pre-publish review state (count, last reviewed HEAD, pending review), written by Reviews. */
+  review: { state: family<ReviewState, [ticketId: string]>('review:') },
   /** Per-Source resolved display names mapping a named ID (such as a chat ID) to its display name. */
   sources: { labels: family<Record<string, string>, [source: string]>('source-labels:') },
 }
