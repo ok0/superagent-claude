@@ -1,8 +1,10 @@
 /**
- * Claude runtime adapter: one SDK query per session fed by a message stream. steer is sent into the running turn with priority next;
- * followup is held until the running turn's result; inject is merged into the next input sent (never sent alone, the SDK shouldQuery
- * flag is unused). Message uuids are adapter UUIDs mapped to input ids. The permission mode is fixed by options.ts.
- * A result suppressed by interrupt does not end the newer turn: busy and held followups wait for that turn's own result.
+ * Claude runtime adapter: one SDK query per session fed by a message stream.
+ * steer is sent into the running turn with priority next; followup is held until the running turn's result.
+ * inject is merged into the next input sent and is never sent alone (the SDK shouldQuery flag is unused).
+ * Message uuids are adapter UUIDs mapped to input ids. The permission mode is fixed by options.ts.
+ * A result suppressed by interrupt does not end the newer turn:
+ * busy and held followups wait for that turn's own result.
  */
 import {
   query as sdkQuery,
@@ -53,12 +55,11 @@ export interface ClaudeRuntimeOptions {
   sandboxAvailable?: () => boolean
   stderr?: (text: string) => void
   trustRepoConfig?: boolean
-  /** security.weakerNestedSandbox: Linux only, skip the fresh /proc mount inside the sandbox (ADR-27). */
+  /** Linux only: skip the fresh /proc mount inside the sandbox (see options.ts). */
   weakerNestedSandbox?: boolean
-  /** security.allowUnsandboxed: open sessions without the sandbox when the probe finds none. */
+  /** Open sessions without the sandbox when the probe finds none. */
   allowUnsandboxed?: boolean
   onDeny?: (denial: ToolDenial) => void
-  /** <stateDir>/children.json: track SDK child pids there (ADR-32). */
   children?: string
 }
 
@@ -76,7 +77,7 @@ export function bwrapProbeArgs(weakerNested: boolean): string[] {
   ]
 }
 
-/** Linux: bwrap and socat on PATH and one bwrap smoke run with the same /proc choice the SDK makes (fresh /proc, or a tmpfs /proc with weakerNested, the mask the SDK also adds). */
+/** Linux: bwrap and socat on PATH, and a bwrap smoke run with the /proc mount the SDK will use. */
 export function sandboxAvailable(
   platform: NodeJS.Platform = process.platform,
   weakerNested = false,

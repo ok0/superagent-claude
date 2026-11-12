@@ -1,4 +1,8 @@
-/** Maps a SessionSpec to the SDK Options: a whitelisted environment, the builtin tool sets, the fixed permission posture (dontAsk, never bypass), the guard and read hooks, the worker-only Agent with the subagent guard, the sandbox and the limits. */
+/**
+ * Maps a SessionSpec to the SDK Options: a whitelisted environment, the builtin tool sets, the fixed permission posture
+ * (dontAsk, never bypass), the guard and read hooks, the worker-only Agent with the subagent guard,
+ * the sandbox and the limits.
+ */
 import type {
   Options,
   HookCallback,
@@ -51,7 +55,7 @@ const SUBAGENT_ISOLATION = 'Subagent isolation is not allowed'
 const SUBAGENT_NESTED = 'A subagent cannot start another subagent'
 const SUBAGENT_HOST_TOOL = 'Host tools are only available to the main worker, not to subagents'
 
-/** Turns off the CLI's commit and PR attribution in every session through the flag settings layer; settingSources stays as it is (ADR-34). */
+/** Turns off CLI commit and PR attribution through the flag settings layer; settingSources stays as it is. */
 export const ATTRIBUTION_OFF = {
   attribution: { commit: '', pr: '', sessionUrl: false },
   includeCoAuthoredBy: false,
@@ -62,14 +66,21 @@ export interface OptionsContext {
   env: Readonly<Record<string, string | undefined>>
   configDir: string
   sandbox: boolean
-  /** Linux only, skip the fresh /proc mount inside the sandbox (ADR-27). Also sets denyRead /proc; CLI 0.3.321 binds /proc after that mask, so /proc stays visible, and other processes' environ reads were measured as denied (ADR-33). */
+  /**
+   * Linux only, skip the fresh /proc mount inside the sandbox. Also sets denyRead /proc.
+   * CLI 0.3.321 binds /proc after that mask, so /proc stays visible;
+   * other processes' environ reads were measured as denied.
+   */
   weakerNestedSandbox?: boolean
   sessionId?: string
   mcp?: McpServerConfig
   onRead: () => void
   abortController: AbortController
   stderr?: (text: string) => void
-  /** security.trustRepoConfig: load the repository's project settings. Repository MCP config stays ignored (strictMcpConfig). */
+  /**
+   * security.trustRepoConfig: load the repository's project settings.
+   * Repository MCP config stays ignored (strictMcpConfig).
+   */
   trustRepoConfig?: boolean
   /** Called once per guard denial with the tool name and the fixed reason (never the command). */
   onDeny?: (tool: string, reason: string, agentId?: string) => void

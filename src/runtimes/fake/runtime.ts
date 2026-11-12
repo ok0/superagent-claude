@@ -1,4 +1,7 @@
-/** A scripted AgentRuntime for tests and demos: each turn runs the reaction its script returns, following the input-mode semantics of docs/runtime-contract.md deterministically (no real time or network; delays use injected timers). */
+/**
+ * Scripted AgentRuntime for tests and demos. Follows the input-mode semantics of docs/runtime-contract.md
+ * deterministically: no real time or network; delays use injected timers.
+ */
 import type {
   AgentRuntime,
   AgentSession,

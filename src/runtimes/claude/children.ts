@@ -1,4 +1,4 @@
-/** Tracks the runtime's child processes in <stateDir>/children.json and stops the ones an earlier host left running (ADR-32). */
+/** Tracks the runtime's child processes in <stateDir>/children.json and stops the ones an earlier host left running. */
 import { spawn, execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'

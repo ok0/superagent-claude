@@ -1,7 +1,8 @@
-/** Worker slots: max normal slots plus one extra slot kept for a person's message or a status request; a waiting wake takes a freed slot before a launch. Held in memory; restart recovery acquires again. */
-/** Why a slot is wanted: a new launch or a wake of an existing ticket. */
+/**
+ * Worker slots: max normal slots plus one extra slot kept for a person's message or a status request.
+ * A waiting wake takes a freed slot before a launch. Held in memory; restart recovery acquires again.
+ */
 export type SlotKind = 'launch' | 'wake'
-/** In-memory worker slot accounting. */
 export class Slots {
   readonly max: number
   private readonly held = new Map<string, 'normal' | 'extra'>()
@@ -9,7 +10,7 @@ export class Slots {
   constructor(max: number) {
     this.max = max
   }
-  /** Whether ticketId holds a slot now. A ticket that already holds one gets true without taking another. */
+  /** A ticket that already holds a slot gets true without taking another. */
   acquire(ticketId: string, kind: SlotKind, human: boolean): boolean {
     if (this.held.has(ticketId)) return true
     let normal = 0
@@ -35,16 +36,15 @@ export class Slots {
     this.waiting.add(ticketId)
     return false
   }
-  /** Frees ticketId's slot and forgets its waiting wake; idempotent. */
+  /** Idempotent; also forgets the ticket's waiting wake. */
   release(ticketId: string): void {
     this.held.delete(ticketId)
     this.waiting.delete(ticketId)
   }
-  /** Whether ticketId currently holds a slot. */
   holds(ticketId: string): boolean {
     return this.held.has(ticketId)
   }
-  /** Number of slots currently held, normal and extra. */
+  /** Held slots, normal and extra. */
   get used(): number {
     return this.held.size
   }

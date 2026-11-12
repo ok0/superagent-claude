@@ -1,4 +1,3 @@
-/** Maps Claude SDK stream messages to runtime events: input reads, session ids, turn ends and background task counts. */
 import type { SDKAssistantMessageError, SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { RuntimeEvent, TurnOutcome } from '../../executor/contract.ts'
 

@@ -1,4 +1,4 @@
-/** MCP bridge: exposes the host ToolSpecs as an in-process SDK MCP server named `superagent`, so tool names and argument validation match the host tools exactly. */
+/** Exposes the host ToolSpecs as an in-process SDK MCP server named `superagent`, so names and validation match. */
 import {
   createSdkMcpServer,
   tool,

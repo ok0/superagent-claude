@@ -1,4 +1,10 @@
-/** Worker workspaces: git worktrees on agent branches over one shared clone per repository, and scratch directories for fake runs. Clone and fetch get the injected access env (authentication) and errors mask its secrets. Publishing pushes an agent branch without force, adding co-author trailers only to commits not yet pushed. Access errors carry the HTTP status when one is known. A transient push failure is retried up to 3 times (2 s, 5 s). */
+/**
+ * Worker workspaces: git worktrees on agent branches over one shared clone per repository,
+ * and scratch directories for fake runs.
+ * Clone and fetch get the injected access env (authentication), and errors mask its secrets.
+ * Publishing pushes an agent branch without force, adding co-author trailers only to commits not yet pushed.
+ * Access errors carry the HTTP status when one is known. A transient push failure is retried up to 3 times (2 s, 5 s).
+ */
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Ticket } from '../core/index.ts'
@@ -19,20 +25,19 @@ export class RepositoryAccessError extends Error {
   }
 }
 
-/** The HTTP status of a failed hosting or git call: the API error code, or the status git or the API program printed. */
+/** The API error code, or the HTTP status printed by git or the API program. */
 export function accessStatus(error: unknown): number | undefined {
   if (error instanceof CliError && error.code !== undefined && error.code >= 100 && error.code <= 599) return error.code
   const found = /\b(?:HTTP|returned error:)\s*(\d{3})\b/i.exec(error instanceof Error ? error.message : String(error))
   return found ? Number(found[1]) : undefined
 }
 
-/** Attempts for a transient push failure and the waits between them, in milliseconds (ADR-25). */
 export const PUSH_ATTEMPTS = 3
 export const PUSH_BACKOFF_MS: readonly number[] = [2_000, 5_000]
 
 export type PushFailure = { kind: 'rejected' } | { kind: 'access'; status: number | undefined } | { kind: 'transient' }
 
-/** Anything that is not a non-fast-forward or an access failure is transient (ADR-25). */
+/** Anything that is not a non-fast-forward or an access failure is transient. */
 export function pushFailure(message: string, status: number | undefined): PushFailure {
   if (/non-fast-forward|fetch first|\[rejected\]|updates were rejected/i.test(message)) return { kind: 'rejected' }
   if (status === 401 || status === 403 || status === 404) return { kind: 'access', status }
@@ -89,7 +94,10 @@ export function worktreeName(ticket: Pick<Ticket, 'id' | 'execution'>): string {
 const NAME = /^[a-z0-9][a-z0-9._-]{0,99}$/i
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
 
-/** Where a repository is fetched from, the env that authenticates only the clone and fetch calls, and the values masked in errors. Provided by the Source assembly point so the executor never names the hosting service. */
+/**
+ * Provided by the Source assembly point so the executor never names the hosting service.
+ * `env` authenticates only the clone and fetch calls; `secrets` are masked in errors.
+ */
 export interface RepositoryAccess {
   remote(repository: string): string
   env(repository: string): Record<string, string>

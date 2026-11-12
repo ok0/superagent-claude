@@ -1,4 +1,8 @@
-/** WorkerExecutor: the core Executor over an AgentRuntime. start, deliver and stop only queue work; launch and delivery effect handlers take a slot, prepare the workspace, open or resume the worker session, and report its events to the Engine; limits, retries and background work are enforced here (ADR-3, ADR-6, ADR-17). */
+/**
+ * WorkerExecutor: the core Executor over an AgentRuntime. start, deliver and stop only queue work.
+ * Launch and delivery effect handlers take a slot, prepare the workspace, open or resume the worker session,
+ * and report its events to the Engine. Limits, retries and background work are enforced here.
+ */
 import { Later, type Effects } from '../app/effects.ts'
 import type { Store } from '../app/store.ts'
 import {
@@ -39,17 +43,15 @@ export interface Workspace {
   branch: string
 }
 export type PromptChange = { kind: 'same' } | { kind: 'team'; notice: string } | { kind: 'fixed' }
-/** Injected collaborators: the workspace, the instructions and the worker tools (M8/M11, M12); the prompt-version change and the git history for resumed sessions (M12, ADR-18). */
 export interface WorkerDeps {
   prepare(ticket: Ticket): Promise<Workspace>
   instructions(ticket: Ticket): Promise<string>
   tools(ticket: Ticket, assignment: Assignment): ToolSpec[]
   env?(ticket: Ticket): Record<string, string>
   promptVersion?(): string
-  /** How the prompt changed since the version a ticket's earlier session used (ADR-18). */
   promptChange?(stored: string): PromptChange
   history?(cwd: string): Promise<string>
-  /** A host note for a fresh launch, such as missing write access (ADR-26). */
+  /** A host note for a fresh launch, such as missing write access. */
   launchNote?(ticket: Ticket, workspace: Workspace): string | undefined
 }
 export interface WorkerTimers {
@@ -76,7 +78,10 @@ export interface WorkerExecutorOptions {
   paused?: () => boolean
   health?: Pick<HealthEntry, 'set'>
 }
-/** Mode of a ticket Input (see docs/runtime-contract.md): a person's message steers; notes, legacy reopen markers and a message no person wrote that waited on a ready ticket (`quiet`) are injected; everything else is a followup. */
+/**
+ * Mode of a ticket Input (see docs/runtime-contract.md): a person's message steers; notes, reopen markers and
+ * a message no person wrote that waited on a ready ticket (`quiet`) are injected; everything else is a followup.
+ */
 export function inputMode(input: TicketInput): InputMode {
   switch (input.kind) {
     case 'trigger':
@@ -90,7 +95,10 @@ export function inputMode(input: TicketInput): InputMode {
       return 'followup'
   }
 }
-/** What is left of the limits for an Assignment that used `used` already: the SDK caps of a launch or resume, at least 1 turn and $0.01 (ADR-24). The host still checks the totals (ADR-6). */
+/**
+ * What is left of the limits for an Assignment that used `used` already: the SDK caps of a launch or resume,
+ * at least 1 turn and $0.01. The host still checks the totals.
+ */
 export function remainingLimits(
   limits: { maxTurns: number; maxBudgetUsd: number },
   used?: { turns: number; costUsd: number },
@@ -101,7 +109,7 @@ export function remainingLimits(
     maxBudgetUsd: Math.max(0.01, Math.round((limits.maxBudgetUsd - used.costUsd) * 1e6) / 1e6),
   }
 }
-/** Worker-facing text of an Input; undefined for a legacy reopen marker, which is marked delivered without being sent. */
+/** Worker-facing text of an Input; undefined for a reopen marker, which is marked delivered without being sent. */
 export function renderInput(input: TicketInput, trigger?: Trigger): string | undefined {
   switch (input.kind) {
     case 'trigger':
@@ -205,11 +213,10 @@ export class WorkerExecutor implements Executor {
       void this.halt(ticket.id, assignment.id)
     })
   }
-  /** Ticket IDs whose worker session is open now. */
   liveTickets(): string[] {
     return [...this.live.keys()]
   }
-  /** Injects a host notice into the ticket's open worker session; it is read with the next input (inject never starts a turn). False when no session is open. */
+  /** Injects a host notice, read with the next input; never starts a turn. False when no session is open. */
   notify(ticketId: string, notice: { id: string; text: string }): boolean {
     const live = this.live.get(ticketId)
     if (!live) return false
@@ -544,7 +551,7 @@ export class WorkerExecutor implements Executor {
           } catch (e) {
             this.problem(e)
           }
-          // A ticket that kept its ready report is done; only one with work under way is blocked (ADR-24).
+          // A ticket that kept its ready report is done; only one with work under way is blocked.
           if (!kept)
             this.report(ticketId, {
               state: 'blocked',
