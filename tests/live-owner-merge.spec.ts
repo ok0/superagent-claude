@@ -451,7 +451,7 @@ describe('live spec order', () => {
 
   it('merges after judging and before evidence cleanup', () => {
     const afterAll = spec.indexOf('afterAll(async')
-    const merge = spec.indexOf('mergeOwnerPulls(pickMerges(flowCandidates(FLOWS')
+    const merge = spec.indexOf('mergeOwnerPulls(')
     const cleanup = spec.indexOf('evidence.cleanup = await cleanup()')
     expect(afterAll).toBeGreaterThan(-1)
     expect(afterAll).toBeLessThan(merge)

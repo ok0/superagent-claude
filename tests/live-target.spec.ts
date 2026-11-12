@@ -55,6 +55,7 @@ const CLAUDE_ONLY_SPECS = [
   'claude-resume.spec.ts',
   'guard-denial.spec.ts',
   'repo-config.spec.ts',
+  'review-apply.spec.ts',
   'sandbox-linux.spec.ts',
   'subagent.spec.ts',
 ]

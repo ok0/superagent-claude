@@ -12,7 +12,9 @@
  * Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three
  * tokens; never prints a token; all GitHub access goes through the guarded helper; After judging, the owner
  * squash-merges at most one passing pull request per scenario kind (bug, feature, ui). Cleanup then closes this run's
- * other pull requests without merging, deletes their agent branches, and closes this run's issues.
+ * other pull requests without merging, deletes their agent branches, and closes this run's issues. SUPERAGENT_CLAUDE_LIVE_ONLY
+ * (comma-separated scenario ids), SUPERAGENT_CLAUDE_LIVE_REVIEW=off (pre-publish review disabled) and
+ * SUPERAGENT_CLAUDE_LIVE_MERGE=off (no owner squash-merge) select a subset and the A/B settings.
  */
 import { EventEmitter } from 'node:events'
 import {
@@ -63,6 +65,15 @@ import type { MergeVerdict } from './owner-merge.ts'
 import type { IssueComment } from './ambiguity.ts'
 import { prepareBranch, preparedProblems, preparePull } from './prepare-pr.ts'
 import type { PreparedPull } from './prepare-pr.ts'
+import {
+  FORBIDDEN,
+  appliedCount,
+  briefMarkers,
+  findingRefs,
+  reviewerSidechains,
+  tokenUsage,
+  transcriptFiles,
+} from './review-evidence.ts'
 
 const TARGET = liveTarget()
 const LIVE = liveEnabled()
@@ -73,7 +84,14 @@ const REPO = TARGET ? assertAllowedRepo(TARGET.repo) : ''
 const AGENT = TARGET?.agentLogin ?? ''
 const OWNER = TARGET?.ownerLogin ?? ''
 const RUN = runTag()
-const RAW = await loadScenarios(process.env)
+const ONLY = process.env.SUPERAGENT_CLAUDE_LIVE_ONLY?.split(',')
+  .map(s => s.trim())
+  .filter(Boolean)
+const REVIEW = process.env.SUPERAGENT_CLAUDE_LIVE_REVIEW === 'off' ? 'off' : 'on'
+const MERGE = process.env.SUPERAGENT_CLAUDE_LIVE_MERGE !== 'off'
+const LOADED = await loadScenarios(process.env)
+for (const id of ONLY ?? []) if (!LOADED.some(s => s.id === id)) throw new Error('unknown scenario id: ' + id)
+const RAW = ONLY ? LOADED.filter(s => ONLY.includes(s.id)) : LOADED
 const SCENARIOS = TARGET ? RAW.map(s => renderScenario(s, TARGET)) : RAW
 const FLOWS = scenarioFlows(SCENARIOS)
 const issueBody = (s: LiveScenario): string => s.issue.body + '\n\n<!-- live-test ' + RUN + ' -->'
@@ -203,6 +221,67 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
     } finally {
       reader.close()
     }
+  }
+  const reviewGate = async (): Promise<Record<string, unknown>[]> => {
+    const workers = storeQuery('SELECT ticket_id, session_id, branch, turns, cost_usd FROM worker')
+    const kv = storeQuery("SELECT key, value FROM kv WHERE key LIKE 'review:%'")
+    const files = transcriptFiles(join(dir, 'state', 'claude', 'projects'))
+    const reviewers = reviewerSidechains(files)
+    const out: Record<string, unknown>[] = []
+    for (const flow of FLOWS) {
+      const id = flow.initial.id
+      const pull = flowState.get(id)?.pull
+      if (!pull) continue
+      const worker = workers.find(w => w.branch === pull.head.ref)
+      if (!worker) {
+        out.push({ id, pull: pull.number, worker: null })
+        continue
+      }
+      const detail = await owner<PullInfo>(['repos/' + REPO + '/pulls/' + pull.number])
+      const reviews = lines.filter(l => l.event === 'worker.review' && l.ticketId === worker.ticket_id)
+      const beforePr = reviews.filter(l => Date.parse(String(l.at)) < Date.parse(detail.created_at))
+      const row = kv.find(r => r.key === 'review:' + String(worker.ticket_id))
+      const state = row ? (JSON.parse(String(row.value)) as { reviewedHead?: string }) : undefined
+      const sessionFiles = files.filter(f => f.includes(String(worker.session_id)))
+      const mapped = reviewers.some(r => sessionFiles.includes(r.file))
+      const ticketReviewers = mapped ? reviewers.filter(r => sessionFiles.includes(r.file)) : reviewers
+      const brief = ticketReviewers[0] ? briefMarkers(ticketReviewers[0].prompt, flow.initial.issue.title) : null
+      const refs = findingRefs(ticketReviewers[0]?.output ?? '')
+      const postReviewFiles = state?.reviewedHead
+        ? ((
+            await owner<{ files?: { filename: string }[] }>([
+              'repos/' + REPO + '/compare/' + state.reviewedHead + '...' + pull.head.sha,
+            ])
+          ).files?.map(f => f.filename) ?? [])
+        : []
+      const denials = lines.filter(
+        l => l.event === 'worker.tool_denied' && l.ticketId === worker.ticket_id && l.agentId !== undefined,
+      )
+      const forbiddenUses = ticketReviewers
+        .flatMap(r => r.toolUses)
+        .filter(u => (FORBIDDEN as readonly string[]).includes(u.name)).length
+      out.push({
+        id,
+        pull: pull.number,
+        ticketId: worker.ticket_id,
+        reviewCount: reviews.length,
+        beforePr: beforePr.length,
+        rounds: reviews.map(l => ({ round: l.round, changedLines: l.changedLines, findings: l.findings, at: l.at })),
+        prCreatedAt: detail.created_at,
+        costUsd: worker.cost_usd,
+        turns: worker.turns,
+        tokens: tokenUsage(sessionFiles),
+        mapped,
+        brief,
+        findingRefs: refs,
+        applied: appliedCount(refs, postReviewFiles),
+        postReviewFiles,
+        reviewerDenials: denials.length,
+        reviewerForbiddenToolUses: forbiddenUses,
+        reviewerOutput: ticketReviewers[0]?.output ?? null,
+      })
+    }
+    return out
   }
   const triggerOfIssue = (n: number): Trigger | undefined =>
     storeRows<Trigger>('trigger').find(
@@ -480,7 +559,9 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
 
     dir = mkdtempSync(join(tmpdir(), 'sac-code-change-'))
     configPath = join(dir, 'superagent-claude.json')
-    config = liveConfig({ repo: REPO, owner: OWNER, stateDir: join(dir, 'state') })
+    config = liveConfig({ repo: REPO, owner: OWNER, stateDir: join(dir, 'state'), review: REVIEW === 'on' })
+    evidence.reviewMode = REVIEW
+    evidence.only = ONLY ?? null
     writeFileSync(configPath, JSON.stringify(config, null, 2))
     startedAt = new Date().toISOString()
     done = main(['start', '--config', configPath], {
@@ -533,16 +614,28 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
       expect(lineHits).toBe(0)
       scanned = true
       evidence.tokenScan = { files: fileHits, captured: lineHits }
+      try {
+        evidence.reviewGate = await reviewGate()
+      } catch (error) {
+        evidence.reviewGate = 'error: ' + (error as Error).message
+      }
     } finally {
       try {
-        const merges = await mergeOwnerPulls(pickMerges(flowCandidates(FLOWS, verdicts as unknown as MergeVerdict[])), {
-          token: OWNER_TOKEN!,
-        })
-        for (const entry of merges) {
-          if (entry.merged) merged.add(entry.pull)
-          if (entry.reason?.startsWith('error:')) cleanupErrors.push('merge PR ' + entry.pull + ': ' + entry.reason)
+        if (MERGE) {
+          const merges = await mergeOwnerPulls(
+            pickMerges(flowCandidates(FLOWS, verdicts as unknown as MergeVerdict[])),
+            {
+              token: OWNER_TOKEN!,
+            },
+          )
+          for (const entry of merges) {
+            if (entry.merged) merged.add(entry.pull)
+            if (entry.reason?.startsWith('error:')) cleanupErrors.push('merge PR ' + entry.pull + ': ' + entry.reason)
+          }
+          evidence.merges = merges
+        } else {
+          evidence.merges = 'skipped'
         }
-        evidence.merges = merges
       } catch (error) {
         cleanupErrors.push('merge: ' + (error as Error).message)
         evidence.merges = []
@@ -687,6 +780,12 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
           commits: await commitCount(),
         }
 
+        const trigger = triggerOfIssue(state.issue)
+        const ticket = storeRows<Ticket>('ticket').find(row => row.origin.triggerId === trigger?.id)
+        expect(ticket).toBeDefined()
+        const reviewsOf = (): number =>
+          lines.filter(l => l.event === 'worker.review' && l.ticketId === ticket!.id).length
+        const reviewBefore = reviewsOf()
         const review = await owner<{ html_url: string }>(
           ['repos/' + REPO + '/pulls/' + number + '/reviews', '-X', 'POST', '--input', '-'],
           { input: JSON.stringify({ event: 'COMMENT', body: assertClean('review', followUp.review!.body) }) },
@@ -701,6 +800,11 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
           'new head on the pull request of ' + flow.initial.id,
         )
 
+        const reviewAfter = reviewsOf()
+        const compare = await owner<{ files?: { additions: number; deletions: number }[] }>([
+          'repos/' + REPO + '/compare/' + before.head.sha + '...' + newHead,
+        ])
+        const followUpChangedLines = (compare.files ?? []).reduce((total, f) => total + f.additions + f.deletions, 0)
         const now = await owner<PullInfo>(['repos/' + REPO + '/pulls/' + number])
         expect(now.head.ref).toBe(before.head.ref)
         expect(now.state).toBe('open')
@@ -712,9 +816,6 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
             .map(ticket => ticket.id)
             .sort(),
         ).toEqual(before.tickets)
-        const trigger = triggerOfIssue(state.issue)
-        const ticket = storeRows<Ticket>('ticket').find(row => row.origin.triggerId === trigger?.id)
-        expect(ticket).toBeDefined()
         const [worker] = storeQuery('SELECT * FROM worker WHERE ticket_id = ?', ticket!.id)
         expect(worker?.branch).toBe(now.head.ref)
         const current = await owner<PullInfo>(['repos/' + REPO + '/pulls/' + number])
@@ -725,6 +826,9 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
           review: review.html_url,
           newHead,
           commits: { before: before.commits, after: commits },
+          followUpChangedLines,
+          reviewCount: { before: reviewBefore, after: reviewAfter },
+          expectedRound2: followUpChangedLines >= 50,
         })
       }
     }

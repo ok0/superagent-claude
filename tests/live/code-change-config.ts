@@ -12,7 +12,12 @@ export function pullWaitMs(flows: number): number {
 }
 export const LIVE_NETWORK_ALLOW: readonly string[] = ['registry.npmjs.org']
 
-export function liveConfig(o: { repo: string; owner: string; stateDir: string }): Record<string, unknown> {
+export function liveConfig(o: {
+  repo: string
+  owner: string
+  stateDir: string
+  review?: boolean
+}): Record<string, unknown> {
   return {
     repositories: [o.repo],
     policy: { allowed: [o.owner], acceptMode: 'auto' },
@@ -21,5 +26,6 @@ export function liveConfig(o: { repo: string; owner: string; stateDir: string })
     workers: { ...LIVE_LIMITS },
     network: { allow: [...LIVE_NETWORK_ALLOW] },
     stateDir: o.stateDir,
+    ...(o.review === false ? { review: { enabled: false } } : {}),
   }
 }
