@@ -16,6 +16,7 @@ export const PUBLIC_FILES = [
   '.github/pull_request_template.md',
   '.github/workflows/ci.yml',
   'docs/releasing.md',
+  'docs/deploy.md',
 ] as const
 
 export const REQUIRED_CONTRIBUTING = [

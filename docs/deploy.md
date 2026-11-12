@@ -10,6 +10,9 @@
   - [Probes and stopping](#probes-and-stopping)
   - [JSON logs](#json-logs)
   - [Sandbox on Kubernetes](#sandbox-on-kubernetes)
+- [Extending the image](#extending-the-image)
+- [Running multiple accounts/projects](#running-multiple-accountsprojects)
+- [Known limitations](#known-limitations)
 
 ## Service setup
 
@@ -283,6 +286,68 @@ The pod runs as uid 10001 with every capability dropped, no privilege escalation
 2. Set `security.allowUnsandboxed: true` and restrict egress with a NetworkPolicy. Commands then run without the sandbox; see [security.md](security.md#containers).
 
 An `Unconfined` seccomp or AppArmor profile is rejected at `baseline` and `restricted`. It needs a namespace at the `privileged` Pod Security level or an exemption from Pod Security admission. The manifest does not use it, and it is not recommended.
+
+## Extending the image
+
+The image has the tools the service needs (git, gh, ripgrep and the sandbox), but no language toolchain for your projects. To let the worker build and test them, build your own image `FROM` the published image `ghcr.io/ok0/superagent-claude` and install the toolchain in it. `deploy/docker/Dockerfile.toolchain` is an example. It installs `python3` and `make` as root, then switches back to uid 10001:
+
+```dockerfile
+# Example: extend the published superagent-claude image with a toolchain.
+# Installs as root, then switches back to the image's non-root user.
+# Keep secrets out of ENV and ARG; pass them when the container runs.
+ARG BASE=ghcr.io/ok0/superagent-claude:0.1
+FROM ${BASE}
+USER root
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make \
+  && rm -rf /var/lib/apt/lists/*
+USER 10001:10001
+# ENTRYPOINT, CMD, HOME and the state volume come from the base image.
+```
+
+Build it on a published version, or with `--build-arg BASE=superagent-claude:local` on a local build:
+
+```sh
+docker build --build-arg BASE=ghcr.io/ok0/superagent-claude:0.1 \
+  -f deploy/docker/Dockerfile.toolchain -t superagent-claude:toolchain .
+```
+
+The new image keeps the entrypoint, `HOME`, the state volume and the non-root user of the base image, so run it like the base image above. Do not put secrets in `ENV` or `ARG`. From a clone of this repository, `bash scripts/check-image-secrets.sh superagent-claude:toolchain` checks the built image.
+
+The worker does not detect which tools the image has. List them, with the commands that build and test the project, in the repository's environment note, so the worker knows to use them. [Configuration](configuration.md#environment-notes) gives the note's path and size limit. Keep secrets out of the note. A command that downloads packages while the worker runs, such as `pip install`, also needs its hosts in `network.allow`.
+
+## Running multiple accounts/projects
+
+One process uses one GitHub token, `SUPERAGENT_CLAUDE_GITHUB_TOKEN`. To work for more than one account, organization or project, run one instance for each, from its own directory. Each instance has its own config file, its own `stateDir` and its own `SUPERAGENT_CLAUDE_GITHUB_TOKEN`. Set `stateDir` in each config, for example `"stateDir": "~/agents/acme/state"`, and start each instance in its own shell:
+
+```sh
+cd ~/agents/acme
+export SUPERAGENT_CLAUDE_GITHUB_TOKEN=<token of the acme agent account>
+superagent-claude start --config superagent-claude.json
+```
+
+```sh
+cd ~/agents/personal
+export SUPERAGENT_CLAUDE_GITHUB_TOKEN=<token of the personal agent account>
+superagent-claude start --config superagent-claude.json
+```
+
+As a service, copy the systemd unit or the launchd plist from [Service setup](#service-setup) once for each instance, each with its own env file and `--config` path.
+
+A second `start` with the same `stateDir` is refused: the first instance holds the state lock, and the second exits with code 2.
+
+Keep one instance per repository: do not list the same repository in the `repositories` of two instances. Nothing detects two instances that watch the same repository. If they overlap, both can answer the same issue.
+
+On Kubernetes, give each instance its own Deployment and PVC, and its own Secret and ConfigMap. Copy `deploy/k8s/superagent-claude.yaml`, rename the four objects and the references to them in the Deployment, and keep `replicas: 1`. With Docker, give each container its own name, state volume, env file and config. In both cases, keep the repositories of the instances apart.
+
+There is no command that creates an instance. These steps are manual.
+
+## Known limitations
+
+- The worker cannot run end-to-end tests that need services, databases, browsers or Docker inside the sandbox. Extending the image does not change this.
+- There is no per-ticket setup: the worker does not prepare dependencies in each ticket's worktree before it starts work.
+
+Both are open for later review.
 
 ## Next
 

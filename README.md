@@ -31,8 +31,13 @@ A container image is published as `ghcr.io/ok0/superagent-claude`. See [Docker](
 - [Authentication](docs/authentication.md): auth modes and start refusals
 - [Runtime contract](docs/runtime-contract.md)
 - [Deploy](docs/deploy.md): run as a service
+- [Running multiple accounts/projects](docs/deploy.md#running-multiple-accountsprojects): one instance per account or project
 - [Security](docs/security.md): trust policy
 - [Contributing](CONTRIBUTING.md): setup, checks and pull requests
+
+## Known limitations
+
+The worker cannot run end-to-end tests that need services, databases, browsers or Docker inside the sandbox, and it has no per-ticket setup: it does not prepare dependencies in each ticket's worktree. Both are open for later review. See [Known limitations](docs/deploy.md#known-limitations).
 
 ## Test repositories
 
