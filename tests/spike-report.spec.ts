@@ -5,17 +5,17 @@ import type { ItemResult, RunRecord } from '../spikes/sdk/lib/types.ts'
 
 const PREFIX = 'sk-' + 'ant-'
 const IDS: [string, string][] = [
-  ['steer', 'R9'],
-  ['inputs-read', 'R10'],
-  ['later-inject', 'R11'],
-  ['interrupt', 'R12'],
-  ['result', 'R13'],
-  ['background-bash', 'R14'],
-  ['resume', 'R15'],
-  ['pretooluse-guard', 'R16'],
-  ['disallowed-tools', 'R17'],
-  ['setting-sources', 'R18'],
-  ['sandbox-secrets', 'R19'],
+  ['steer', 'steer'],
+  ['inputs-read', 'inputs-read'],
+  ['later-inject', 'later-inject'],
+  ['interrupt', 'interrupt'],
+  ['result', 'result'],
+  ['background-bash', 'background-bash'],
+  ['resume', 'resume'],
+  ['pretooluse-guard', 'pretooluse-guard'],
+  ['disallowed-tools', 'disallowed-tools'],
+  ['setting-sources', 'setting-sources'],
+  ['sandbox-secrets', 'sandbox-secrets'],
 ]
 
 function blocked(id: string, req: string): ItemResult {
@@ -31,14 +31,14 @@ function blocked(id: string, req: string): ItemResult {
     evidence: [],
     attempts: 0,
     costs: [],
-    adrs: 'ADR-5',
+    adrs: 'input-delivery',
   }
 }
 
 function fixture(overrides: Partial<RunRecord> = {}, steer?: Partial<ItemResult>): RunRecord {
   const version: ItemResult = {
     id: 'version',
-    req: 'R20',
+    req: 'version',
     title: 'version pin',
     status: 'PASS',
     deviation: false,
@@ -106,7 +106,7 @@ describe('renderReport', () => {
     }
   })
 
-  it('keeps ADR-5 and ADR-10 conclusions pending without measurements', () => {
+  it('keeps the input-delivery and resume conclusions pending without measurements', () => {
     const md = renderReport(fixture())
     const adr5 = md.split('\n').find(line => line.includes('입력 전달 결정:'))
     const adr10 = md.split('\n').find(line => line.includes('resume 결정:'))
@@ -125,9 +125,9 @@ describe('renderReport', () => {
     expect(md).toContain('약관 회색지대')
   })
 
-  it('prints the ADR number on each impact line', () => {
+  it('prints the decision topic on each impact line', () => {
     const md = renderReport(fixture())
-    expect(md).toContain('- steer (ADR-5): ')
+    expect(md).toContain('- steer (input-delivery): ')
     expect(md).toContain('- version (-): ')
   })
 

@@ -1,5 +1,8 @@
 /**
- * Live issue→reply run against the playground repository: the daemon started through the CLI in auto mode with subscription OAuth, issues and comments written as the owner account, and evidence read from the logs, the store, GitHub and the session transcripts. Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token.
+ * Live issue→reply run against the playground repository: the daemon started through the CLI in auto mode with
+ * subscription OAuth, issues and comments written as the owner account, and evidence read from the logs, the store,
+ * GitHub and the session transcripts. Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with
+ * its login settings, and the three tokens; never prints a token.
  */
 import { EventEmitter } from 'node:events'
 import {
@@ -382,14 +385,18 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live issue rep
       durationMs: duration,
     }
     evidence.pac3 = pac3
-    console.log(`[PAC3] issue=${issue.html_url}`)
+    console.log(`[issue-reply] issue=${issue.html_url}`)
     for (const comment of pac3.comments)
-      console.log(`[PAC3] comment=${comment.url} createdAt=${comment.createdAt} body=${JSON.stringify(comment.body)}`)
+      console.log(
+        `[issue-reply] comment=${comment.url} createdAt=${comment.createdAt} body=${JSON.stringify(comment.body)}`,
+      )
     console.log(
-      `[PAC3] ticket=${ticketId} assignment=${String(worker.assignment)} session=${String(worker.session)} turns=${String(worker.turns)} costUsd=${String(worker.costUsd)}`,
+      `[issue-reply] ticket=${ticketId} assignment=${String(worker.assignment)} session=${String(worker.session)} turns=${String(worker.turns)} costUsd=${String(worker.costUsd)}`,
     )
-    console.log(`[PAC3] timeline=${JSON.stringify(pac3.timeline)}`)
-    console.log(`[PAC3] evalCount=${pac3.evalCount} receipts=${JSON.stringify(pac3.receipts)} durationMs=${duration}`)
+    console.log(`[issue-reply] timeline=${JSON.stringify(pac3.timeline)}`)
+    console.log(
+      `[issue-reply] evalCount=${pac3.evalCount} receipts=${JSON.stringify(pac3.receipts)} durationMs=${duration}`,
+    )
   }, 1_800_000)
 
   it('a follow-up comment reaches the running ticket without an Eval, and an out-of-scope request is handed back once', async () => {
@@ -556,19 +563,19 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live issue rep
     }
     evidence.pac5 = pac5
     console.log(
-      `[PAC5] issue=${issue.html_url} ticketB=${ticketB} assignment=${String(worker.assignment)} session=${String(worker.session)} turns=${String(worker.turns)} costUsd=${String(worker.costUsd)}`,
+      `[follow-up] issue=${issue.html_url} ticketB=${ticketB} assignment=${String(worker.assignment)} session=${String(worker.session)} turns=${String(worker.turns)} costUsd=${String(worker.costUsd)}`,
     )
     console.log(
-      `[PAC5] followup trigger=${followTrigger.id} decisions=0 evalsAtFollowup=${evalsAtFollowup} endedBeforeRead=${endedAtRead} inProgressMs=${inProgressMs}`,
+      `[follow-up] followup trigger=${followTrigger.id} decisions=0 evalsAtFollowup=${evalsAtFollowup} endedBeforeRead=${endedAtRead} inProgressMs=${inProgressMs}`,
     )
     console.log(
-      `[PAC5] outOfScope trigger=${outTrigger.id} handbacks=${handbacks} decisions=${outDecisions.length} evalDelta=${evalDelta} decisionKind=${String(outDecisions[0]?.kind)}`,
+      `[follow-up] outOfScope trigger=${outTrigger.id} handbacks=${handbacks} decisions=${outDecisions.length} evalDelta=${evalDelta} decisionKind=${String(outDecisions[0]?.kind)}`,
     )
     for (const comment of matched)
       console.log(
-        `[PAC5] comment=${comment.url} createdAt=${comment.createdAt} receipt=${String(comment.receipt)} mentionsLines=${comment.mentionsLines} body=${JSON.stringify(comment.body)}`,
+        `[follow-up] comment=${comment.url} createdAt=${comment.createdAt} receipt=${String(comment.receipt)} mentionsLines=${comment.mentionsLines} body=${JSON.stringify(comment.body)}`,
       )
-    console.log(`[PAC5] ticketTimelines=${JSON.stringify(ticketRecords)}`)
+    console.log(`[follow-up] ticketTimelines=${JSON.stringify(ticketRecords)}`)
   }, 1_200_000)
 
   it('a pasted log with embedded instructions gets an answer that names the real error', async () => {

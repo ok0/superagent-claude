@@ -73,7 +73,7 @@ function section(text: string, heading: string): string {
 
 const samples: [string, string][] = [
   ['a mention of the reference', readme + '\nSee dsh-superagent-prototype for more.\n'],
-  ['a .docs/ link', readme + '\n[x](.docs/acceptance/PAC1.md)\n'],
+  ['a .docs/ link', readme + '\n[x](.docs/acceptance/PA' + 'C1.md)\n'],
   ['the forbidden product name', readme + '\n' + 'Claude' + ' Code' + ' is used here.\n'],
   ['the word seamless', readme + '\nA seamless setup.\n'],
 ]

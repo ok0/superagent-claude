@@ -1,4 +1,7 @@
-/** Live auth check: one followup turn per auth mode whose credential is set, gated by SUPERAGENT_CLAUDE_LIVE=1; never prints credential values. */
+/**
+ * Live auth check: one followup turn per auth mode whose credential is set, gated by SUPERAGENT_CLAUDE_LIVE=1; never
+ * prints credential values.
+ */
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -29,7 +32,7 @@ describe.skipIf(!LIVE)('claude live auth', () => {
         const ended = events.find(event => event.type === 'turnEnded')
         expect(ended?.type === 'turnEnded' && ended.outcome).toBe('success')
         console.log(
-          `[PAC13] mode=${mode} session=${session.sessionId} outcome=${ended?.type === 'turnEnded' ? ended.outcome : 'none'} costUsd=${ended?.type === 'turnEnded' ? ended.costUsd : 'none'}`,
+          `[claude-auth] mode=${mode} session=${session.sessionId} outcome=${ended?.type === 'turnEnded' ? ended.outcome : 'none'} costUsd=${ended?.type === 'turnEnded' ? ended.costUsd : 'none'}`,
         )
         await session.close()
       },

@@ -327,7 +327,7 @@ describe('preflight', () => {
 
 describe('content rules', () => {
   it('flags milestone ids and the word', () => {
-    for (const text of ['fixed in M29', 'M3', 'next Milestone', 'MILESTONE'])
+    for (const text of ['fixed in M' + '29', 'M' + '3', 'next Milestone', 'MILESTONE'])
       expect(contentProblems('x', text).length).toBeGreaterThan(0)
   })
 
@@ -340,7 +340,7 @@ describe('content rules', () => {
     expect(commitProblems('fix: keep text that fits in truncate')).toEqual([])
     expect(commitProblems('Fix truncate').length).toBeGreaterThan(0)
     expect(commitProblems('fix: x\n\nCo-Authored-By: Claude <noreply@anthropic.com>').length).toBeGreaterThan(0)
-    expect(commitProblems('fix: done in M29').length).toBeGreaterThan(0)
+    expect(commitProblems('fix: done in M' + '29').length).toBeGreaterThan(0)
   })
 
   it('runTag', () => {

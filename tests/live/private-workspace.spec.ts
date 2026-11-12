@@ -1,4 +1,7 @@
-/** Live private repository worktree preparation with the host token, gated by SUPERAGENT_CLAUDE_LIVE=1 and SUPERAGENT_CLAUDE_GITHUB_TOKEN; never prints the token. */
+/**
+ * Live private repository worktree preparation with the host token, gated by SUPERAGENT_CLAUDE_LIVE=1 and
+ * SUPERAGENT_CLAUDE_GITHUB_TOKEN; never prints the token.
+ */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -60,7 +63,7 @@ describe.skipIf(!LIVE || !TOKEN)('live private workspace', () => {
         expect(text).not.toContain(encoded)
       }
       console.log(
-        `[M12-PRIVATE] repository=${REPO} branch=${w.branch} worktree=<stateDir>/worktrees/${ticket.id} tokenInConfig=false unauthenticated=${unauth}`,
+        `[private-workspace] repository=${REPO} branch=${w.branch} worktree=<stateDir>/worktrees/${ticket.id} tokenInConfig=false unauthenticated=${unauth}`,
       )
     } finally {
       rmSync(dir, { recursive: true, force: true })

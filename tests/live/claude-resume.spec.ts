@@ -1,4 +1,7 @@
-/** Live Claude resume check against the real SDK: a resumed session recalls a fact from an earlier turn; gated like claude-contract.spec.ts and skipped otherwise. */
+/**
+ * Live Claude resume check against the real SDK: a resumed session recalls a fact from an earlier turn; gated like
+ * claude-contract.spec.ts and skipped otherwise.
+ */
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -64,7 +67,7 @@ describe.skipIf(!LIVE || !mode)('claude live resume', () => {
       await waitUntil(() => second.reports.length > 0, 180_000)
       expect(s2.sessionId).toBe(id)
       expect(JSON.stringify(second.reports)).toContain('violet-kestrel-42')
-      console.log(`[M12-RESUME] mode=${mode} session=${id} recalled=true`)
+      console.log(`[claude-resume] mode=${mode} session=${id} recalled=true`)
     } finally {
       await s2.close()
     }

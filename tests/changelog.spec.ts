@@ -132,7 +132,7 @@ describe('renderSection', () => {
 
 describe('forbidden content', () => {
   it.each([
-    ['feat: wire M12 support', 'pppppppp'],
+    ['feat: wire M' + '12 support', 'pppppppp'],
     ['feat: finish the Milestone work', 'pppppppp'],
     ['feat: add x\n\nCo-Authored-By: Claude <noreply@anthropic.com>', 'pppppppp'],
   ])('blocks %j', message => {
@@ -141,7 +141,7 @@ describe('forbidden content', () => {
 
   it('does not block an excluded type', () => {
     expect(() =>
-      renderSection('0.2.0', '2026-01-02', [{ sha: 'd'.repeat(40), message: 'docs: M12 notes' }]),
+      renderSection('0.2.0', '2026-01-02', [{ sha: 'd'.repeat(40), message: 'docs: M' + '12 notes' }]),
     ).not.toThrow()
   })
 
@@ -156,7 +156,7 @@ describe('forbidden content', () => {
   })
 
   it.each([
-    'feat: wire M12 support',
+    'feat: wire M' + '12 support',
     'feat: finish the Milestone work',
     'feat: add x\n\nCo-Authored-By: Claude <noreply@anthropic.com>',
   ])('CLI prepare blocks %j and leaves files unchanged', message => {

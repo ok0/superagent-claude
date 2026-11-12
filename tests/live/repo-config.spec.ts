@@ -1,5 +1,8 @@
 /**
- * Live check that repository auto-run settings do not run: a local repository with settings hooks, an MCP config and git hooks is opened by a real subscription session in a ticket worktree, and no marker outside the worktree appears. A trusted control shows the markers can be made. Gated by SUPERAGENT_CLAUDE_LIVE=1 and CLAUDE_CODE_OAUTH_TOKEN; skipped otherwise.
+ * Live check that repository auto-run settings do not run: a local repository with settings hooks, an MCP config and
+ * git hooks is opened by a real subscription session in a ticket worktree, and no marker outside the worktree appears.
+ * A trusted control shows the markers can be made. Gated by SUPERAGENT_CLAUDE_LIVE=1 and
+ * CLAUDE_CODE_OAUTH_TOKEN; skipped otherwise.
  */
 import { execFileSync } from 'node:child_process'
 import {
@@ -333,7 +336,7 @@ describe.skipIf(!LIVE || !OAUTH)('repository auto-run settings', () => {
       ),
     )
     console.log(
-      `[PAC8] untrusted session=${sessionId} ticket=repo-config-untrusted markers=0 permissionMode=${[...new Set(observed.permissionModes)].join(',')} toolUses=${observed.toolUses.length} denials=${observed.denials.length}`,
+      `[repo-config] untrusted session=${sessionId} ticket=repo-config-untrusted markers=0 permissionMode=${[...new Set(observed.permissionModes)].join(',')} toolUses=${observed.toolUses.length} denials=${observed.denials.length}`,
     )
   }, 900_000)
 
