@@ -128,6 +128,29 @@ describe('renderSection', () => {
     expect(out).toContain('### Performance')
     expect(out).not.toContain('### Features')
   })
+
+  it('renders one fallback line when no commit is classified', () => {
+    const out = renderSection('0.2.0', '2026-01-02', [
+      { sha: 'd'.repeat(40), message: 'docs: d' },
+      { sha: 'c'.repeat(40), message: 'chore: c' },
+      { sha: 'r'.repeat(40), message: 'refactor: r' },
+      { sha: 't'.repeat(40), message: 'test: t' },
+    ])
+    expect(out).toBe('## [0.2.0] - 2026-01-02\n\n- No user-facing changes.\n')
+    const text = insertSection('# Changelog\n\ndesc\n', '0.2.0', out)
+    const notes = extractNotes(text, '0.2.0')
+    expect(notes).toBe('- No user-facing changes.')
+    expect(/[^\s]/.test(notes)).toBe(true)
+  })
+
+  it('omits the fallback line when a commit is classified', () => {
+    const out = renderSection('0.2.0', '2026-01-02', [
+      { sha: 'd'.repeat(40), message: 'docs: d' },
+      { sha: 'b'.repeat(40), message: 'fix: b' },
+    ])
+    expect(out).toContain('### Fixes')
+    expect(out).not.toContain('No user-facing changes')
+  })
 })
 
 describe('forbidden content', () => {

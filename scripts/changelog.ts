@@ -89,6 +89,7 @@ export function renderSection(version: string, date: string, commits: readonly C
     if (list.length === 0) continue
     out += `\n### ${title}\n\n${list.join('\n')}\n`
   }
+  if (CATEGORIES.every(([key]) => entries[key].length === 0)) out += '\n- No user-facing changes.\n'
   return out
 }
 
