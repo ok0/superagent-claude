@@ -2,6 +2,14 @@
 
 All notable changes to this project are listed here. Entries are generated from Conventional Commits, versions follow Semantic Versioning, and before 1.0 breaking changes bump the MINOR version.
 
+## [0.2.0] - 2026-11-12
+
+### Features
+
+- prompts: inject per-repository environment notes into worker instructions (f570879)
+- review: add pre-publish review gate and read-only reviewer subagent (652a2d0)
+- executor: add read-only git_inspect tool and review diff APIs (232abc8)
+
 ## [0.1.1] - 2026-11-12
 
 ### Fixes
