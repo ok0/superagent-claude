@@ -35,6 +35,12 @@ A container image is published as `ghcr.io/ok0/superagent-claude`. See [Docker](
 - [Security](docs/security.md): trust policy
 - [Contributing](CONTRIBUTING.md): setup, checks and pull requests
 
+## Works with superagent-claude-planner
+
+![superagent-claude and superagent-claude-planner: each works on its own, and the planner's GitHub issues can optionally feed the agent](docs/assets/works-with.svg)
+
+Each tool works on its own, and they can be used together. superagent-claude handles one request in one repository at a time. For a change that spans several repositories, [superagent-claude-planner](https://www.npmjs.com/package/superagent-claude-planner) splits it into one GitHub issue per repository, with a shared contract and a merge order, and mentions the agent in each issue. superagent-claude then works through those issues like any other request. You don't need the planner to use the agent.
+
 ## Known limitations
 
 The worker cannot run end-to-end tests that need services, databases, browsers or Docker inside the sandbox, and it has no per-ticket setup: it does not prepare dependencies in each ticket's worktree. Both are open for later review. See [Known limitations](docs/deploy.md#known-limitations).
