@@ -1,6 +1,6 @@
 {
   "name": "superagent-claude",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "A proactive agent for GitHub repositories. Powered by Claude.",
   "license": "MIT",
   "repository": {
