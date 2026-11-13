@@ -1,7 +1,8 @@
 // Branding check: the CLI product name must not be used as a product name.
 //
 // Rule: the two-word CLI product name (the word "Claude", one space, then the word "Code")
-// must not appear in repository files. Permitted wording: "Claude Agent", "Powered by Claude".
+// must not appear in repository files. Permitted wording: "Claude Agent", "Powered by Claude",
+// and "in Claude Code" when it says where a tool runs.
 // Exceptions are declared only in BRANDING_RULES below.
 // Known limitation: matching is line by line, so a name split across a line break is not detected.
 //
@@ -19,7 +20,12 @@ export const FORBIDDEN_PATTERN = /\bclaude[ \t]+code\b/i
 
 export const BRANDING_RULES = {
   excludedPathPrefixes: ['.ensemble/', '.r/', 'tests/fixtures/branding/'],
-  allowedPatterns: [/CLAUDE_CODE_[A-Z0-9_]*/g, /@anthropic-ai\/claude-[a-z0-9-]+/gi, /claude-code/gi],
+  allowedPatterns: [
+    /\b(?:in|inside)[ \t]+claude[ \t]+code\b/gi,
+    /CLAUDE_CODE_[A-Z0-9_]*/g,
+    /@anthropic-ai\/claude-[a-z0-9-]+/gi,
+    /claude-code/gi,
+  ],
   allowLineMarker: 'branding:allow',
 } as const
 

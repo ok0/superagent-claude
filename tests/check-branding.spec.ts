@@ -33,6 +33,11 @@ describe('check-branding', () => {
     expect(checkText('x.md', 'CLAUDE_CODE_OAUTH_TOKEN')).toHaveLength(0)
   })
 
+  it('allows naming where a tool runs, not the name as a product', () => {
+    expect(checkText('x.svg', 'Describe one change in ' + 'Claude' + ' Code')).toHaveLength(0)
+    expect(checkText('x.md', 'Built with ' + 'Claude' + ' Code in a sandbox')).toHaveLength(1)
+  })
+
   it('excludes the configured paths only', () => {
     expect(isExcluded('.r/a.md')).toBe(true)
     expect(isExcluded('.ensemble/b.md')).toBe(true)

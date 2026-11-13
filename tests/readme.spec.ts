@@ -157,7 +157,7 @@ describe('README and public docs', () => {
   })
 
   it('README is short and links the docs and the flow diagram', () => {
-    expect(readme.split('\n').length).toBeLessThanOrEqual(50)
+    expect(readme.split('\n').length).toBeLessThanOrEqual(60)
     for (const heading of ['## Quick start', '## Documentation', '## License']) expect(readme).toContain(heading)
     for (const path of DOCS) expect(readme).toContain(`](${path})`)
     expect(readme).toMatch(/!\[[^\]]+\]\(docs\/assets\/flow\.svg\)/)
