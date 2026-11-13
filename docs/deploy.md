@@ -84,7 +84,7 @@ Load it with `launchctl load ~/Library/LaunchAgents/dev.superagent-claude.plist`
 
 ## Docker
 
-The image is published as `ghcr.io/ok0/superagent-claude`. A stable release is tagged with its version (for example `0.1.0`), `MAJOR.MINOR` and `latest`, and a pre-release only with its version. Pull it with `docker pull ghcr.io/ok0/superagent-claude:<version>` and use that name in place of `superagent-claude:local` below, or build the image locally:
+The image is published as `ghcr.io/ok0/superagent-claude`. A stable release is tagged with its version (for example `0.3.0`), `MAJOR.MINOR` and `latest`, and a pre-release only with its version. Pull it with `docker pull ghcr.io/ok0/superagent-claude:<version>` and use that name in place of `superagent-claude:local` below, or build the image locally:
 
 ```sh
 docker build -t superagent-claude:local .
@@ -295,7 +295,7 @@ The image has the tools the service needs (git, gh, ripgrep and the sandbox), bu
 # Example: extend the published superagent-claude image with a toolchain.
 # Installs as root, then switches back to the image's non-root user.
 # Keep secrets out of ENV and ARG; pass them when the container runs.
-ARG BASE=ghcr.io/ok0/superagent-claude:0.1
+ARG BASE=ghcr.io/ok0/superagent-claude:0.3
 FROM ${BASE}
 USER root
 RUN apt-get update \
@@ -308,7 +308,7 @@ USER 10001:10001
 Build it on a published version, or with `--build-arg BASE=superagent-claude:local` on a local build:
 
 ```sh
-docker build --build-arg BASE=ghcr.io/ok0/superagent-claude:0.1 \
+docker build --build-arg BASE=ghcr.io/ok0/superagent-claude:0.3 \
   -f deploy/docker/Dockerfile.toolchain -t superagent-claude:toolchain .
 ```
 

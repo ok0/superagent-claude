@@ -1,7 +1,7 @@
 # Example: extend the published superagent-claude image with a toolchain.
 # Installs as root, then switches back to the image's non-root user.
 # Keep secrets out of ENV and ARG; pass them when the container runs.
-ARG BASE=ghcr.io/ok0/superagent-claude:0.1
+ARG BASE=ghcr.io/ok0/superagent-claude:0.3
 FROM ${BASE}
 USER root
 RUN apt-get update \

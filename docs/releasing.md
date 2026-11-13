@@ -16,10 +16,10 @@ This guide is for maintainers. A release publishes one version to four places: a
 
 ## Versions
 
-Versions follow Semantic Versioning (SemVer). Tags are `vMAJOR.MINOR.PATCH`, for example `v0.2.0`. The tag must match `version` in `package.json`.
+Versions follow Semantic Versioning (SemVer). Tags are `vMAJOR.MINOR.PATCH`, for example `v0.4.0`. The tag must match `version` in `package.json`.
 
 - While the version is 0.x, a breaking change bumps MINOR, not MAJOR.
-- A version with a hyphen suffix, such as `0.2.0-rc.1`, is a pre-release. It is published to npm under the `next` dist-tag and gets one image tag: the full version, `0.2.0-rc.1`.
+- A version with a hyphen suffix, such as `0.4.0-rc.1`, is a pre-release. It is published to npm under the `next` dist-tag and gets one image tag: the full version, `0.4.0-rc.1`.
 - Any other version is a stable release. It is published to npm under `latest` and gets three image tags: `MAJOR.MINOR.PATCH`, `MAJOR.MINOR` and `latest`.
 
 npm never accepts the same version number twice, even after an unpublish. If a published release is wrong, fix it and release the next version.
@@ -64,7 +64,7 @@ Optional: add a tag ruleset in the repository settings so that only maintainers 
 ## Prepare the release
 
 1. Start from an up-to-date `main` with a clean working tree.
-2. Run `pnpm release:prepare <version>`, for example `pnpm release:prepare 0.2.0`. It sets `version` in `package.json` and adds a section for that version at the top of `CHANGELOG.md`. It does not create a commit or a tag.
+2. Run `pnpm release:prepare <version>`, for example `pnpm release:prepare 0.4.0`. It sets `version` in `package.json` and adds a section for that version at the top of `CHANGELOG.md`. It does not create a commit or a tag.
 3. Review the new `CHANGELOG.md` section. It becomes the GitHub Release notes. You may edit the wording, but keep the `## [<version>] - <date>` heading.
 4. Commit both files with the message `chore(release): <version>`.
 
@@ -108,4 +108,4 @@ If `verify` fails, nothing is published anywhere. Fix the problem, delete the ta
 - **Wrong dist-tag.** If the `verify dist-tag` step fails, fix the tag from your machine while logged in to npm: `npm dist-tag add superagent-claude@<version> <tag>`. The workflow does not change dist-tags itself.
 - **The npm publish failed.** If `publish (oidc)` fails, for example because the trusted publisher is missing, nothing was published to npm and the later jobs did not run. The workflow has no other publish path. Fix the cause, then open the Actions run and choose **Re-run failed jobs**.
 - **A later job failed.** If `npm` succeeded but `image` or `release` failed, the channels disagree until you fix it. Open the Actions run and choose **Re-run failed jobs**. Each publish step skips what is already published, so a re-run does not publish twice.
-- **A wrong version was published.** npm does not accept the same version twice, so do not try to publish it again. Fix the problem and release the next patch version, for example `0.1.1`.
+- **A wrong version was published.** npm does not accept the same version twice, so do not try to publish it again. Fix the problem and release the next patch version, for example `0.3.1`.
