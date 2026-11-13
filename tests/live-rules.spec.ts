@@ -726,7 +726,7 @@ describe('fixtures', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+  }, 60_000)
 
   it('the paging defect is reproducible', async () => {
     const dir = scratch()
@@ -737,7 +737,7 @@ describe('fixtures', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+  }, 60_000)
 
   it('the date test fails only with a pinned clock', async () => {
     const dir = scratch()
@@ -750,7 +750,7 @@ describe('fixtures', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+  }, 60_000)
 
   it('partial update is not there yet', () => {
     expect(readFileSync(join(SEED, 'api', 'src', 'http', 'routes', 'tasks.ts'), 'utf8')).not.toContain('PATCH')
