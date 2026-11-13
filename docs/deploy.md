@@ -295,7 +295,7 @@ The image has the tools the service needs (git, ripgrep and the sandbox), but no
 # Example: extend the published superagent-claude image with a toolchain.
 # Installs as root, then switches back to the image's non-root user.
 # Keep secrets out of ENV and ARG; pass them when the container runs.
-ARG BASE=ghcr.io/ok0/superagent-claude:0.3
+ARG BASE=ghcr.io/ok0/superagent-claude:0.5
 FROM ${BASE}
 USER root
 RUN apt-get update \
@@ -308,7 +308,7 @@ USER 10001:10001
 Build it on a published version, or with `--build-arg BASE=superagent-claude:local` on a local build:
 
 ```sh
-docker build --build-arg BASE=ghcr.io/ok0/superagent-claude:0.3 \
+docker build --build-arg BASE=ghcr.io/ok0/superagent-claude:0.5 \
   -f deploy/docker/Dockerfile.toolchain -t superagent-claude:toolchain .
 ```
 
