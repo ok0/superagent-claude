@@ -7,11 +7,11 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.json tsdown.config.ts ./
 COPY src ./src
-RUN pnpm build && rm -rf node_modules && pnpm install --frozen-lockfile --prod
+RUN pnpm build && rm -rf node_modules && pnpm install --frozen-lockfile --prod && find node_modules -type f \( -iname 'readme*' -o -iname 'changelog*' -o -iname 'history*.md' \) -delete
 
 FROM node:24-bookworm-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git gh bubblewrap socat ripgrep ca-certificates tini \
+ && apt-get install -y --no-install-recommends git bubblewrap socat ripgrep ca-certificates tini \
  && rm -rf /var/lib/apt/lists/*
 RUN groupadd --gid 10001 superagent \
  && useradd --uid 10001 --gid 10001 --home-dir /var/lib/superagent-claude --no-create-home --shell /usr/sbin/nologin superagent \

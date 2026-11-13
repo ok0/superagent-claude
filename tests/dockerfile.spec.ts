@@ -62,10 +62,13 @@ describe('dockerfile', () => {
     expect(dockerfileProblems(dockerfile, dockerignore)).toEqual([])
     expect(dockerfile).toContain('FROM node:24-bookworm-slim')
     expect(dockerfile).toContain('VOLUME /var/lib/superagent-claude')
+    expect(dockerfile).toContain("-iname 'readme*'")
     const aptLine = dockerfile.split('\n').find(l => l.includes('apt-get install')) ?? ''
-    for (const pkg of ['git', 'gh', 'bubblewrap', 'socat', 'tini']) {
+    for (const pkg of ['git', 'bubblewrap', 'socat', 'ripgrep', 'ca-certificates', 'tini']) {
       expect(aptLine).toMatch(new RegExp(`\\b${pkg}\\b`))
     }
+    expect(aptLine).not.toMatch(/\bgh\b/)
+    expect(dockerfile).not.toMatch(/\bgh\b/)
   })
 
   it.each([
