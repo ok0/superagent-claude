@@ -2,7 +2,7 @@
 
 ## Install
 
-Requirements: Node.js 22.19 or later, git 2.32 or later, and gh 2.48 or later.
+Requirements: Node.js 22.19 or later and git 2.32 or later.
 
 ```sh
 npm i -g superagent-claude

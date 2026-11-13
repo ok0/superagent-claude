@@ -8,6 +8,8 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const read = (path: string): string => readFileSync(join(root, path), 'utf8')
 const deploy = read('docs/deploy.md')
 const security = read('docs/security.md')
+const gettingStarted = read('docs/getting-started.md')
+const readme = read('README.md')
 
 const PRIVILEGED = /--privileged|privileged:\s*true/
 
@@ -47,6 +49,24 @@ describe('deploy and container docs', () => {
       .filter(line => line.startsWith('## '))
       .map(line => slug(line.slice(3)))
     expect(slugs).toContain(anchor)
+  })
+
+  it('install and image docs do not ask for gh', () => {
+    const req = gettingStarted.split('\n').find(l => l.startsWith('Requirements:')) ?? ''
+    expect(req).toMatch(/Node\.js 22\.19/)
+    expect(req).toMatch(/\bgit 2\.32/)
+    expect(req).not.toMatch(/\bgh\b/)
+    expect(gettingStarted).not.toMatch(/\bgh\b/)
+    expect(readme).not.toMatch(/\bgh\b/)
+    const tools = deploy.split('\n').find(l => l.startsWith('The image has the tools')) ?? ''
+    expect(tools).toContain('git')
+    expect(tools).toContain('ripgrep')
+    expect(tools).toContain('the sandbox')
+    expect(tools).not.toMatch(/\bgh\b/)
+    for (const text of [gettingStarted, deploy]) {
+      expect(text).not.toMatch(/\.docs\//)
+      expect(text).not.toMatch(/\bM[0-9]+\b/)
+    }
   })
 
   it('security.md states the container cost', () => {

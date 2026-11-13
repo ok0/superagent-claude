@@ -289,7 +289,7 @@ An `Unconfined` seccomp or AppArmor profile is rejected at `baseline` and `restr
 
 ## Extending the image
 
-The image has the tools the service needs (git, gh, ripgrep and the sandbox), but no language toolchain for your projects. To let the worker build and test them, build your own image `FROM` the published image `ghcr.io/ok0/superagent-claude` and install the toolchain in it. `deploy/docker/Dockerfile.toolchain` is an example. It installs `python3` and `make` as root, then switches back to uid 10001:
+The image has the tools the service needs (git, ripgrep and the sandbox), but no language toolchain for your projects. To let the worker build and test them, build your own image `FROM` the published image `ghcr.io/ok0/superagent-claude` and install the toolchain in it. `deploy/docker/Dockerfile.toolchain` is an example. It installs `python3` and `make` as root, then switches back to uid 10001:
 
 ```dockerfile
 # Example: extend the published superagent-claude image with a toolchain.
