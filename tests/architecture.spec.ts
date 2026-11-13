@@ -3,7 +3,7 @@
 // core, infra, app effects and store; runtimes import only the runtime contract and infra; the SDK is imported only
 // from src/runtimes/claude; app and infra import only node:*, zod, proper-lockfile and allowed relative paths; the
 // Source framework imports only core, policy, infra, itself and the app store and KV types (never the executor,
-// runtimes or the SDK); the CLI imports only src/ modules, package.json and node:*.
+// runtimes or the SDK); the CLI imports only src/ modules, package.json and node:*; @octokit/* is imported only from src/infra/github-api.ts.
 import { describe, it, expect, afterEach } from 'vitest'
 import ts from 'typescript'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync, existsSync } from 'node:fs'
@@ -14,10 +14,11 @@ import { fileURLToPath } from 'node:url'
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const NON_LITERAL = '<non-literal>'
 
-type RuleId = 'core' | 'policy' | 'app' | 'infra' | 'executor' | 'runtimes' | 'sources' | 'cli' | 'sdk'
+type RuleId = 'core' | 'policy' | 'app' | 'infra' | 'executor' | 'runtimes' | 'sources' | 'cli' | 'sdk' | 'octokit'
 type Violation = { file: string; specifier: string; rule: RuleId }
 
 const SDK = '@anthropic-ai/claude-agent-sdk'
+const OCTOKIT_FILE = 'src/infra/github-api.ts'
 const external = (s: string): boolean => s.startsWith('node:') || s === 'zod' || s === 'proper-lockfile'
 
 function textOf(n: ts.Node | undefined): string {
@@ -70,7 +71,9 @@ function checkFile(file: string, source: string): Violation[] {
     }
     if (file.startsWith('src/infra/')) {
       const r = rel ? resolves(file, spec) : ''
-      const allowed = rel ? r.startsWith('src/infra/') || r.startsWith('src/core/') : external(spec)
+      const allowed = rel
+        ? r.startsWith('src/infra/') || r.startsWith('src/core/')
+        : external(spec) || (file === OCTOKIT_FILE && (spec === '@octokit/core' || spec.startsWith('@octokit/core/')))
       if (!allowed) violations.push({ file, specifier: spec, rule: 'infra' })
     }
     if (file.startsWith('src/app/')) {
@@ -117,6 +120,9 @@ function checkFile(file: string, source: string): Violation[] {
     }
     if ((spec === SDK || spec.startsWith(SDK + '/')) && !file.startsWith('src/runtimes/claude/')) {
       violations.push({ file, specifier: spec, rule: 'sdk' })
+    }
+    if (spec.startsWith('@octokit/') && file !== OCTOKIT_FILE) {
+      violations.push({ file, specifier: spec, rule: 'octokit' })
     }
   }
   return violations
@@ -234,6 +240,25 @@ describe('app and infra rules', () => {
   it('flags relative imports into src/app and third-party packages from src/infra', () => {
     expect(checkFile('src/infra/x.ts', "import { S } from '../app/store.ts'").map(v => v.rule)).toEqual(['infra'])
     expect(checkFile('src/infra/x.ts', "import _ from 'lodash'").map(v => v.rule)).toEqual(['infra'])
+  })
+})
+
+describe('octokit rule', () => {
+  it('allows @octokit/core only in src/infra/github-api.ts', () => {
+    const source = "import { Octokit } from '@octokit/core'\n"
+    expect(checkFile(OCTOKIT_FILE, source)).toEqual([])
+    expect(checkFile('src/infra/commands.ts', source).map(v => v.rule)).toEqual(['infra', 'octokit'])
+    expect(
+      checkFile('src/sources/github/read.ts', "import { RequestError } from '@octokit/request-error'\n").map(
+        v => v.rule,
+      ),
+    ).toContain('octokit')
+    expect(
+      checkFile('src/app/sources.ts', "import type { Octokit } from '@octokit/core'\n").map(v => v.rule),
+    ).toContain('octokit')
+    const other = checkFile(OCTOKIT_FILE, "import { RequestError } from '@octokit/request-error'\n").map(v => v.rule)
+    expect(other).toContain('infra')
+    expect(other).not.toContain('octokit')
   })
 })
 
@@ -571,7 +596,7 @@ describe('vendor names', () => {
     expect(offenders).toEqual([])
   })
 
-  it('outside its Source plugin only the assembly point, the Router/worker tool layer (resources, thread keys, read function, cards and notices) and the runtime env secret filter name the hosting service', () => {
+  it('outside its Source plugin only the assembly point, the Router/worker tool layer (resources, thread keys, read function, cards and notices) and the runtime env secret filter, the API adapter name the hosting service', () => {
     const offenders = scan(ROOT)
       .files.filter(f => !f.startsWith('src/sources/github/'))
       .filter(f =>
@@ -589,6 +614,7 @@ describe('vendor names', () => {
       'src/app/tools/delivery.ts',
       'src/app/tools/executor.ts',
       'src/app/tools/main.ts',
+      'src/infra/github-api.ts',
       'src/runtimes/claude/options.ts',
     ])
   })

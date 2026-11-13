@@ -1,6 +1,6 @@
 /**
  * A scripted stand-in for the gh and git programs behind a real Commands runner, and a recording Source host; no
- * network and no real gh.
+ * network and no real gh. The same routing core also answers fetch Requests.
  */
 import { Commands, type Exec } from '../../src/infra/commands.ts'
 import { HealthBoard } from '../../src/infra/health.ts'
@@ -48,7 +48,13 @@ export interface FakeGh {
   requests: { method: string; path: string; fields: Record<string, string> }[]
   graphql: { query: string; variables: Record<string, string> }[]
   hold(prefix: string): { reached(): boolean; release(): void }
+  fetch: typeof globalThis.fetch
+  answer(method: string, path: string, fields: Record<string, unknown>): { status: number; data: unknown }
 }
+
+type Fields = Record<string, unknown>
+
+const text = (value: unknown): string => (value === undefined || value === null ? '' : String(value))
 
 interface Hold {
   prefix: string
@@ -69,7 +75,29 @@ const fieldsOf = (args: readonly string[]): Record<string, string> => {
 }
 
 const failure = (status: number): Error =>
-  Object.assign(new Error('failed'), { stderr: `gh: Request failed (HTTP ${status})`, code: 1 })
+  Object.assign(new Error('failed'), { stderr: `gh: Request failed (HTTP ${status})`, code: 1, status })
+
+export const API_HOST = 'api.github.com'
+
+export const FAKE_HEADERS = {
+  'content-type': 'application/json',
+  'x-poll-interval': '60',
+  'x-ratelimit-remaining': '4999',
+  'x-ratelimit-reset': '1790000000',
+}
+
+export const toResponse = ({ status, data }: { status: number; data: unknown }): Response =>
+  new Response(JSON.stringify(data), { status, headers: FAKE_HEADERS })
+
+export async function readRequest(request: Request): Promise<{ method: string; path: string; fields: Fields }> {
+  const url = new URL(request.url)
+  const path = url.pathname.replace(/^\//, '') + url.search
+  const method = request.method
+  const raw = method === 'GET' || method === 'HEAD' ? '' : await request.text()
+  const body = raw ? (JSON.parse(raw) as Fields & { query?: unknown; variables?: Fields }) : {}
+  const fields = path === 'graphql' ? { query: body.query, ...(body.variables ?? {}) } : body
+  return { method, path, fields }
+}
 
 export function fakeGh(
   script: FakeGhScript,
@@ -86,10 +114,10 @@ export function fakeGh(
   const findRepository = (name: string): string | undefined =>
     Object.keys(script.repositories).find(item => item.toLowerCase() === name.toLowerCase())
 
-  const graphql = (fields: Record<string, string>): unknown => {
-    const query = fields.query ?? ''
-    const node = /^PR_(.+)_(\d+)$/.exec(fields.id ?? '')
-    const name = node ? findRepository(node[1]!) : findRepository(`${fields.owner ?? ''}/${fields.name ?? ''}`)
+  const graphql = (fields: Fields): unknown => {
+    const query = text(fields.query)
+    const node = /^PR_(.+)_(\d+)$/.exec(text(fields.id))
+    const name = node ? findRepository(node[1]!) : findRepository(`${text(fields.owner)}/${text(fields.name)}`)
     if (query.includes('reviewThreads')) {
       if (!name) throw failure(404)
       const repo = script.repositories[name]!
@@ -103,7 +131,7 @@ export function fakeGh(
       return { data: { repository: { pullRequest: { reviewThreads: { nodes } } } } }
     }
     if (query.includes('resolveReviewThread')) {
-      const rootId = Number(/^RT_(\d+)$/.exec(fields.id ?? '')?.[1])
+      const rootId = Number(/^RT_(\d+)$/.exec(text(fields.id))?.[1])
       const owner = Object.keys(script.repositories).find(key =>
         Object.values(script.repositories[key]!.reviewComments ?? {})
           .flat()
@@ -117,15 +145,15 @@ export function fakeGh(
       const number = Number(node[2])
       const pr = script.repositories[name]!.pulls?.[number] ?? throwNotFound()
       Object.assign(pr as Record<string, unknown>, {
-        auto_merge: { merge_method: (fields.method ?? '').toLowerCase() },
+        auto_merge: { merge_method: text(fields.method).toLowerCase() },
       })
       return { data: { enablePullRequestAutoMerge: { pullRequest: { number } } } }
     }
     throw failure(400)
   }
 
-  const route = (path: string, args: readonly string[]): unknown => {
-    if (path === 'graphql') return graphql(fieldsOf(args))
+  const route = (method: string, path: string, fields: Fields): unknown => {
+    if (path === 'graphql') return graphql(fields)
     if (path === 'user') {
       if (script.userStatus) throw failure(script.userStatus)
       return { login, id: 1, type: 'User' }
@@ -142,8 +170,7 @@ export function fakeGh(
       if (access && 'status' in access) throw failure(access.status)
       return { full_name: name, permissions: { push: access && 'push' in access ? access.push : true } }
     }
-    if (rest === 'pulls' && args.includes('POST')) {
-      const fields = fieldsOf(args)
+    if (rest === 'pulls' && method === 'POST') {
       const numbers = [...Object.keys(repo.pulls ?? {}), ...Object.keys(repo.issues ?? {})].map(Number)
       const number = 1 + Math.max(0, ...numbers)
       const created = pull(name, number, {
@@ -151,7 +178,7 @@ export function fakeGh(
         body: fields.body,
         user: { login, type: 'User' },
         node_id: `PR_${name}_${number}`,
-        draft: fields.draft === 'true',
+        draft: fields.draft === true || fields.draft === 'true',
         head: { sha: 'head-' + number, ref: fields.head, repo: { full_name: name } },
         base: { ref: fields.base },
         state: 'open',
@@ -172,27 +199,25 @@ export function fakeGh(
       })
     }
     const reply = /^pulls\/(\d+)\/comments\/(\d+)\/replies$/.exec(rest)
-    if (reply && args.includes('POST')) {
+    if (reply && method === 'POST') {
       const number = Number(reply[1])
       const root = Number(reply[2])
-      const fields = fieldsOf(args)
-      posted.push({ repository: name, path: rest, body: fields.body ?? '' })
+      posted.push({ repository: name, path: rest, body: text(fields.body) })
       const id = 1000 + posted.length
       repo.reviewComments ??= {}
       ;(repo.reviewComments[number] ??= []).push({
         id,
-        body: fields.body ?? '',
+        body: text(fields.body),
         in_reply_to_id: root,
         user: { login, type: 'User' },
         pull_request_url: `https://api.github.com/repos/${name}/pulls/${number}`,
       })
       return { id }
     }
-    if (/^pulls\/\d+\/merge$/.test(rest) && args.includes('PUT')) return { merged: true }
+    if (/^pulls\/\d+\/merge$/.test(rest) && method === 'PUT') return { merged: true }
     const patch = /^pulls\/(\d+)$/.exec(rest)
-    if (patch && args.includes('PATCH')) {
+    if (patch && method === 'PATCH') {
       const number = Number(patch[1])
-      const fields = fieldsOf(args)
       const changes: Record<string, unknown> = { state: fields.state }
       if (fields.state === 'closed') changes.closed_at = new Date().toISOString()
       const current = repo.pulls?.[number] ?? throwNotFound()
@@ -202,9 +227,8 @@ export function fakeGh(
       }
       return current
     }
-    if (args.includes('POST')) {
-      const flag = args.indexOf('-f')
-      const body = (args[flag + 1] ?? '').replace(/^body=/, '')
+    if (method === 'POST') {
+      const body = text(fields.body)
       posted.push({ repository: name, path: rest, body })
       const id = 1000 + posted.length
       const comment = /^issues\/(\d+)\/comments$/.exec(rest)
@@ -263,32 +287,63 @@ export function fakeGh(
     return JSON.stringify(value)
   }
 
-  const exec: Exec = async (program, args, opts) => {
-    execs.push({ program, args: [...args], env: opts.env })
-    if (program === 'git') return { stdout: '' }
-    if (program !== 'gh') throw new Error(`Unexpected program: ${program}`)
-    if (args[0] !== 'api') throw new Error(`Unexpected gh command: ${args[0] ?? ''}`)
-    const path = args[1] ?? ''
+  const methodOf = (path: string, args: readonly string[]): string => {
+    const i = args.indexOf('--method')
+    return i >= 0 ? (args[i + 1] ?? '') : path === 'graphql' ? 'POST' : 'GET'
+  }
+
+  const record = (method: string, path: string, stringFields: Record<string, string>): void => {
     calls.push(path)
-    const method = args.indexOf('--method')
-    const fields = fieldsOf(args)
-    requests.push({
-      method: method >= 0 ? (args[method + 1] ?? '') : path === 'graphql' ? 'POST' : 'GET',
-      path,
-      fields,
-    })
+    requests.push({ method, path, fields: stringFields })
     if (path === 'graphql') {
-      const { query = '', ...variables } = fields
+      const { query = '', ...variables } = stringFields
       graphqlCalls.push({ query, variables })
     }
+  }
+
+  const waitHolds = async (path: string): Promise<void> => {
     for (const held of holds) {
       if (path.startsWith(held.prefix)) {
         held.reached = true
         await held.gate
       }
     }
-    return { stdout: output(route(path, args), args) }
   }
+
+  const exec: Exec = async (program, args, opts) => {
+    execs.push({ program, args: [...args], env: opts.env })
+    if (program === 'git') return { stdout: '' }
+    if (program !== 'gh') throw new Error(`Unexpected program: ${program}`)
+    if (args[0] !== 'api') throw new Error(`Unexpected gh command: ${args[0] ?? ''}`)
+    const path = args[1] ?? ''
+    const method = methodOf(path, args)
+    record(method, path, fieldsOf(args))
+    await waitHolds(path)
+    return { stdout: output(route(method, path, fieldsOf(args)), args) }
+  }
+
+  const fetch: typeof globalThis.fetch = async (input, init) => {
+    const request = new Request(input, init)
+    if (new URL(request.url).host !== API_HOST) return previous(input, init)
+    const { method, path, fields } = await readRequest(request)
+    const stringFields: Record<string, string> = {}
+    for (const [key, value] of Object.entries(fields)) stringFields[key] = text(value)
+    record(method, path, stringFields)
+    await waitHolds(path)
+    return toResponse(answer(method, path, fields))
+  }
+
+  const answer = (method: string, path: string, fields: Fields): { status: number; data: unknown } => {
+    try {
+      return { status: 200, data: route(method, path, fields) }
+    } catch (error) {
+      const status = (error as { status?: unknown }).status
+      if (typeof status === 'number') return { status, data: { message: 'Request failed' } }
+      throw error
+    }
+  }
+
+  const previous = globalThis.fetch
 
   const commands = new Commands({
     apiProgram: 'gh',
@@ -314,6 +369,8 @@ export function fakeGh(
       holds.push(held)
       return { reached: () => held.reached, release: () => held.open() }
     },
+    fetch,
+    answer,
   }
 }
 

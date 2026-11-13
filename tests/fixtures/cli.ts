@@ -1,6 +1,6 @@
 /**
- * CLI test fixtures: a fake gh program on PATH (builtins only), the environment that starts the daemon, and a CliIo
- * that records output and signal listeners.
+ * CLI test fixtures: a fake gh program on PATH (builtins only), an in-process fake GitHub fetch, the environment that
+ * starts the daemon, and a CliIo that records output and signal listeners.
  */
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -32,6 +32,38 @@ export function fakeGhBin(
   writeFileSync(file, script)
   chmodSync(file, 0o755)
   return bin
+}
+
+export function installFakeFetch(
+  options: { login?: string; failUser?: boolean; inaccessible?: readonly string[] } = {},
+): { requests: string[]; restore(): void } {
+  const previous = globalThis.fetch
+  const requests: string[] = []
+  const json = (status: number, data: unknown): Response =>
+    new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
+  globalThis.fetch = async (input, init) => {
+    const request = new Request(input, init)
+    const url = new URL(request.url)
+    if (url.host !== 'api.github.com') return previous(input, init)
+    const path = url.pathname.replace(/^\//, '')
+    requests.push(request.method + ' ' + path)
+    if (path === 'user') {
+      return options.failUser
+        ? json(401, { message: 'Bad credentials' })
+        : json(200, { login: options.login ?? 'agent-bot', id: 1, type: 'User' })
+    }
+    const repo = /^repos\/([^/]+\/[^/]+)$/.exec(path)
+    if (repo && (options.inaccessible ?? []).includes(repo[1]!)) return json(404, { message: 'Not Found' })
+    if (/^repos\/[^/]+\/[^/]+\/.+/.test(path)) return json(200, [])
+    if (repo) return json(200, { full_name: repo[1], permissions: { push: true } })
+    return json(200, [])
+  }
+  return {
+    requests,
+    restore: () => {
+      globalThis.fetch = previous
+    },
+  }
 }
 
 export function cliEnv(
