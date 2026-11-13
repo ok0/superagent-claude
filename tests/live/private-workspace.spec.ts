@@ -25,7 +25,6 @@ describe.skipIf(!LIVE || !TOKEN)('live private workspace', () => {
       const home = join(dir, 'home')
       mkdirSync(home, { recursive: true })
       const commands = new Commands({
-        apiProgram: 'gh',
         baseEnv: { PATH: process.env.PATH!, HOME: home, LANG: 'C' },
         env: { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' },
       })

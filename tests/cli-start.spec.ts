@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -152,12 +152,7 @@ describe('start in process', () => {
 
   it('a SIGINT while the runtime starts stops it in order with exit code 0', async () => {
     const dir = tempDir()
-    const bin = join(dir, 'slow-gh')
-    mkdirSync(bin)
-    const gh = join(bin, 'gh')
-    writeFileSync(gh, '#!/bin/sh\nexec sleep 30\n')
-    chmodSync(gh, 0o755)
-    const c = cliIo(dir, cliEnv(dir, { PATH: `${bin}:/usr/bin:/bin` }))
+    const c = cliIo(dir, cliEnv(dir))
     const fake = installFakeFetch({ hang: true })
     try {
       const p = main(['start', '--fake', '--config', writeConfig(dir)], c.io)
@@ -173,6 +168,10 @@ describe('start in process', () => {
       fake.restore()
     }
   }, 30_000)
+
+  it('cliEnv gives the daemon PATH /usr/bin:/bin only', () => {
+    expect(cliEnv(tempDir()).PATH).toBe('/usr/bin:/bin')
+  })
 })
 
 describe('start as a child process', () => {

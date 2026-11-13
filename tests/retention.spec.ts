@@ -58,7 +58,6 @@ function harness(wrap?: (ws: Workspaces) => Pick<WorkspaceProvider, 'remove'>) {
   )
   sh(['push', origin, 'main'], repo)
   const commands = new Commands({
-    apiProgram: 'gh',
     baseEnv: env,
     env: { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' },
   })

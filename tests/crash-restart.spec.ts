@@ -82,7 +82,7 @@ function daemon(t: Setup, extra: Record<string, string> = {}): Daemon {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
-      ...cliEnv(t.dir, { PATH: `${t.gh.bin}:/usr/bin:/bin`, ...t.gh.env, ...extra }),
+      ...cliEnv(t.dir, { ...t.gh.env, ...extra }),
     } as NodeJS.ProcessEnv,
   })
   children.push(child)

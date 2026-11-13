@@ -23,7 +23,7 @@ import { main } from '../src/cli/main.ts'
 import type { SourceService } from '../src/sources/host.ts'
 import type { RuntimeProbe } from '../src/executor/contract.ts'
 import { waitUntil } from './fixtures/async.ts'
-import { cliEnv, cliIo, fakeGhBin, installFakeFetch } from './fixtures/cli.ts'
+import { cliEnv, cliIo, installFakeFetch } from './fixtures/cli.ts'
 import { ManualClock } from './fixtures/executor.ts'
 import { fakeGh, issue, recordingHost, START } from './fixtures/fake-gh.ts'
 
@@ -316,7 +316,7 @@ describe('startup refusals through the CLI', () => {
 
   it('an agent account on policy.allowed exits 2 with rule 4', async () => {
     const dir = tempDir()
-    const c = cliIo(dir, cliEnv(dir, { PATH: `${fakeGhBin(join(dir, 'alice'), { login: 'alice' })}:/usr/bin:/bin` }))
+    const c = cliIo(dir, cliEnv(dir))
     const fake = installFakeFetch({ login: 'alice' })
     try {
       expect(

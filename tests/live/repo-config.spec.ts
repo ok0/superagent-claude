@@ -191,7 +191,7 @@ async function setup(label: string) {
   const stateDir = join(root, 'state')
   const workspaces = new Workspaces({
     stateDir,
-    commands: new Commands({ apiProgram: 'gh', baseEnv: process.env }),
+    commands: new Commands({ baseEnv: process.env }),
     repositoryOf: () => REPOSITORY,
     access: { remote: () => upstream, env: () => ({}), secrets: [] },
   })

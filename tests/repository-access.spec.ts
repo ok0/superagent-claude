@@ -28,7 +28,7 @@ describe('repository access', () => {
     const sources = installedSources(
       ConfigSchema.parse({ repositories: ['o/r'], policy: { allowed: ['alice'] } }),
       { SUPERAGENT_CLAUDE_GITHUB_TOKEN: 't' },
-      { commands: new Commands({ apiProgram: 'gh', baseEnv: {} }) },
+      { commands: new Commands({ baseEnv: {} }) },
     )
     expect(sources.access.remote('o/r')).toBe('https://github.com/o/r.git')
   })

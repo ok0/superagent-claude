@@ -64,7 +64,6 @@ function commit(sh: Sh, cwd: string, file: string, text: string, message: string
 function spy(dir: string) {
   const calls: { args: readonly string[]; env: Record<string, string>; timeout: number }[] = []
   const commands = new Commands({
-    apiProgram: 'gh',
     baseEnv: { PATH: process.env.PATH!, HOME: join(dir, 'home'), LANG: 'C' },
     env: { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' },
     exec: (p, a, o) => {
@@ -95,7 +94,6 @@ function fixture() {
   sh([...COMMIT, 'commit', '-m', 'init'], seed)
   sh(['push', origin, 'main'], seed)
   const commands = new Commands({
-    apiProgram: 'gh',
     baseEnv: ENV,
     env: { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' },
   })
@@ -211,7 +209,6 @@ describe('git workspaces', () => {
     }
     const calls: { args: readonly string[]; env: Record<string, string> }[] = []
     const commands = new Commands({
-      apiProgram: 'gh',
       baseEnv: { PATH: process.env.PATH!, HOME: join(dir, 'home'), LANG: 'C' },
       env: { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' },
       exec: (p, a, o) => {

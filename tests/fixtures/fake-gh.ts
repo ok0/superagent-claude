@@ -1,8 +1,4 @@
-/**
- * A scripted stand-in for the gh and git programs behind a real Commands runner, and a recording Source host; no
- * network and no real gh. The same routing core answers the fetch Requests of the GitHubApi client that Commands
- * uses for API calls, while the exec adapter still answers the remaining gh argv calls.
- */
+/** A scripted fake GitHub behind a real Commands runner (fetch adapter for the GitHubApi client, git exec answered empty), and a recording Source host; no network. */
 import { Commands, type Exec } from '../../src/infra/commands.ts'
 import { GitHubApi } from '../../src/infra/github-api.ts'
 import { HealthBoard } from '../../src/infra/health.ts'
@@ -73,19 +69,7 @@ interface Hold {
   open: () => void
 }
 
-const fieldsOf = (args: readonly string[]): Record<string, string> => {
-  const fields: Record<string, string> = {}
-  args.forEach((arg, i) => {
-    if (arg !== '-f' && arg !== '-F') return
-    const value = args[i + 1] ?? ''
-    const at = value.indexOf('=')
-    if (at >= 0) fields[value.slice(0, at)] = value.slice(at + 1)
-  })
-  return fields
-}
-
-const failure = (status: number): Error =>
-  Object.assign(new Error('failed'), { stderr: `gh: Request failed (HTTP ${status})`, code: 1, status })
+const failure = (status: number): Error => Object.assign(new Error('failed'), { status })
 
 export const API_HOST = 'api.github.com'
 
@@ -119,7 +103,6 @@ export function fakeGh(
   script: FakeGhScript,
   options: {
     baseEnv?: Record<string, string | undefined>
-    apiEnv?: Record<string, string>
     posted?: Posted[]
     token?: string
   } = {},
@@ -302,21 +285,6 @@ export function fakeGh(
     throw failure(404)
   }
 
-  const output = (value: unknown, args: readonly string[]): string => {
-    if (args.includes('--paginate')) return JSON.stringify([value])
-    if (args.includes('--include'))
-      return (
-        'HTTP/2.0 200 OK\r\nX-Poll-Interval: 60\r\nX-RateLimit-Remaining: 4999\r\nX-RateLimit-Reset: 1790000000\r\n\r\n' +
-        JSON.stringify(value)
-      )
-    return JSON.stringify(value)
-  }
-
-  const methodOf = (path: string, args: readonly string[]): string => {
-    const i = args.indexOf('--method')
-    return i >= 0 ? (args[i + 1] ?? '') : path === 'graphql' ? 'POST' : 'GET'
-  }
-
   const record = (
     method: string,
     path: string,
@@ -344,13 +312,7 @@ export function fakeGh(
   const exec: Exec = async (program, args, opts) => {
     execs.push({ program, args: [...args], env: opts.env })
     if (program === 'git') return { stdout: '' }
-    if (program !== 'gh') throw new Error(`Unexpected program: ${program}`)
-    if (args[0] !== 'api') throw new Error(`Unexpected gh command: ${args[0] ?? ''}`)
-    const path = args[1] ?? ''
-    const method = methodOf(path, args)
-    record(method, path, fieldsOf(args), fieldsOf(args), undefined)
-    await waitHolds(path)
-    return { stdout: output(route(method, path, fieldsOf(args)), args) }
+    throw new Error(`Unexpected program: ${program}`)
   }
 
   const fetch: typeof globalThis.fetch = async (input, init) => {
@@ -393,9 +355,7 @@ export function fakeGh(
   const previous = globalThis.fetch
 
   const commands = new Commands({
-    apiProgram: 'gh',
     baseEnv: options.baseEnv ?? { PATH: '/usr/bin', HOME: '/home/test', LANG: 'C' },
-    apiEnv: options.apiEnv ?? { GH_TOKEN: 'test-token' },
     exec,
     client: new GitHubApi({ token: options.token ?? 'test-token', fetch }),
   })

@@ -1,10 +1,7 @@
 /**
- * A file-backed fake gh for daemon child processes: routes through `fakeGh`, keeps the script and the posted comments
- * in one JSON file shared by every gh call, and SIGKILLs the calling daemon once before or after a matching POST when
- * the test sets a kill rule; or, through a `--import` preload, as the child's global fetch that SIGKILLs the child
- * itself.
+ * A file-backed fake GitHub for daemon child processes: a --import preload makes the child's global fetch route through fakeGh against one JSON state file, and a kill rule makes the child SIGKILL itself before or after a matching POST.
  */
-import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { FAKE_HEADERS, API_HOST, fakeGh, readRequest, type FakeGhScript, type Posted } from './fake-gh.ts'
@@ -26,7 +23,6 @@ export const STATE_ENV = 'SUPERAGENT_CLAUDE_TEST_GITHUB_STATE'
 const PRELOAD = fileURLToPath(new URL('./file-github-preload.ts', import.meta.url))
 
 export interface FileGh {
-  bin: string
   file: string
   env: Record<string, string>
   read(): FileGhState
@@ -72,15 +68,9 @@ function read(file: string): FileGhState {
 export function fileGh(dir: string, script: FakeGhScript): FileGh {
   const root = join(dir, 'file-gh')
   const file = join(root, 'state.json')
-  const bin = join(root, 'bin')
-  mkdirSync(bin, { recursive: true })
+  mkdirSync(root, { recursive: true })
   write(file, { script, posted: [] })
-  const main = fileURLToPath(new URL('./file-gh-main.ts', import.meta.url))
-  const program = join(bin, 'gh')
-  writeFileSync(program, `#!/bin/sh\nexec '${process.execPath}' --no-warnings '${main}' '${file}' "$@"\n`)
-  chmodSync(program, 0o755)
   return {
-    bin,
     file,
     env: { NODE_OPTIONS: `--no-warnings --import=${pathToFileURL(PRELOAD).href}`, [STATE_ENV]: file },
     read: () => read(file),
@@ -94,46 +84,6 @@ export function fileGh(dir: string, script: FakeGhScript): FileGh {
         release(file)
       }
     },
-  }
-}
-
-export async function runFileGh(
-  file: string,
-  argv: string[],
-): Promise<{ code: number; stdout: string; stderr: string; killParent: boolean }> {
-  acquire(file)
-  try {
-    const state = read(file)
-    const post = argv.includes('POST')
-    const path = argv[1] ?? ''
-    const hit = post && state.kill !== undefined && path.endsWith('/' + state.kill.path)
-    if (hit && state.kill!.when === 'beforePost') {
-      state.killed = { ...state.kill!, at: new Date().toISOString() }
-      delete state.kill
-      write(file, state)
-      return { code: 1, stdout: '', stderr: 'gh: stopped\n', killParent: true }
-    }
-    const gh = fakeGh(state.script, { posted: state.posted })
-    let stdout = ''
-    let stderr = ''
-    let code = 0
-    try {
-      stdout = await gh.commands.run('gh', argv)
-    } catch (error) {
-      stderr = (error as Error).message + '\n'
-      code = 1
-    }
-    stdout = stdout.split(JSON.stringify(NOW)).join(JSON.stringify(new Date().toISOString()))
-    if (hit && state.kill!.when === 'afterPost') {
-      state.killed = { ...state.kill!, at: new Date().toISOString() }
-      delete state.kill
-      write(file, state)
-      return { code: 1, stdout: '', stderr: 'gh: stopped\n', killParent: true }
-    }
-    write(file, state)
-    return { code, stdout, stderr, killParent: false }
-  } finally {
-    release(file)
   }
 }
 

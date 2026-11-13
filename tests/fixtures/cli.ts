@@ -1,40 +1,10 @@
 /**
- * CLI test fixtures: a fake gh program on PATH (builtins only), an in-process fake GitHub fetch, the environment that
- * starts the daemon, and a CliIo that records output and signal listeners.
+ * CLI test fixtures: an in-process fake GitHub fetch, the environment that starts the daemon, and a CliIo that records
+ * output and signal listeners.
  * The first cliEnv call in a test file installs the default fake GitHub fetch. A per-test installFakeFetch must be
  * called after the file's first cliEnv so that its restore returns to the default fake.
  */
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import type { CliIo } from '../../src/cli/main.ts'
-
-export function fakeGhBin(
-  dir: string,
-  options: { login?: string; failUser?: boolean; inaccessible?: readonly string[] } = {},
-): string {
-  const bin = join(dir, 'bin')
-  mkdirSync(bin, { recursive: true })
-  const user = options.failUser
-    ? `  user)\n    echo 'gh: Bad credentials (HTTP 401)' >&2\n    exit 1\n    ;;\n`
-    : `  user)\n    echo '{"login":"${options.login ?? 'agent-bot'}","id":1,"type":"User"}'\n    ;;\n`
-  const inaccessible = (options.inaccessible ?? [])
-    .map(repository => `  repos/${repository}) echo 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;\n`)
-    .join('')
-  const script = [
-    '#!/bin/sh',
-    'case "$2" in',
-    user + inaccessible,
-    `  repos/*/*/*) echo '[]' ;;`,
-    `  repos/*) echo "{\\"full_name\\":\\"\${2#repos/}\\",\\"permissions\\":{\\"push\\":true}}" ;;`,
-    `  *) echo '[]' ;;`,
-    'esac',
-    '',
-  ].join('\n')
-  const file = join(bin, 'gh')
-  writeFileSync(file, script)
-  chmodSync(file, 0o755)
-  return bin
-}
 
 let defaultInstalled = false
 
@@ -87,7 +57,7 @@ export function cliEnv(
   }
   const env: Record<string, string | undefined> = {
     HOME: '/home/test',
-    PATH: `${fakeGhBin(dir)}:/usr/bin:/bin`,
+    PATH: '/usr/bin:/bin',
     SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'test-token',
     ANTHROPIC_API_KEY: 'test-key',
     ...extra,

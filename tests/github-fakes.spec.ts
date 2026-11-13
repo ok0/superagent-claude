@@ -1,8 +1,9 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
 import { CliError } from '../src/infra/commands.ts'
 import { installFakeFetch } from './fixtures/cli.ts'
 import { comment, fakeGh, issue, pull, type FakeGhScript } from './fixtures/fake-gh.ts'
@@ -23,66 +24,40 @@ const cases: {
   name: string
   method: string
   path: string
-  flags: string[]
   json?: Record<string, unknown>
 }[] = [
-  { name: 'user', method: 'GET', path: 'user', flags: [] },
-  { name: 'repo access', method: 'GET', path: 'repos/acme/widgets', flags: [] },
-  { name: 'issue', method: 'GET', path: 'repos/acme/widgets/issues/1', flags: [] },
-  { name: 'comments list', method: 'GET', path: 'repos/acme/widgets/issues/1/comments', flags: [] },
+  { name: 'user', method: 'GET', path: 'user' },
+  { name: 'repo access', method: 'GET', path: 'repos/acme/widgets' },
+  { name: 'issue', method: 'GET', path: 'repos/acme/widgets/issues/1' },
+  { name: 'comments list', method: 'GET', path: 'repos/acme/widgets/issues/1/comments' },
   {
     name: 'PR create',
     method: 'POST',
     path: 'repos/acme/widgets/pulls',
-    flags: [
-      '--method',
-      'POST',
-      '-f',
-      'title=T',
-      '-f',
-      'head=feat',
-      '-f',
-      'base=main',
-      '-f',
-      'body=B',
-      '-F',
-      'draft=false',
-    ],
     json: { title: 'T', head: 'feat', base: 'main', body: 'B', draft: false },
   },
   {
     name: 'review reply',
     method: 'POST',
     path: 'repos/acme/widgets/pulls/2/comments/70/replies',
-    flags: ['--method', 'POST', '-f', 'body=thanks'],
     json: { body: 'thanks' },
   },
   {
     name: 'graphql threads',
     method: 'POST',
     path: 'graphql',
-    flags: ['-f', 'query=query{reviewThreads}', '-f', 'owner=acme', '-f', 'name=widgets', '-F', 'number=2'],
     json: { query: 'query{reviewThreads}', variables: { owner: 'acme', name: 'widgets', number: 2 } },
   },
   {
     name: 'graphql resolve',
     method: 'POST',
     path: 'graphql',
-    flags: ['-f', 'query=mutation{resolveReviewThread}', '-f', 'id=RT_70'],
     json: { query: 'mutation{resolveReviewThread}', variables: { id: 'RT_70' } },
   },
   {
     name: 'graphql auto-merge',
     method: 'POST',
     path: 'graphql',
-    flags: [
-      '-f',
-      'query=mutation($method:PullRequestMergeMethod!){enablePullRequestAutoMerge}',
-      '-f',
-      'id=PR_acme/widgets_2',
-      '-f',
-      'method=SQUASH',
-    ],
     json: {
       query: 'mutation($method:PullRequestMergeMethod!){enablePullRequestAutoMerge}',
       variables: { id: 'PR_acme/widgets_2', method: 'SQUASH' },
@@ -90,12 +65,17 @@ const cases: {
   },
 ]
 
-describe('fetch and exec adapters agree', () => {
+describe('fetch adapter matches the routing core', () => {
   for (const item of cases) {
     it(item.name, async () => {
       const a = fakeGh(script())
       const b = fakeGh(script())
-      const exec = JSON.parse(await a.commands.api(item.path, ...item.flags)) as unknown
+      const fields =
+        item.path === 'graphql'
+          ? { query: item.json!.query, ...(item.json!.variables as Record<string, unknown>) }
+          : (item.json ?? {})
+      const expected = a.answer(item.method, item.path, fields)
+      expect(expected.status).toBe(200)
       const res = await b.fetch(
         new Request('https://api.github.com/' + item.path, {
           method: item.method,
@@ -104,17 +84,22 @@ describe('fetch and exec adapters agree', () => {
         }),
       )
       expect(res.status).toBe(200)
-      expect(await res.json()).toEqual(exec)
+      expect(await res.json()).toEqual(expected.data)
       if (item.name === 'PR create') {
-        expect(b.requests.map(r => [r.method, r.path])).toEqual(a.requests.map(r => [r.method, r.path]))
+        expect(b.requests.map(r => [r.method, r.path])).toEqual([['POST', 'repos/acme/widgets/pulls']])
+        expect(b.requests[0]!.body).toEqual(item.json)
       }
     })
   }
 
-  it('maps a missing issue to the same 404 on both adapters', async () => {
+  it('maps a missing issue to 404 in the core, the fetch adapter and Commands', async () => {
     const a = fakeGh(script())
     const b = fakeGh(script())
-    await expect(a.commands.api('repos/acme/widgets/issues/99')).rejects.toMatchObject({ code: 404 })
+    expect(a.answer('GET', 'repos/acme/widgets/issues/99', {})).toEqual({
+      status: 404,
+      data: { message: 'Request failed' },
+    })
+    await expect(a.commands.get(z.unknown(), 'repos/acme/widgets/issues/99')).rejects.toMatchObject({ code: 404 })
     const res = await b.fetch(new Request('https://api.github.com/repos/acme/widgets/issues/99'))
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ message: 'Request failed' })
@@ -133,9 +118,13 @@ await fetch('https://api.github.com/repos/acme/widgets/issues/1/comments', {
 console.log('survived')
 `
 
+  const PARENT = `import { spawnSync } from 'node:child_process'
+const r = spawnSync(process.execPath, ['--input-type=module', '-e', process.env.CHILD_SOURCE], { env: process.env, encoding: 'utf8' })
+console.log(JSON.stringify({ signal: r.signal }))`
+
   const run = (gh: ReturnType<typeof fileGh>) =>
     spawnSync(process.execPath, ['--input-type=module', '-e', CHILD], {
-      env: { PATH: process.env.PATH ?? '', ...gh.env },
+      env: { PATH: '/usr/bin:/bin', ...gh.env },
       encoding: 'utf8',
       timeout: 30_000,
     })
@@ -167,6 +156,28 @@ console.log('survived')
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('survived')
     expect(gh.read().posted).toHaveLength(1)
+  })
+
+  it('keeps the parent running when the preload kills the child', () => {
+    const gh = fileGh(mkdtempSync(join(tmpdir(), 'gh-kill-')), script())
+    gh.kill({ when: 'beforePost', path: 'issues/1/comments' })
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', PARENT], {
+      env: { PATH: '/usr/bin:/bin', ...gh.env, CHILD_SOURCE: CHILD },
+      encoding: 'utf8',
+      timeout: 30_000,
+    })
+    expect(result.status).toBe(0)
+    expect(result.signal).toBeNull()
+    const lines = result.stdout.trim().split('\n')
+    expect(JSON.parse(lines[lines.length - 1]!)).toEqual({ signal: 'SIGKILL' })
+    expect(gh.read().killed?.path).toBe('issues/1/comments')
+  })
+
+  it('no test fixture kills its parent process', () => {
+    const dir = new URL('./fixtures/', import.meta.url)
+    for (const name of readdirSync(dir).filter(file => file.endsWith('.ts'))) {
+      expect(readFileSync(new URL(name, dir), 'utf8'), name).not.toContain('process.ppid')
+    }
   })
 })
 
