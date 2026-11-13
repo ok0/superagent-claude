@@ -1,6 +1,6 @@
 # Configuration
 
-The config file `superagent-claude.json` has 23 settings.
+The config file `superagent-claude.json` has 24 settings.
 
 Required:
 
@@ -30,6 +30,7 @@ Everything else has a default.
 | `security.trustRepoConfig` | `false` |
 | `security.allowUnsandboxed` | `false` |
 | `security.weakerNestedSandbox` | `false` |
+| `security.allowLocalBinding` | `true` |
 | `retention.endedTicketDays` | `14` |
 | `models.router` | unset |
 | `models.worker` | unset |
@@ -49,6 +50,8 @@ Allowed values:
 A config with an unknown key, at any level, is rejected.
 
 `security.weakerNestedSandbox` is for Linux containers that cannot mount a fresh `/proc`; see [deploy.md](deploy.md#sandbox-in-containers).
+
+`security.allowLocalBinding` lets sandboxed commands bind and listen on local ports, so tests that start an in-process server can run. Outbound access stays limited to `network.allow`. A change needs a restart; see [security.md](security.md#tools-and-network) for the risk.
 
 The default `policy.acceptMode` is `observe`. `auto` must be set explicitly.
 

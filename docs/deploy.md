@@ -346,8 +346,9 @@ There is no command that creates an instance. These steps are manual.
 
 - The worker cannot run end-to-end tests that need services, databases, browsers or Docker inside the sandbox. Extending the image does not change this.
 - There is no per-ticket setup: the worker does not prepare dependencies in each ticket's worktree before it starts work.
+- With `security.allowLocalBinding: false`, or where the sandbox blocks local bind/listen, the worker cannot run tests that start an in-process server, so it cannot verify server code.
 
-Both are open for later review.
+These are open for later review.
 
 ## Next
 

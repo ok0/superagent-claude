@@ -255,6 +255,17 @@ describe('policy reload', () => {
     )
     expect(chat.emit(from('5', 'alice', 'owner/other'))).toBe('stored')
   })
+
+  it('a security.allowLocalBinding change needs a restart and leaves the running config alone', async () => {
+    const { r, records } = await boot()
+    expect(r.config.security.allowLocalBinding).toBe(true)
+    writeConfig({ security: { allowUnsandboxed: true, allowLocalBinding: false } })
+    const outcome = await r.reload()
+    expect(outcome).toMatchObject({ applied: true })
+    expect(outcome.restartRequired).toEqual(['security'])
+    expect(r.config.security.allowLocalBinding).toBe(true)
+    expect(records).toContainEqual(expect.objectContaining({ event: 'config.restart_required' }))
+  })
 })
 
 it('the CLI reloads on SIGHUP, and the listener is removed when the daemon stops', async () => {

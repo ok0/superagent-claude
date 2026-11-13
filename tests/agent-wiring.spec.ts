@@ -137,6 +137,28 @@ describe('agent wiring', () => {
     }
   })
 
+  it('security.allowLocalBinding reaches the SDK sandbox', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'agent-wiring-'))
+    expect(cfg('subscription').security.allowLocalBinding).toBe(true)
+    for (const value of [false, true]) {
+      const sdk = stubSdk()
+      const base = cfg('subscription')
+      const config = { ...base, security: { ...base.security, allowLocalBinding: value } }
+      const agent = createAgent({
+        config,
+        credential: resolveCredential('subscription', ALL),
+        env: ALL,
+        query: sdk.query,
+      })
+      const session = await agent.runtime.open(contractSpec('followup starts a new turn').spec)
+      expect(sdk.queries[0]!.options.sandbox?.network?.allowLocalBinding).toBe(value)
+      expect(sdk.queries[0]!.options.sandbox?.network?.allowedDomains).toEqual([
+        ...contractSpec('followup starts a new turn').spec.network.allow,
+      ])
+      await session.close()
+    }
+  })
+
   it('a guard denial is logged as worker.tool_denied without the command', async () => {
     dir = mkdtempSync(join(tmpdir(), 'agent-wiring-'))
     const sdk = stubSdk()

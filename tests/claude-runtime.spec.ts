@@ -255,6 +255,22 @@ describe('claude runtime', () => {
     expect(sdk.queries[0]!.options.sandbox?.enableWeakerNestedSandbox).toBe(true)
   })
 
+  it('allowLocalBinding reaches the SDK sandbox, default true', async () => {
+    for (const v of [undefined, false, true]) {
+      const sdk = stubSdk()
+      const runtime = new ClaudeRuntime({
+        mode: 'subscription',
+        configDir: '/tmp/c',
+        query: sdk.query,
+        sandboxAvailable: () => true,
+        ...(v === undefined ? {} : { allowLocalBinding: v }),
+      })
+      await runtime.open(contractSpec('followup starts a new turn').spec)
+      expect(sdk.queries[0]!.options.sandbox?.network?.allowLocalBinding).toBe(v ?? true)
+      expect(sdk.queries[0]!.options.canUseTool).toBeUndefined()
+    }
+  })
+
   it('the probe is computed once', async () => {
     const sdk = stubSdk()
     const check = vi.fn(() => true)

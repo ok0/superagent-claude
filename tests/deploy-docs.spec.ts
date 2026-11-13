@@ -63,4 +63,29 @@ describe('deploy and container docs', () => {
     for (const path of [...markdownFiles('docs'), 'README.md', 'Dockerfile'])
       expect(read(path), path).not.toMatch(PRIVILEGED)
   })
+
+  it('security.md describes allowLocalBinding and no longer names canUseTool', () => {
+    for (const text of [
+      'security.allowLocalBinding',
+      'loopback',
+      'localhost',
+      'network.allow',
+      'restart',
+      'macOS',
+      'Linux',
+      'may have no effect',
+    ])
+      expect(security).toContain(text)
+    expect(security).not.toContain('canUseTool')
+  })
+
+  it('deploy.md lists the local binding limit', () => {
+    const limits = deploy.slice(
+      deploy.indexOf('## Known limitations'),
+      deploy.indexOf('## Next', deploy.indexOf('## Known limitations')),
+    )
+    expect(limits).toContain('security.allowLocalBinding: false')
+    expect(limits).toContain('in-process server')
+    expect(limits).not.toContain('Both are open')
+  })
 })

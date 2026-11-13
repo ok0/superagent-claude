@@ -95,8 +95,8 @@ describe('README and public docs', () => {
     expect(linkProblems('README.md', '![a](docs/assets/missing.svg)').length).toBeGreaterThan(0)
   })
 
-  it('counts the settings of the schema as 23', () => {
-    expect(schemaSettings()).toHaveLength(23)
+  it('counts the settings of the schema as 24', () => {
+    expect(schemaSettings()).toHaveLength(24)
   })
 
   it('states the setting count of the schema and names every setting', () => {

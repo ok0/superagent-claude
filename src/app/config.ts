@@ -118,9 +118,15 @@ export const ConfigSchema = z
         trustRepoConfig: z.boolean().default(false),
         allowUnsandboxed: z.boolean().default(false),
         weakerNestedSandbox: z.boolean().default(false),
+        allowLocalBinding: z.boolean().default(true),
       })
       .strict()
-      .default({ trustRepoConfig: false, allowUnsandboxed: false, weakerNestedSandbox: false }),
+      .default({
+        trustRepoConfig: false,
+        allowUnsandboxed: false,
+        weakerNestedSandbox: false,
+        allowLocalBinding: true,
+      }),
     retention: z
       .object({
         endedTicketDays: z.number().int().min(1).default(14),

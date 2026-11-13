@@ -86,6 +86,8 @@ export interface OptionsContext {
    * other processes' environ reads were measured as denied.
    */
   weakerNestedSandbox?: boolean
+  /** security.allowLocalBinding: let sandboxed commands bind/listen on local ports (macOS). Outbound stays network.allow. Unset = true. */
+  allowLocalBinding?: boolean
   sessionId?: string
   mcp?: McpServerConfig
   onRead: () => void
@@ -399,7 +401,6 @@ export function sdkOptions(spec: SessionSpec, ctx: OptionsContext): Options {
       spec.role === 'worker' ? { type: 'preset', preset: 'claude_code', append: spec.instructions } : spec.instructions,
     allowedTools: allowed,
     disallowedTools: spec.role === 'worker' ? tools.disallowed : [...tools.disallowed, AGENT_TOOL],
-    canUseTool: async toolName => ({ behavior: 'deny', message: `${toolName} is not allowed in this session` }),
     mcpServers: ctx.mcp ? { superagent: ctx.mcp } : {},
     strictMcpConfig: true,
     ...(agents ? { agents } : {}),
@@ -416,7 +417,7 @@ export function sdkOptions(spec: SessionSpec, ctx: OptionsContext): Options {
             failIfUnavailable: true,
             allowUnsandboxedCommands: false,
             autoAllowBashIfSandboxed: true,
-            network: { allowedDomains: [...spec.network.allow] },
+            network: { allowedDomains: [...spec.network.allow], allowLocalBinding: ctx.allowLocalBinding ?? true },
             ...(ctx.weakerNestedSandbox
               ? { enableWeakerNestedSandbox: true, filesystem: { denyRead: ['/proc'] } }
               : {}),

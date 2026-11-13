@@ -57,6 +57,8 @@ export interface ClaudeRuntimeOptions {
   trustRepoConfig?: boolean
   /** Linux only: skip the fresh /proc mount inside the sandbox (see options.ts). */
   weakerNestedSandbox?: boolean
+  /** Let sandboxed commands bind/listen on local ports (see options.ts). Default true. */
+  allowLocalBinding?: boolean
   /** Open sessions without the sandbox when the probe finds none. */
   allowUnsandboxed?: boolean
   onDeny?: (denial: ToolDenial) => void
@@ -129,6 +131,7 @@ interface SessionConfig {
   stderr?: (text: string) => void
   trustRepoConfig: boolean
   weakerNestedSandbox: boolean
+  allowLocalBinding: boolean
   onDeny?: (denial: ToolDenial) => void
   spawn?: OptionsContext['spawn']
 }
@@ -160,6 +163,7 @@ export class ClaudeSession implements AgentSession {
       configDir: config.configDir,
       sandbox: config.sandbox,
       weakerNestedSandbox: config.weakerNestedSandbox,
+      allowLocalBinding: config.allowLocalBinding,
       sessionId: spec.resume ? undefined : this.id,
       mcp: spec.tools.length ? mcpServer(spec.tools, this.abort.signal) : undefined,
       onRead: () => this.emitAll(this.mapper.read()),
@@ -322,6 +326,7 @@ export class ClaudeRuntime implements AgentRuntime {
         env: this.options.env ?? process.env,
         sandbox: (this.options.sandbox ?? true) && (!this.options.allowUnsandboxed || this.sandboxUsable()),
         weakerNestedSandbox: this.options.weakerNestedSandbox ?? false,
+        allowLocalBinding: this.options.allowLocalBinding ?? true,
         stderr: this.options.stderr,
         trustRepoConfig: this.options.trustRepoConfig ?? false,
         onDeny: this.options.onDeny,

@@ -14,7 +14,7 @@ Opt-in `security.trustRepoConfig: true` sets `settingSources: ['project']`: the 
 
 ## Permission mode
 
-Sessions use `permissionMode: 'dontAsk'` with an explicit allow list (role built-ins and host MCP tools); anything else is denied by `canUseTool`.
+Sessions use `permissionMode: 'dontAsk'` with an explicit allow list (role built-ins and host MCP tools); `dontAsk` denies anything else without asking.
 
 `bypassPermissions` is never used: in that mode the sandbox's network prompts are approved automatically, so a domain outside the allow list was reachable in measurement.
 
@@ -25,6 +25,8 @@ A `PreToolUse` guard (fails closed) denies writes outside the worktree and direc
 `AskUserQuestion`, `WebFetch` and `WebSearch` are always removed. Bash and file writes are only for worker roles that need them.
 
 The sandbox is enabled with `failIfUnavailable: true` and `allowUnsandboxedCommands: false`. Network access is limited to `network.allow` (default empty).
+
+`security.allowLocalBinding` (default `true`) lets sandboxed commands bind and listen on local (loopback) ports, so tests that start an in-process server can run. It does not change outbound access, which stays limited to `network.allow`. A change needs a restart. Risk: on macOS it also lets sandboxed commands connect to services on the host's localhost, such as a local database or development server; set it to `false` on hosts that run such services. On Linux the sandbox has its own loopback, so the setting may have no effect there.
 
 macOS uses `sandbox-exec`. Linux needs `bubblewrap` and `socat` on PATH; the startup probe runs bubblewrap once, the same way the sandbox will (with or without a fresh `/proc`). Container hosts may also need user namespaces.
 
@@ -54,7 +56,7 @@ Guard denials inside a subagent are logged as `worker.tool_denied` with an `agen
 
 When `orchestrator_publish` returns `review_required`, the worker may start `superagent-reviewer`. The guard admits that `Agent` call only while a host-decided review is pending, once per pending review, and the review counts from that moment.
 
-Its tools are `Read`, `Glob`, `Grep` and `mcp__superagent__git_inspect`. Its definition also disallows `Bash`, `Write`, `Edit`, `NotebookEdit`, `Agent` and the web tools, and the `PreToolUse` guard denies every other tool for a call whose `agent_type` is `superagent-reviewer`. The denial is made in the hook, not in `canUseTool`: tools listed in the worker's allow list skip `canUseTool`.
+Its tools are `Read`, `Glob`, `Grep` and `mcp__superagent__git_inspect`. Its definition also disallows `Bash`, `Write`, `Edit`, `NotebookEdit`, `Agent` and the web tools, and the `PreToolUse` guard denies every other tool for a call whose `agent_type` is `superagent-reviewer`. The denial is made in the hook, because tools on the worker's allow list are approved before any permission check.
 
 The host puts a brief before its prompt: the original request, the human messages since, and the host diff (at most 60,000 characters, with a truncation marker), each as external data. Only the counts of its final `FINDINGS` line are logged, as `worker.review`.
 

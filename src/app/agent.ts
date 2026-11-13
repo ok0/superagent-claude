@@ -64,6 +64,7 @@ export function createAgent(o: AgentOptions): Agent {
       env: agentEnv(o.credential, o.env),
       trustRepoConfig: o.config.security.trustRepoConfig,
       weakerNestedSandbox: o.config.security.weakerNestedSandbox,
+      allowLocalBinding: o.config.security.allowLocalBinding,
       allowUnsandboxed: o.config.security.allowUnsandboxed,
       children: join(o.config.stateDir, 'children.json'),
       ...(o.query ? { query: o.query } : {}),

@@ -109,6 +109,7 @@ describe('fixed safety defaults', () => {
               expect(options.disallowedTools).toEqual(
                 expect.arrayContaining(['AskUserQuestion', 'WebFetch', 'WebSearch']),
               )
+              expect('canUseTool' in options).toBe(false)
             }
   })
 
@@ -217,6 +218,18 @@ describe('fixed safety defaults', () => {
     })
     const off = sdkOptions(spec(), ctx('api-key', { sandbox: false }))
     expect(off.sandbox).toBeUndefined()
+  })
+
+  it('allowLocalBinding maps to the sandbox network and leaves outbound limits alone', () => {
+    for (const role of ['worker', 'router'] as const) {
+      const def = sdkOptions(spec({ role }), ctx('api-key')).sandbox
+      expect(def?.network).toEqual({ allowedDomains: ['registry.npmjs.org'], allowLocalBinding: true })
+      for (const value of [true, false]) {
+        const s = sdkOptions(spec({ role }), ctx('api-key', { allowLocalBinding: value })).sandbox
+        expect(s).toMatchObject({ enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false })
+        expect(s?.network).toEqual({ allowedDomains: ['registry.npmjs.org'], allowLocalBinding: value })
+      }
+    }
   })
 
   it('weakerNestedSandbox maps to enableWeakerNestedSandbox only when set', () => {
@@ -474,11 +487,62 @@ describe('fixed safety defaults', () => {
       expect(parsed.attribution).toEqual({ commit: '', pr: '', sessionUrl: false })
       expect(parsed.includeCoAuthoredBy).toBe(false)
       expect(parsed.sandbox.enabled).toBe(true)
+      expect(parsed.sandbox.network).toMatchObject({ allowedDomains: ['registry.npmjs.org'], allowLocalBinding: true })
     } finally {
       abortController.abort()
       for (const child of children) child.kill('SIGKILL')
     }
   }, 15000)
+
+  async function shadowWarnings(role: 'worker' | 'router', extra: Partial<Options> = {}): Promise<number> {
+    const seen: (Error & { code?: string })[] = []
+    const listener = (w: Error) => {
+      seen.push(w)
+    }
+    process.on('warning', listener)
+    const abortController = new AbortController()
+    const children: ChildProcess[] = []
+    let spawned!: () => void
+    const started = new Promise<void>(r => {
+      spawned = r
+    })
+    const options: Options = {
+      ...sdkOptions(
+        spec({ role }),
+        ctx('api-key', {
+          abortController,
+          sandbox: true,
+          spawn: () => {
+            spawned()
+            const child = nodeSpawn(process.execPath, ['-e', 'process.stdin.resume()'], {
+              stdio: ['pipe', 'pipe', 'pipe'],
+            })
+            children.push(child)
+            return child as unknown as SpawnedProcess
+          },
+        }),
+      ),
+      ...extra,
+    }
+    try {
+      const q = query({ prompt: 'x', options })
+      void q.next().catch(() => {})
+      await Promise.race([started, new Promise<never>((_, r) => setTimeout(() => r(new Error('no spawn')), 10000))])
+      await new Promise(r => setImmediate(r))
+      return seen.filter(w => w.code === 'CLAUDE_SDK_CAN_USE_TOOL_SHADOWED').length
+    } finally {
+      process.off('warning', listener)
+      abortController.abort()
+      for (const child of children) child.kill('SIGKILL')
+    }
+  }
+
+  it('query() raises no CLAUDE_SDK_CAN_USE_TOOL_SHADOWED warning, and a deny canUseTool brings it back', async () => {
+    for (const role of ['worker', 'router'] as const) {
+      expect(await shadowWarnings(role)).toBe(0)
+      expect(await shadowWarnings(role, { canUseTool: async () => ({ behavior: 'deny', message: 'no' }) })).toBe(1)
+    }
+  }, 45000)
 })
 
 describe('subagents', () => {
@@ -749,8 +813,7 @@ describe('reviewer subagent', () => {
   it('the reviewer guard denies everything but reading and git_inspect, without canUseTool', async () => {
     const onDeny = vi.fn()
     const options = sdkOptions(withReviewer(reviewer()), ctx('api-key', { onDeny }))
-    expect(options.canUseTool).toBeDefined()
-    delete (options as { canUseTool?: unknown }).canUseTool
+    expect(options.canUseTool).toBeUndefined()
 
     const denied: [string, unknown][] = [
       ['Bash', { command: 'git log' }],
