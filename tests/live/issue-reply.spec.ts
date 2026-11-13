@@ -23,6 +23,7 @@ import { main } from '../../src/cli/main.ts'
 import { DATABASE_FILE, databasePath, type Receipt } from '../../src/app/store.ts'
 import { openReadOnly } from '../../src/app/store-read.ts'
 import { sleep } from '../fixtures/async.ts'
+import { daemonEnv, ghShim } from './gh-shim.ts'
 import { ghJson } from './gh.ts'
 import { assertAllowedRepo } from './guard.ts'
 import { liveEnabled, liveTarget, renderLiveText } from './target.ts'
@@ -59,6 +60,7 @@ interface Comment {
 
 const evidence: Record<string, unknown> = {}
 const TOKENS = [AGENT_TOKEN, OWNER_TOKEN, OAUTH].filter((token): token is string => Boolean(token))
+const SHIM = ghShim()
 
 async function owner(args: string[]): Promise<unknown> {
   return await ghJson(OWNER_TOKEN!, args)
@@ -227,7 +229,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live issue rep
         errs.push(s)
       },
       cwd: dir,
-      env: process.env,
+      env: daemonEnv(process.env, SHIM),
       signals,
     }).then(code => {
       exitCode = code
@@ -251,6 +253,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live issue rep
     try {
       signals.emit('SIGTERM')
       expect(await done).toBe(0)
+      evidence.ghShim = { bin: SHIM.bin, calls: SHIM.calls() }
 
       const state = join(dir, 'state')
       const files = walk(state)
@@ -304,6 +307,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live issue rep
         JSON.stringify({ config, limits: LIMITS, startedAt, warnings: errs, ...evidence }, null, 2),
       )
       writeFileSync(join(outDir, stem + '.jsonl'), jsonl)
+      expect(SHIM.calls()).toEqual([])
     } finally {
       if (failed && scanned) {
         const kept = join(

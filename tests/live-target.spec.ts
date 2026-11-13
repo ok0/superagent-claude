@@ -49,6 +49,7 @@ const GITHUB_SPECS = [
   'issue-reply.spec.ts',
   'pr-delivery.spec.ts',
   'private-workspace.spec.ts',
+  'review-thread.spec.ts',
 ]
 const CLAUDE_ONLY_SPECS = [
   'claude-auth.spec.ts',
