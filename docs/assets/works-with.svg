@@ -3,30 +3,22 @@
   <desc id="d">Two tools side by side, each complete on its own. superagent-claude-planner turns one change into an approved plan and publishes one GitHub issue per repository. superagent-claude takes an issue or mention from an allowed person, works in its own worktree, and replies or opens a pull request. An optional dashed link through GitHub issues shows that the planner's issues can feed the agent.</desc>
   <style>
     :root {
-      --bg: #fbfaf8;
-      --lane: #f3f1ed;
-      --node: #ffffff;
-      --ink: #1c1917;
-      --muted: #6b645c;
-      --line: #a8a29e;
-      --accent: #c2410c;
+      --bg: #fbfaf8; --lane: #f3f1ed; --node: #ffffff;
+      --ink: #1c1917; --muted: #6b645c; --line: #a8a29e;
+      --accent: #d4a72c; --accent-ink: #7d4e00; --accent-bg: #fff8c5; --on-accent: #1c1917;
       --face: system-ui, -apple-system, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #141210;
-        --lane: #1c1a17;
-        --node: #0f0e0c;
-        --ink: #ece8e3;
-        --muted: #a39d95;
-        --line: #57534e;
-        --accent: #fb923c;
+        --bg: #0d1117; --lane: #1c2128; --node: #161b22;
+        --ink: #e6edf3; --muted: #8b949e; --line: #30363d;
+        --accent: #e3b341; --accent-ink: #e3b341; --accent-bg: rgba(187, 128, 9, 0.15); --on-accent: #0d1117;
       }
     }
     .bg { fill: var(--bg); stroke: var(--line); }
     .lane { fill: var(--lane); }
     .node { fill: var(--node); stroke: var(--ink); stroke-width: 1.25; }
-    .main { fill: none; stroke: var(--accent); stroke-width: 1.75; }
+    .main { fill: none; stroke: var(--accent); stroke-width: 2.25; }
     .side { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 5 4; }
     .tip { fill: var(--accent); }
     .tip-side { fill: var(--line); }
@@ -41,7 +33,7 @@
     .ts { font-size: 11px; fill: var(--muted); text-anchor: middle; }
   </style>
   <defs>
-    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
       <polygon class="tip" points="0,0 10,5 0,10"/>
     </marker>
     <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">

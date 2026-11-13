@@ -1,8 +1,12 @@
 # superagent-claude
 
+![Four requests, three allowed, each in its own git worktree at the same time, ending in two pull requests and one reply](docs/assets/hero.svg)
+
 superagent-claude is a proactive coding agent for GitHub repositories. Powered by Claude. It polls the repositories you configure. When a person on the allowlist asks it for work, it opens a ticket, does the work in its own session and git worktree, and answers in the original conversation, for example with a pull request.
 
 Take as little human attention as possible, and give as much value as possible. The agent acts only when an allowed person asks or when a rule you wrote allows it, and it speaks only when someone must act or can use a result.
+
+## How it works
 
 ![Flow: an allowed person mentions the agent, allowlist admission, a ticket, its own session and git worktree, then a reply comment or a pull request](docs/assets/flow.svg)
 

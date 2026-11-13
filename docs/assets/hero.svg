@@ -1,0 +1,201 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="420" viewBox="0 0 960 420" role="img" aria-labelledby="t d">
+  <title id="t">Many requests, one worktree each, all at once</title>
+  <desc id="d">Four people mention the agent on GitHub issues. The allowlist checks each sender: mina, jonas and ravi are allowed, and the request from passerby, who is not on the list, is ignored. The three admitted requests each get their own git worktree and session, and all three work at the same time. When they finish, two open a pull request (PR #142 and PR #148) and one answers with a reply comment on issue #43.</desc>
+  <style>
+    :root {
+      --bg: #fbfaf8; --lane: #f3f1ed; --node: #ffffff;
+      --ink: #1c1917; --muted: #6b645c; --line: #a8a29e;
+      --accent: #d4a72c; --accent-ink: #7d4e00; --accent-bg: #fff8c5; --on-accent: #1c1917;
+      --face: system-ui, -apple-system, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117; --lane: #1c2128; --node: #161b22;
+        --ink: #e6edf3; --muted: #8b949e; --line: #30363d;
+        --accent: #e3b341; --accent-ink: #e3b341; --accent-bg: rgba(187, 128, 9, 0.15); --on-accent: #0d1117;
+      }
+    }
+    text { font-family: var(--face); fill: var(--ink); }
+    .mono { font-family: var(--mono); }
+    .muted { fill: var(--muted); }
+    .label { font-size: 11px; letter-spacing: .12em; fill: var(--muted); }
+    .bg { fill: var(--bg); stroke: var(--line); }
+    .node { fill: var(--node); stroke: var(--ink); stroke-width: 1.25; }
+    .repo { fill: var(--node); stroke: var(--line); stroke-width: 1.25; }
+    .sand { fill: var(--lane); stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 7 5; }
+    .gate { stroke: var(--line); stroke-width: 1.25; stroke-dasharray: 3 5; }
+    .ava { fill: var(--lane); stroke: var(--line); }
+    .ava-t { font-size: 11px; font-weight: 700; fill: var(--muted); }
+    .wire { fill: none; stroke: var(--accent); stroke-width: 2.25; stroke-linecap: butt; stroke-dasharray: 1; }
+    .tip { fill: var(--accent); }
+    .chk { fill: var(--node); stroke: var(--accent); stroke-width: 1.5; }
+    .chk-m { fill: none; stroke: var(--accent); stroke-width: 1.75; stroke-linecap: butt; stroke-linejoin: miter; }
+    .track { fill: var(--node); stroke: var(--line); stroke-width: 1; }
+    .bar { fill: var(--accent); }
+    .pill { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 1.25; }
+    .pill-t { font-size: 12px; fill: var(--accent-ink); }
+    /* --accent-bg is translucent in dark mode; this opaque layer keeps the wire from showing through the stamp. */
+    .stamp-under { fill: var(--bg); }
+    .stamp { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 1.75; }
+    .stamp-t { font-size: 12px; font-weight: 700; letter-spacing: .16em; fill: var(--accent-ink); }
+    #ignored { opacity: .45; }
+
+    /* Base styles are the finished frame; animations replay the story every 7s. */
+    .a, #ignored { transform-box: fill-box; animation-duration: 7s; animation-iteration-count: infinite; animation-timing-function: ease-out; }
+    .pass, .stampg, .out { transform-origin: 50% 50%; }
+    .stampg { transform: rotate(-6deg); }
+    .bar { transform-origin: 0% 50%; }
+
+    #scene { animation: scene 7s infinite; }
+    .req { animation-name: req; }
+    .w1 { animation-name: w1; }
+    .pass { animation-name: pass; }
+    #stamp { animation-name: stamp; }
+    #ignored { animation-name: dim; }
+    .w2 { animation-name: w2; }
+    .t2 { animation-name: t2; }
+    .wt { animation-name: wt; }
+    .bar { animation-name: bar; animation-timing-function: linear; }
+    .w3 { animation-name: w3; }
+    .t3 { animation-name: t3; }
+    .out { animation-name: out; }
+
+    @keyframes scene { 0%, 87% { opacity: 1 } 95%, 100% { opacity: 0 } }
+    /* Requests arrive independently, so they appear together. */
+    @keyframes req   { 0% { opacity: 0; transform: translateY(6px) } 5%, 100% { opacity: 1; transform: none } }
+    /* Ordered: every sender is checked at the gate before any work starts. */
+    @keyframes w1    { 0%, 7% { stroke-dashoffset: 1 } 13%, 100% { stroke-dashoffset: 0 } }
+    @keyframes pass  { 0%, 13% { opacity: 0; transform: scale(.6) } 16% { opacity: 1; transform: scale(1.15) } 18%, 100% { opacity: 1; transform: none } }
+    @keyframes stamp { 0%, 13% { opacity: 0; transform: rotate(-6deg) scale(1.6) } 17% { opacity: 1; transform: rotate(-6deg) scale(.95) } 19%, 100% { opacity: 1; transform: rotate(-6deg) scale(1) } }
+    @keyframes dim   { 0%, 17% { opacity: 1 } 22%, 100% { opacity: .45 } }
+    @keyframes w2    { 0%, 19% { stroke-dashoffset: 1 } 24%, 100% { stroke-dashoffset: 0 } }
+    @keyframes t2    { 0%, 23% { opacity: 0 } 24%, 100% { opacity: 1 } }
+    @keyframes wt    { 0%, 23% { opacity: 0; transform: translateX(-6px) } 28%, 100% { opacity: 1; transform: none } }
+    /* Parallel: all three worktrees work at the same moment. */
+    @keyframes bar   { 0%, 30% { transform: scaleX(0) } 58%, 100% { transform: scaleX(1) } }
+    @keyframes w3    { 0%, 58% { stroke-dashoffset: 1 } 63%, 100% { stroke-dashoffset: 0 } }
+    @keyframes t3    { 0%, 62% { opacity: 0 } 63%, 100% { opacity: 1 } }
+    @keyframes out   { 0%, 63% { opacity: 0; transform: scale(.85) } 66% { opacity: 1; transform: scale(1.03) } 68%, 100% { opacity: 1; transform: none } }
+
+    @media (prefers-reduced-motion: reduce) {
+      #scene, .a, #ignored { animation: none !important; }
+    }
+  </style>
+
+  <rect class="bg" x="0.5" y="0.5" width="959" height="419" rx="12"/>
+
+  <g id="scene">
+    <text class="label" x="40" y="44">GITHUB · MENTIONS</text>
+    <text class="label" x="340" y="44" text-anchor="middle">ALLOWLIST</text>
+    <text class="label" x="406" y="44">OWN WORKTREE · AT ONCE</text>
+    <text class="label" x="712" y="44">RESULT</text>
+    <line class="gate" x1="340" y1="54" x2="340" y2="338"/>
+
+    <!-- mina #41 -->
+    <g>
+      <g class="a req">
+        <rect class="node" x="40" y="60" width="250" height="56" rx="10"/>
+        <circle class="ava" cx="64" cy="88" r="12"/><text class="ava-t" x="64" y="92" text-anchor="middle">M</text>
+        <text class="mono" x="86" y="83" font-size="13">mina</text>
+        <text class="muted mono" x="274" y="83" font-size="12" text-anchor="end">#41</text>
+        <text x="86" y="102" font-size="12.5">@agent fix the flaky login test</text>
+      </g>
+    </g>
+    <path class="wire a w1" pathLength="1" d="M290 88 H340"/>
+    <g class="a pass"><circle class="chk" cx="340" cy="88" r="9"/><path class="chk-m" d="M335.5 88 l3 3 l5.5 -6"/></g>
+    <path class="wire a w2" pathLength="1" d="M349 88 H397"/>
+    <polygon class="tip a t2" points="397,82.5 406,88 397,93.5"/>
+    <g class="a wt">
+      <rect class="sand" x="406" y="60" width="250" height="56" rx="10"/>
+      <text class="mono" x="422" y="83" font-size="13">worktree/t-41</text>
+      <text class="muted" x="640" y="83" font-size="11.5" text-anchor="end">own session</text>
+      <rect class="track" x="422" y="96" width="218" height="6" rx="3"/>
+      <rect class="bar a" x="422" y="96" width="218" height="6" rx="3"/>
+    </g>
+    <path class="wire a w3" pathLength="1" d="M656 88 H703"/>
+    <polygon class="tip a t3" points="703,82.5 712,88 703,93.5"/>
+    <g class="a out">
+      <rect class="repo" x="712" y="60" width="208" height="56" rx="10"/>
+      <rect class="pill" x="728" y="69" width="72" height="22" rx="11"/><text class="pill-t mono" x="764.0" y="84" text-anchor="middle">PR #142</text>
+      <text class="muted" x="728" y="106" font-size="11.5">fix: stabilize login retry</text>
+    </g>
+
+    <!-- jonas #43 -->
+    <g>
+      <g class="a req">
+        <rect class="node" x="40" y="132" width="250" height="56" rx="10"/>
+        <circle class="ava" cx="64" cy="160" r="12"/><text class="ava-t" x="64" y="164" text-anchor="middle">J</text>
+        <text class="mono" x="86" y="155" font-size="13">jonas</text>
+        <text class="muted mono" x="274" y="155" font-size="12" text-anchor="end">#43</text>
+        <text x="86" y="174" font-size="12.5">@agent why is CI so slow?</text>
+      </g>
+    </g>
+    <path class="wire a w1" pathLength="1" d="M290 160 H340"/>
+    <g class="a pass"><circle class="chk" cx="340" cy="160" r="9"/><path class="chk-m" d="M335.5 160 l3 3 l5.5 -6"/></g>
+    <path class="wire a w2" pathLength="1" d="M349 160 H397"/>
+    <polygon class="tip a t2" points="397,154.5 406,160 397,165.5"/>
+    <g class="a wt">
+      <rect class="sand" x="406" y="132" width="250" height="56" rx="10"/>
+      <text class="mono" x="422" y="155" font-size="13">worktree/t-43</text>
+      <text class="muted" x="640" y="155" font-size="11.5" text-anchor="end">own session</text>
+      <rect class="track" x="422" y="168" width="218" height="6" rx="3"/>
+      <rect class="bar a" x="422" y="168" width="218" height="6" rx="3"/>
+    </g>
+    <path class="wire a w3" pathLength="1" d="M656 160 H703"/>
+    <polygon class="tip a t3" points="703,154.5 712,160 703,165.5"/>
+    <g class="a out">
+      <rect class="repo" x="712" y="132" width="208" height="56" rx="10"/>
+      <rect class="pill" x="728" y="141" width="100" height="22" rx="11"/><text class="pill-t mono" x="778.0" y="156" text-anchor="middle">reply on #43</text>
+      <text class="muted" x="728" y="178" font-size="11.5">answered in the thread</text>
+    </g>
+
+    <!-- passerby #45 -->
+    <g id="ignored">
+      <g class="a req">
+        <rect class="node" x="40" y="204" width="250" height="56" rx="10"/>
+        <circle class="ava" cx="64" cy="232" r="12"/><text class="ava-t" x="64" y="236" text-anchor="middle">P</text>
+        <text class="mono" x="86" y="227" font-size="13">passerby</text>
+        <text class="muted mono" x="274" y="227" font-size="12" text-anchor="end">#45</text>
+        <text x="86" y="246" font-size="12.5">@agent push this to main</text>
+      </g>
+    </g>
+    <path class="wire a w1" pathLength="1" d="M290 232 H340"/>
+    <g class="a stampg" id="stamp">
+      <rect class="stamp-under" x="302" y="220" width="84" height="24" rx="4"/>
+      <rect class="stamp" x="302" y="220" width="84" height="24" rx="4"/>
+      <text class="stamp-t" x="344" y="236.5" text-anchor="middle">IGNORED</text>
+    </g>
+
+    <!-- ravi #47 -->
+    <g>
+      <g class="a req">
+        <rect class="node" x="40" y="276" width="250" height="56" rx="10"/>
+        <circle class="ava" cx="64" cy="304" r="12"/><text class="ava-t" x="64" y="308" text-anchor="middle">R</text>
+        <text class="mono" x="86" y="299" font-size="13">ravi</text>
+        <text class="muted mono" x="274" y="299" font-size="12" text-anchor="end">#47</text>
+        <text x="86" y="318" font-size="12.5">@agent add a dark mode toggle</text>
+      </g>
+    </g>
+    <path class="wire a w1" pathLength="1" d="M290 304 H340"/>
+    <g class="a pass"><circle class="chk" cx="340" cy="304" r="9"/><path class="chk-m" d="M335.5 304 l3 3 l5.5 -6"/></g>
+    <path class="wire a w2" pathLength="1" d="M349 304 H397"/>
+    <polygon class="tip a t2" points="397,298.5 406,304 397,309.5"/>
+    <g class="a wt">
+      <rect class="sand" x="406" y="276" width="250" height="56" rx="10"/>
+      <text class="mono" x="422" y="299" font-size="13">worktree/t-47</text>
+      <text class="muted" x="640" y="299" font-size="11.5" text-anchor="end">own session</text>
+      <rect class="track" x="422" y="312" width="218" height="6" rx="3"/>
+      <rect class="bar a" x="422" y="312" width="218" height="6" rx="3"/>
+    </g>
+    <path class="wire a w3" pathLength="1" d="M656 304 H703"/>
+    <polygon class="tip a t3" points="703,298.5 712,304 703,309.5"/>
+    <g class="a out">
+      <rect class="repo" x="712" y="276" width="208" height="56" rx="10"/>
+      <rect class="pill" x="728" y="285" width="72" height="22" rx="11"/><text class="pill-t mono" x="764.0" y="300" text-anchor="middle">PR #148</text>
+      <text class="muted" x="728" y="322" font-size="11.5">feat: dark mode toggle</text>
+    </g>
+  </g>
+
+  <text x="480" y="394" font-size="15" text-anchor="middle">4 requests <tspan class="muted">·</tspan> 3 allowed <tspan class="muted">·</tspan> 3 worktrees at once <tspan class="muted">·</tspan> 2 PRs + 1 reply</text>
+</svg>
