@@ -20,7 +20,7 @@ It needs Node.js 22.19 or later. `npx superagent-claude start --config superagen
 
 `auth.mode` picks which one (`api-key` or `subscription`); Bedrock and Vertex also work. See [docs/authentication.md](docs/authentication.md) for both modes and the subscription terms warning.
 
-The config needs `repositories`, `policy.allowed` and `auth.mode`. See [docs/getting-started.md](docs/getting-started.md), which also covers building from source.
+The config needs `repositories` and `policy.allowed`; `auth.mode` defaults to `api-key` and needs its credential. See [docs/getting-started.md](docs/getting-started.md), which also covers building from source.
 
 A container image is published as `ghcr.io/ok0/superagent-claude`. See [Docker](docs/deploy.md#docker) to run it.
 

@@ -4,12 +4,13 @@ The config file `superagent-claude.json` has 23 settings.
 
 Required:
 
-- `auth.mode` and its Claude credential (see [authentication.md](authentication.md))
 - `SUPERAGENT_CLAUDE_GITHUB_TOKEN` in the environment
 - `repositories`
 - `policy.allowed`
 
 Everything else has a default.
+
+`auth.mode` defaults to `api-key`. Whichever mode is used needs its Claude credential; see [authentication.md](authentication.md).
 
 | Key | Default |
 | --- | --- |
@@ -37,11 +38,27 @@ Everything else has a default.
 | `review.maxPerTicket` | `3` |
 | `stateDir` | `~/.superagent-claude` |
 
+Allowed values:
+
+- `workers.max`: an integer from 1 to 16
+- `workers.maxTurns`, `retention.endedTicketDays`, `review.minChangedLines`, `review.maxPerTicket`: an integer, 1 or more
+- `workers.maxBudgetUsd`: a number greater than 0
+- `network.allow`: each entry 1 to 253 characters
+- `policy.acceptMode`: `off`, `observe` or `auto`
+
+A config with an unknown key, at any level, is rejected.
+
 `security.weakerNestedSandbox` is for Linux containers that cannot mount a fresh `/proc`; see [deploy.md](deploy.md#sandbox-in-containers).
 
 The default `policy.acceptMode` is `observe`. `auto` must be set explicitly.
 
+- `off`: ignores every event and records nothing.
+- `observe`: accepts nothing; records the events it would accept.
+- `auto`: accepts the events the policy allows and starts work on them.
+
 When a task stops at its turn or budget limit before it is done, the agent posts one comment that says which limit stopped it and links the pull request with the work so far, if there is one. A reply in that conversation continues the task with fresh limits. A finished task that is waiting for review keeps its result.
+
+When a ticket is blocked before work starts, for example because a configured branch is missing, the agent comments the reason on the issue. Reply there once it is fixed to try the task again.
 
 Pre-publish review: on each publish the host counts the lines changed (added plus deleted) since the last review, or on the whole branch when the ticket has had none. With `review.minChangedLines` or more, while the ticket has had fewer than `review.maxPerTicket` reviews, publish pushes nothing and returns `review_required`; the worker then runs the read-only `superagent-reviewer` subagent and publishes again. `review.enabled: false` turns this off. The `review` keys apply on reload, from the next publish.
 
