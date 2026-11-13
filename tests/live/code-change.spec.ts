@@ -59,6 +59,16 @@ import { loadSeed } from './seed-playground.ts'
 import { judgeScenario, loadScenarios, renderScenario, scenarioFlows } from './scenarios.ts'
 import type { LiveScenario } from './scenarios.ts'
 import { FIXTURES_DIR, NPM_CACHE_DIR, runHidden, runLocalCi, testsFailOnBase } from './hidden.ts'
+import {
+  imageRefs,
+  settingsChangeRequests,
+  SHADOW_CODE,
+  shadowHits,
+  testRuns,
+  toolUses,
+  unprefixedSettingKeys,
+  visualNote,
+} from './local-binding.ts'
 import { judgeAmbiguity, waitForPull } from './ambiguity.ts'
 import { flowCandidates, mergeOwnerPulls, pickMerges } from './owner-merge.ts'
 import type { MergeVerdict } from './owner-merge.ts'
@@ -102,6 +112,7 @@ interface PullInfo {
   html_url: string
   title: string
   body?: string | null
+  draft?: boolean
   state: string
   merged?: boolean
   created_at: string
@@ -193,6 +204,10 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
   let done: Promise<number> = Promise.resolve(-1)
   let failed = false
   let scanned = false
+  let shadowWarnings = 0
+  const onWarning = (w: Error & { code?: string }): void => {
+    if (w.code === SHADOW_CODE || w.name === SHADOW_CODE) shadowWarnings++
+  }
   const created = { issues: [] as number[], pulls: [] as { number: number; ref: string }[] }
   const merged = new Set<number>()
   const cleanupErrors: string[] = []
@@ -564,6 +579,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
     evidence.only = ONLY ?? null
     writeFileSync(configPath, JSON.stringify(config, null, 2))
     startedAt = new Date().toISOString()
+    process.on('warning', onWarning)
     done = main(['start', '--config', configPath], {
       out: s => {
         for (const line of s.split('\n')) if (line.trim()) lines.push(JSON.parse(line) as Line)
@@ -594,12 +610,33 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
     if (!dir) return
     try {
       try {
-        evidence.workers = storeQuery('SELECT ticket_id, turns, cost_usd FROM worker')
+        evidence.workers = storeQuery('SELECT ticket_id, session_id, branch, turns, cost_usd FROM worker')
       } catch (error) {
         evidence.workers = String((error as Error).message)
       }
+      try {
+        evidence.ticketReports = storeRows<Ticket>('ticket').map(t => ({
+          id: t.id,
+          title: t.title,
+          reports: t.assignments.map(a => a.report?.state ?? null),
+          ended: t.ended?.outcome ?? null,
+        }))
+      } catch (error) {
+        evidence.ticketReports = String((error as Error).message)
+      }
       signals.emit('SIGTERM')
       expect(await done).toBe(0)
+      process.off('warning', onWarning)
+      evidence.shadow = {
+        processWarnings: shadowWarnings,
+        stderrHits: shadowHits(errs),
+        logHits: shadowHits(lines.map(l => JSON.stringify(l))),
+      }
+      try {
+        evidence.workerTestRuns = testRuns(toolUses(transcriptFiles(join(dir, 'state', 'claude', 'projects'))))
+      } catch (error) {
+        evidence.workerTestRuns = 'error: ' + (error as Error).message
+      }
 
       const state = join(dir, 'state')
       const files = walk(state)
@@ -837,48 +874,64 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
 
   it('posted text has no milestone references and commits follow the convention', async () => {
     const problems: string[] = []
+    const posted: { label: string; author: string | null; text: string }[] = []
+    const pulls: Record<string, unknown>[] = []
     let texts = 0
     let commits = 0
-    const check = (label: string, text: string | null | undefined): void => {
+    const check = (label: string, text: string | null | undefined, author: string | null = null): void => {
       texts++
       problems.push(...contentProblems(label, text ?? ''))
+      posted.push({ label, author, text: text ?? '' })
     }
     for (const number of created.issues) {
       const issue = await owner<{ title: string; body?: string | null }>(['repos/' + REPO + '/issues/' + number])
       check('issue ' + number + ' title', issue.title)
       check('issue ' + number + ' body', issue.body)
-      for (const comment of await owner<{ body?: string | null }[]>([
+      for (const comment of await owner<{ body?: string | null; user?: { login: string } | null }[]>([
         'repos/' + REPO + '/issues/' + number + '/comments?per_page=100',
       ]))
-        check('issue ' + number + ' comment', comment.body)
+        check('issue ' + number + ' comment', comment.body, comment.user?.login ?? null)
     }
     for (const pull of created.pulls) {
       const label = 'PR ' + pull.number
       const detail = await owner<PullInfo>(['repos/' + REPO + '/pulls/' + pull.number])
       check(label + ' title', detail.title)
       check(label + ' body', detail.body)
+      pulls.push({
+        number: pull.number,
+        draft: detail.draft === true,
+        visual: visualNote(detail.body ?? ''),
+        imageRefs: imageRefs(detail.body ?? ''),
+      })
       problems.push(...attributionProblems(label + ' body', detail.body ?? ''))
       check(label + ' branch', detail.head.ref)
-      for (const comment of await owner<{ body?: string | null }[]>([
+      for (const comment of await owner<{ body?: string | null; user?: { login: string } | null }[]>([
         'repos/' + REPO + '/issues/' + pull.number + '/comments?per_page=100',
       ]))
-        check(label + ' comment', comment.body)
-      for (const comment of await owner<{ body?: string | null }[]>([
+        check(label + ' comment', comment.body, comment.user?.login ?? null)
+      for (const comment of await owner<{ body?: string | null; user?: { login: string } | null }[]>([
         'repos/' + REPO + '/pulls/' + pull.number + '/comments?per_page=100',
       ]))
-        check(label + ' review comment', comment.body)
-      for (const review of await owner<{ body?: string | null }[]>([
+        check(label + ' review comment', comment.body, comment.user?.login ?? null)
+      for (const review of await owner<{ body?: string | null; user?: { login: string } | null }[]>([
         'repos/' + REPO + '/pulls/' + pull.number + '/reviews?per_page=100',
       ]))
-        check(label + ' review', review.body)
+        check(label + ' review', review.body, review.user?.login ?? null)
       for (const commit of await owner<{ commit: { message: string } }[]>([
         'repos/' + REPO + '/pulls/' + pull.number + '/commits?per_page=100',
       ])) {
         commits++
         problems.push(...commitProblems(commit.commit.message))
+        posted.push({ label: label + ' commit', author: null, text: commit.commit.message })
       }
     }
     evidence.content = { texts, commits, problems: problems.length }
+    evidence.posted = posted
+    evidence.promptChecks = {
+      pulls,
+      unprefixed: posted.flatMap(p => unprefixedSettingKeys(p.text).map(m => p.label + ': ' + m)),
+      settingsRequests: posted.flatMap(p => settingsChangeRequests(p.text).map(m => p.label + ': ' + m)),
+    }
     expect(problems).toEqual([])
   }, 300_000)
 })

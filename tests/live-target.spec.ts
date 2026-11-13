@@ -58,6 +58,7 @@ const CLAUDE_ONLY_SPECS = [
   'repo-config.spec.ts',
   'review-apply.spec.ts',
   'sandbox-linux.spec.ts',
+  'sandbox-local-binding.spec.ts',
   'subagent.spec.ts',
 ]
 
