@@ -41,6 +41,7 @@ function scannedFiles(): [string, string][] {
 }
 
 const GITHUB_SPECS = [
+  'branch-config.spec.ts',
   'code-change.spec.ts',
   'conversation-quality.spec.ts',
   'conversation.spec.ts',

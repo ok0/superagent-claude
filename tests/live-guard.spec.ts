@@ -103,7 +103,9 @@ describe('live guard static scan', () => {
       }
     }
     for (const name of new Set(deleteFiles))
-      expect(['cleanup-playground.ts', 'code-change.spec.ts', 'owner-merge.ts']).toContain(name)
+      expect(['branch-config.spec.ts', 'cleanup-playground.ts', 'code-change.spec.ts', 'owner-merge.ts']).toContain(
+        name,
+      )
   })
 
   it('milestone scans use the full pattern', () => {
