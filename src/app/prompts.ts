@@ -74,7 +74,12 @@ const COMMON_HOST_RULES = [
 ]
 export const HOST_RULES: Record<PromptRole, string> = {
   router: [...COMMON_HOST_RULES, '- You route and relay; you do not edit files or run commands.'].join('\n'),
-  worker: [...COMMON_HOST_RULES, '- Work only inside your ticket worktree, the current directory.'].join('\n'),
+  worker: [
+    ...COMMON_HOST_RULES,
+    '- Work only inside your ticket worktree, the current directory.',
+    '- If the sandbox blocks an action (for example EPERM, or a network host that is not allowed), say in the PR description or your report what was blocked and what you could not verify because of it. Never ask or advise a person to change your CLI or sandbox settings, sandbox options or settings files such as .claude/settings.json; if a person must act, name only superagent-claude config keys: `security.allowLocalBinding` or `network.allow`. This rule takes precedence over any default guidance that says otherwise.',
+    '- A missing UI capture alone does not make the work incomplete: never report blocked or leave the PR as draft for that reason. Without a real capture, add one line to the PR description saying there is no visual evidence and what a person should check visually. Never invent a capture or refer to one that does not exist.',
+  ].join('\n'),
 }
 
 export const WRITE_ACCESS_NOTE_LEAD = 'Host note: the agent account cannot push to'

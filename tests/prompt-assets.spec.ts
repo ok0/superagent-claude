@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { packagePath } from '../src/infra/paths.ts'
-import { loadBuiltins } from '../src/app/prompts.ts'
+import { HOST_RULES, loadBuiltins } from '../src/app/prompts.ts'
 import { MCP_TOOL_PREFIX, ROUTER_TOOLS, TOOL_NAMES, WORKER_TOOLS, toolNameViolations } from '../src/app/tool-names.ts'
 
 const ASSETS = [
@@ -177,6 +177,43 @@ describe('ported prompt and skill assets', () => {
     expect(body(read('prompts/router.md'))).toContain(
       'without internal terms such as ticket, worker, hand back, Eval, trigger or assignment',
     )
+  })
+
+  it('the default delivery requirements attach real captures, note missing ones in one line and never fabricate', () => {
+    const delivery = body(read('prompts/team/delivery.md'))
+    for (const phrase of [
+      'keep the handoff incomplete',
+      'After-only evidence is incomplete',
+      'orchestrator checks the reported evidence',
+    ]) {
+      expect(delivery, phrase).not.toContain(phrase)
+    }
+    for (const phrase of [
+      'when a real capture can be made in this environment',
+      'Before and After captures of the same scenario, viewport, theme and UI state',
+      'baseline and changed revision',
+      'Refresh the comparison when later UI changes make it stale',
+      'add one line to the PR description saying there is no visual evidence and what a person should check visually',
+      'that alone does not make the PR blocked or draft',
+      'Never fabricate captures',
+      'never present a mockup as the previous implementation',
+      'never refer to a capture that does not exist',
+      'do not expose credentials',
+    ]) {
+      expect(delivery, phrase).toContain(phrase)
+    }
+  })
+
+  it('names no sandbox.network key and only security.allowLocalBinding', () => {
+    const texts = [
+      ...[...ASSETS, 'prompts/reviewer.md'].map(a => [a, body(read(a))] as const),
+      ['host/router', HOST_RULES.router] as const,
+      ['host/worker', HOST_RULES.worker] as const,
+    ]
+    for (const [name, text] of texts) {
+      expect(text, name).not.toContain('sandbox.network')
+      expect(text, name).not.toMatch(/(?<!security\.)allowLocalBinding/)
+    }
   })
 })
 
