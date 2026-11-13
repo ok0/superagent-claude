@@ -36,22 +36,8 @@ export const SHARED_USE_WARNING =
 export const SANDBOX_DOC = 'docs/deploy.md#sandbox-in-containers'
 export const UNSANDBOXED_WARNING = `security.allowUnsandboxed is true and the runtime sandbox is unavailable here: sessions run without the sandbox, network.allow is not enforced and commands can read the agent's tokens from other processes; restrict egress outside the agent (see ${SANDBOX_DOC})`
 
-export const RULE_NUMBER: Partial<Record<StartupRule, number>> = {
-  credential: 1,
-  'allowed-empty': 2,
-  'repositories-empty': 3,
-  'agent-allowed': 4,
-  'subscription-shared': 6,
-  unsandboxed: 7,
-  'no-repository': 8,
-}
-
 export function refused(rule: StartupRule, text: string): StartupRefused {
-  const number = RULE_NUMBER[rule]
-  return new StartupRefused(
-    rule,
-    number ? `Startup refused (rule ${number}, ${rule}): ${text}` : `Startup refused (${rule}): ${text}`,
-  )
+  return new StartupRefused(rule, `Startup refused (${rule}): ${text}`)
 }
 
 const present = (value: string | undefined): value is string => typeof value === 'string' && value.trim() !== ''

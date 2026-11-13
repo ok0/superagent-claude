@@ -126,7 +126,7 @@ What was measured: Docker 27.4.0 on the Docker Desktop VM (kernel 6.10.14-linuxk
 If the start is refused, the message is:
 
 ```text
-Startup refused (rule 7, unsandboxed): policy.acceptMode auto needs the runtime sandbox, which is unavailable here; set security.allowUnsandboxed to true to run without it; see docs/deploy.md#sandbox-in-containers
+Startup refused (unsandboxed): policy.acceptMode auto needs the runtime sandbox, which is unavailable here; set security.allowUnsandboxed to true to run without it; see docs/deploy.md#sandbox-in-containers
 ```
 
 Running the container with full host privileges is not recommended.
@@ -280,7 +280,7 @@ On SIGTERM the daemon fails readiness at once, stops taking new work and records
 
 ### Sandbox on Kubernetes
 
-The pod runs as uid 10001 with every capability dropped, no privilege escalation and the `RuntimeDefault` seccomp profile, which the Pod Security `baseline` and `restricted` levels allow. The config sets `security.weakerNestedSandbox: true` (see [Sandbox in containers](#sandbox-in-containers)). This setup was measured with Docker's default seccomp profile, not on Kubernetes nodes. A node's seccomp or AppArmor defaults can still block the sandbox. With `policy.acceptMode` `auto`, the start is then refused with the rule 7 message above and the pod restarts. Ways out, in order:
+The pod runs as uid 10001 with every capability dropped, no privilege escalation and the `RuntimeDefault` seccomp profile, which the Pod Security `baseline` and `restricted` levels allow. The config sets `security.weakerNestedSandbox: true` (see [Sandbox in containers](#sandbox-in-containers)). This setup was measured with Docker's default seccomp profile, not on Kubernetes nodes. A node's seccomp or AppArmor defaults can still block the sandbox. With `policy.acceptMode` `auto`, the start is then refused with the unsandboxed refusal above and the pod restarts. Ways out, in order:
 
 1. Give the pod `Localhost` seccomp and AppArmor profiles that allow user namespaces, installed on the nodes. Pod Security `baseline` allows `Localhost` profiles.
 2. Set `security.allowUnsandboxed: true` and restrict egress with a NetworkPolicy. Commands then run without the sandbox; see [security.md](security.md#containers).

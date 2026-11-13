@@ -63,6 +63,7 @@ describe('startup rules', () => {
   it('rule 1: the credential must match auth.mode and be present', () => {
     expect(refusal(() => assertStartupPolicy(cfg({}), { mode: 'bedrock' })).rule).toBe('credential')
     expect(refusal(() => resolveCredential('api-key', {})).rule).toBe('credential')
+    expect(refusal(() => resolveCredential('api-key', {})).message).toContain('Startup refused (credential): ')
   })
 
   it('rule 2: an empty policy.allowed is refused, and the file loader refuses it too', () => {
@@ -70,7 +71,8 @@ describe('startup rules', () => {
     const empty: Config = { ...base, policy: { ...base.policy, allowed: [] } }
     const error = refusal(() => assertStartupPolicy(empty, { mode: 'api-key' }))
     expect(error.rule).toBe('allowed-empty')
-    expect(error.message).toContain('rule 2')
+    expect(error.message).toContain('Startup refused (allowed-empty): ')
+    expect(error.message).not.toMatch(/rule \d/)
 
     const dir = tempDir()
     const path = join(dir, 'superagent-claude.json')
@@ -81,12 +83,13 @@ describe('startup rules', () => {
   it('rule 3: an empty repositories list is refused', () => {
     const error = refusal(() => assertStartupPolicy({ ...cfg({}), repositories: [] }, { mode: 'api-key' }))
     expect(error.rule).toBe('repositories-empty')
-    expect(error.message).toContain('rule 3')
+    expect(error.message).toContain('Startup refused (repositories-empty): ')
   })
 
   it('rule 4: the agent account may not be on policy.allowed, compared without case', () => {
     expect(refusal(() => assertStartupPolicy(cfg({}), { mode: 'api-key' }, 'OWNER')).rule).toBe('agent-allowed')
     expect(refusal(() => assertAgentLogin(cfg({}), 'owner'))).toBeInstanceOf(StartupRefused)
+    expect(refusal(() => assertAgentLogin(cfg({}), 'owner')).message).toContain('Startup refused (agent-allowed): ')
     expect(() => assertStartupPolicy(cfg({}), { mode: 'api-key' }, 'agent-bot')).not.toThrow()
   })
 
@@ -95,6 +98,7 @@ describe('startup rules', () => {
     const error = refusal(() => assertStartupPolicy(shared, { mode: 'subscription' }))
     expect(error.rule).toBe('subscription-shared')
     expect(error.message).toContain(SHARED_USE_WARNING)
+    expect(error.message).toContain('Startup refused (subscription-shared): ')
 
     const unowned = cfg({ policy: { allowed: ['owner', 'mate'] }, auth: { mode: 'subscription' } })
     expect(refusal(() => assertStartupPolicy(unowned, { mode: 'subscription' })).rule).toBe('subscription-shared')
@@ -136,7 +140,7 @@ describe('startup rules', () => {
     const auto = cfg({ policy: { allowed: ['owner'], acceptMode: 'auto' } })
     const error = refusal(() => assertStartupPolicy(auto, { mode: 'api-key' }, undefined, unsandboxed))
     expect(error.rule).toBe('unsandboxed')
-    expect(error.message).toContain('rule 7')
+    expect(error.message).toContain('Startup refused (unsandboxed): ')
     expect(error.message).toContain('docs/deploy.md#sandbox-in-containers')
     expect(() =>
       assertStartupPolicy(
@@ -165,6 +169,7 @@ describe('startup rules', () => {
   it('rule 8: no accessible repository is refused, partial access is not', () => {
     const two = cfg({ repositories: ['a/b', 'c/d'] })
     expect(refusal(() => assertRepositoryAccess(two, [])).rule).toBe('no-repository')
+    expect(refusal(() => assertRepositoryAccess(two, [])).message).toContain('Startup refused (no-repository): ')
     expect(() => assertRepositoryAccess(two, ['a/b'])).not.toThrow()
   })
 })
@@ -194,6 +199,7 @@ describe('startup checks through the GitHub Source', () => {
     )
     expect(error).toBeInstanceOf(StartupRefused)
     expect((error as StartupRefused).rule).toBe('no-repository')
+    expect((error as StartupRefused).message).toContain('Startup refused (no-repository): ')
   })
 
   it('rule 8: one inaccessible repository is reported in health and start resolves', async () => {
@@ -277,7 +283,7 @@ describe('startup refusals through the CLI', () => {
     const c = cliIo(dir, cliEnv(dir, { ANTHROPIC_API_KEY: undefined }))
     expect(await main(['start', '--fake', '--config', writeConfig(dir)], c.io)).toBe(2)
     expect(c.err.join('')).toContain('ANTHROPIC_API_KEY')
-    expect(c.err.join('')).toContain('rule 1')
+    expect(c.err.join('')).toContain('Startup refused (credential): ')
   })
 
   it('auto acceptance without a sandbox exits 2 with rule 7; with allowUnsandboxed it starts and stops with 0', async () => {
@@ -289,7 +295,7 @@ describe('startup refusals through the CLI', () => {
         refused.io,
       ),
     ).toBe(2)
-    expect(refused.err.join('')).toContain('rule 7')
+    expect(refused.err.join('')).toContain('Startup refused (unsandboxed): ')
     expect(refused.err.join('')).toContain('docs/deploy.md#sandbox-in-containers')
 
     const allowed = cliIo(dir, cliEnv(dir))
@@ -314,7 +320,8 @@ describe('startup refusals through the CLI', () => {
     expect(
       await main(['start', '--fake', '--config', writeConfig(dir, { policy: { allowed: ['alice'] } })], c.io),
     ).toBe(2)
-    expect(c.err.join('')).toContain('rule 4')
+    expect(c.err.join('')).toContain('Startup refused (agent-allowed): ')
+    expect(c.err.join('')).not.toMatch(/rule \d/)
   }, 30_000)
 
   it('a consented subscription starts, records the consent without the token value, and warns on stderr', async () => {
