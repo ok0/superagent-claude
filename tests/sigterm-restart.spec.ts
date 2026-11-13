@@ -80,7 +80,10 @@ function entry(): string {
 function daemon(t: Setup, extra: Record<string, string> = {}): Daemon {
   const child = spawn(process.execPath, [entry(), 'start', '--fake', '--config', t.cfg], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, ...cliEnv(t.dir, { PATH: `${t.gh.bin}:/usr/bin:/bin`, ...extra }) } as NodeJS.ProcessEnv,
+    env: {
+      ...process.env,
+      ...cliEnv(t.dir, { PATH: `${t.gh.bin}:/usr/bin:/bin`, ...t.gh.env, ...extra }),
+    } as NodeJS.ProcessEnv,
   })
   children.push(child)
   const d: Daemon = { child, exited: false, code: null, signal: null, out: '', err: '' }
@@ -100,7 +103,7 @@ function daemon(t: Setup, extra: Record<string, string> = {}): Daemon {
 
 function health(t: Setup, mode: 'live' | 'ready'): number | null {
   return spawnSync(process.execPath, [entry(), 'health', `--${mode}`, '--config', t.cfg], {
-    env: { ...process.env, ...cliEnv(t.dir, { PATH: `${t.gh.bin}:/usr/bin:/bin` }) } as NodeJS.ProcessEnv,
+    env: { ...process.env, ...cliEnv(t.dir, { PATH: `${t.gh.bin}:/usr/bin:/bin`, ...t.gh.env }) } as NodeJS.ProcessEnv,
   }).status
 }
 

@@ -19,6 +19,14 @@ describe('github delivery', () => {
     expect(first).toMatchObject({ number: 1, created: true })
     expect(second).toEqual({ number: 1, url: first.url, created: false })
     expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')).toHaveLength(1)
+    const post = gh.requests.find(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')!
+    expect(post.body.draft).toBe(false)
+    expect(
+      gh.requests.some(
+        r => r.method === 'GET' && r.path === 'repos/acme/widgets/pulls?state=open&head=acme:agent/x&per_page=10',
+      ),
+    ).toBe(true)
+    expect(gh.execs).toEqual([])
   })
 
   it('replies in the review thread of any of its comments and resolves it on request', async () => {
@@ -50,6 +58,10 @@ describe('github delivery', () => {
       gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls/3/comments/70/replies'),
     ).toHaveLength(2)
     expect(gh.graphql.length).toBe(graphqlBefore)
+    const threads = gh.requests.find(r => r.path === 'graphql' && String(r.body.query).includes('reviewThreads'))!
+    expect(threads.body.number).toBe(3)
+    expect(Number.isInteger(threads.body.number)).toBe(true)
+    expect(gh.execs).toEqual([])
 
     await expect(pulls.replyReviewThread(A, 3, 80, 'x', false)).rejects.toThrow(/not a review comment on PR #3/)
   })

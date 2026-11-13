@@ -1,8 +1,10 @@
 /**
  * A scripted stand-in for the gh and git programs behind a real Commands runner, and a recording Source host; no
- * network and no real gh. The same routing core also answers fetch Requests.
+ * network and no real gh. The same routing core answers the fetch Requests of the GitHubApi client that Commands
+ * uses for API calls, while the exec adapter still answers the remaining gh argv calls.
  */
 import { Commands, type Exec } from '../../src/infra/commands.ts'
+import { GitHubApi } from '../../src/infra/github-api.ts'
 import { HealthBoard } from '../../src/infra/health.ts'
 import type { ReceiveResult, Ticket, Thread, ThreadRef, Trigger } from '../../src/core/index.ts'
 import type { SourceContext, SourceHost } from '../../src/sources/host.ts'
@@ -25,6 +27,8 @@ export interface FakeRepository {
   statuses?: Record<string, unknown[]>
   failures?: Record<string, number>
   resolved?: Set<number>
+  notificationHeaders?: Record<string, string>
+  notificationPages?: unknown[][]
 }
 
 export interface FakeGhScript {
@@ -45,7 +49,13 @@ export interface FakeGh {
   calls: string[]
   posted: Posted[]
   execs: { program: string; args: string[]; env: Record<string, string> }[]
-  requests: { method: string; path: string; fields: Record<string, string> }[]
+  requests: {
+    method: string
+    path: string
+    fields: Record<string, string>
+    body: Record<string, unknown>
+    authorization: string | undefined
+  }[]
   graphql: { query: string; variables: Record<string, string> }[]
   hold(prefix: string): { reached(): boolean; release(): void }
   fetch: typeof globalThis.fetch
@@ -86,8 +96,14 @@ export const FAKE_HEADERS = {
   'x-ratelimit-reset': '1790000000',
 }
 
-export const toResponse = ({ status, data }: { status: number; data: unknown }): Response =>
-  new Response(JSON.stringify(data), { status, headers: FAKE_HEADERS })
+export const toResponse = (
+  { status, data }: { status: number; data: unknown },
+  extra: Record<string, string> = {},
+): Response => {
+  const headers = { ...FAKE_HEADERS, ...extra }
+  if (status === 304) return new Response(null, { status: 304, headers })
+  return new Response(JSON.stringify(data), { status, headers })
+}
 
 export async function readRequest(request: Request): Promise<{ method: string; path: string; fields: Fields }> {
   const url = new URL(request.url)
@@ -101,7 +117,12 @@ export async function readRequest(request: Request): Promise<{ method: string; p
 
 export function fakeGh(
   script: FakeGhScript,
-  options: { baseEnv?: Record<string, string | undefined>; apiEnv?: Record<string, string>; posted?: Posted[] } = {},
+  options: {
+    baseEnv?: Record<string, string | undefined>
+    apiEnv?: Record<string, string>
+    posted?: Posted[]
+    token?: string
+  } = {},
 ): FakeGh {
   const calls: string[] = []
   const posted: Posted[] = options.posted ?? []
@@ -269,7 +290,11 @@ export function fakeGh(
     if (checks) return { check_runs: repo.checkRuns?.[checks[1]!] ?? [] }
     const statuses = /^commits\/([^/]+)\/statuses$/.exec(rest)
     if (statuses) return repo.statuses?.[statuses[1]!] ?? []
-    if (rest === 'notifications') return repo.notifications ?? []
+    if (rest === 'notifications') {
+      if (!repo.notificationPages) return repo.notifications ?? []
+      const page = Number(new URLSearchParams((match[2] ?? '').split('?')[1] ?? '').get('page') ?? 1)
+      return repo.notificationPages[page - 1] ?? []
+    }
     throwNotFound()
   }
 
@@ -292,9 +317,15 @@ export function fakeGh(
     return i >= 0 ? (args[i + 1] ?? '') : path === 'graphql' ? 'POST' : 'GET'
   }
 
-  const record = (method: string, path: string, stringFields: Record<string, string>): void => {
+  const record = (
+    method: string,
+    path: string,
+    stringFields: Record<string, string>,
+    body: Record<string, unknown>,
+    authorization: string | undefined,
+  ): void => {
     calls.push(path)
-    requests.push({ method, path, fields: stringFields })
+    requests.push({ method, path, fields: stringFields, body, authorization })
     if (path === 'graphql') {
       const { query = '', ...variables } = stringFields
       graphqlCalls.push({ query, variables })
@@ -317,7 +348,7 @@ export function fakeGh(
     if (args[0] !== 'api') throw new Error(`Unexpected gh command: ${args[0] ?? ''}`)
     const path = args[1] ?? ''
     const method = methodOf(path, args)
-    record(method, path, fieldsOf(args))
+    record(method, path, fieldsOf(args), fieldsOf(args), undefined)
     await waitHolds(path)
     return { stdout: output(route(method, path, fieldsOf(args)), args) }
   }
@@ -328,9 +359,25 @@ export function fakeGh(
     const { method, path, fields } = await readRequest(request)
     const stringFields: Record<string, string> = {}
     for (const [key, value] of Object.entries(fields)) stringFields[key] = text(value)
-    record(method, path, stringFields)
+    record(method, path, stringFields, fields, request.headers.get('authorization') ?? undefined)
     await waitHolds(path)
-    return toResponse(answer(method, path, fields))
+    return toResponse(answer(method, path, fields), headersFor(path))
+  }
+
+  const headersFor = (path: string): Record<string, string> => {
+    const match = /^repos\/([^/]+\/[^/]+)\/notifications(?:\?(.*))?$/.exec(path)
+    if (!match) return {}
+    const name = findRepository(match[1]!)
+    if (!name) return {}
+    const repo = script.repositories[name]!
+    const headers: Record<string, string> = { ...repo.notificationHeaders }
+    const params = new URLSearchParams(match[2] ?? '')
+    const page = Number(params.get('page') ?? 1)
+    if (repo.notificationPages && repo.notificationPages.length > page) {
+      params.set('page', String(page + 1))
+      headers.link = `<https://api.github.com/repos/${name}/notifications?${params.toString()}>; rel="next"`
+    }
+    return headers
   }
 
   const answer = (method: string, path: string, fields: Fields): { status: number; data: unknown } => {
@@ -350,6 +397,7 @@ export function fakeGh(
     baseEnv: options.baseEnv ?? { PATH: '/usr/bin', HOME: '/home/test', LANG: 'C' },
     apiEnv: options.apiEnv ?? { GH_TOKEN: 'test-token' },
     exec,
+    client: new GitHubApi({ token: options.token ?? 'test-token', fetch }),
   })
 
   return {

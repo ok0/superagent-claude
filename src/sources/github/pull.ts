@@ -22,7 +22,7 @@ const PullSchema = z.looseObject({
 })
 export type Pull = z.infer<typeof PullSchema> & { repository: string; number: number }
 export const readPull = async (commands: Commands, repository: string, number: number): Promise<Pull> => ({
-  ...(await commands.api(PullSchema, `pulls/${number}`)),
+  ...(await commands.get(PullSchema, `pulls/${number}`)),
   repository,
   number,
 })

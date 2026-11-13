@@ -198,6 +198,21 @@ describe('GitHubApi', () => {
     expect(r.seen.map(q => q.url)).toEqual(paths.map(p => 'https://api.github.com/' + p))
   })
 
+  it('keeps :word and {word} in queries and paths without template expansion or double encoding', async () => {
+    const r = recorder(() => json(200, {}))
+    const api = new GitHubApi({ token: TOKEN, fetch: r.fetch })
+    await api.request('GET', 'repos/a/b/pulls?state=open&head=a:feat/{word}&per_page=10')
+    const u0 = new URL(at(r.seen, 0).url)
+    expect(u0.searchParams.get('head')).toBe('a:feat/{word}')
+    expect(u0.searchParams.get('state')).toBe('open')
+    expect(at(r.seen, 0).url).toContain('head=a:feat/')
+    expect(at(r.seen, 0).url).not.toMatch(/%25|c58|c123|c125/)
+
+    await api.request('GET', 'repos/a/b/contents/{word}:x.md')
+    expect(decodeURIComponent(new URL(at(r.seen, 1).url).pathname)).toBe('/repos/a/b/contents/{word}:x.md')
+    expect(at(r.seen, 1).url).not.toMatch(/%25|c58|c123|c125/)
+  })
+
   it('RequestError shape consumed by the mapping', async () => {
     const r = recorder(req => Object.defineProperty(json(410, { message: 'Gone' }), 'url', { value: req.url }))
     const octokit = new Octokit({ auth: TOKEN, request: { fetch: r.fetch } })

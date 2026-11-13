@@ -1,7 +1,7 @@
 /**
  * Host-side pull request writes under the agent account: open or adopt the PR of a branch, reply in a review thread
  * and resolve it, enable auto-merge (never merge), close a PR, and read the push permission.
- * Only gh api REST and graphql calls.
+ * Only GitHub REST and GraphQL API calls.
  */
 import { z } from 'zod'
 import type { Commands } from '../../infra/commands.ts'
@@ -38,18 +38,16 @@ const ReviewComment = z.looseObject({
 const ReplyCreated = z.looseObject({ id: z.number() })
 const NodeLite = z.looseObject({ node_id: z.string(), state: z.string() })
 const Threads = z.looseObject({
-  data: z.looseObject({
-    repository: z.looseObject({
-      pullRequest: z.looseObject({
-        reviewThreads: z.looseObject({
-          nodes: z.array(
-            z.looseObject({
-              id: z.string(),
-              isResolved: z.boolean(),
-              comments: z.looseObject({ nodes: z.array(z.looseObject({ databaseId: z.number().nullish() })) }),
-            }),
-          ),
-        }),
+  repository: z.looseObject({
+    pullRequest: z.looseObject({
+      reviewThreads: z.looseObject({
+        nodes: z.array(
+          z.looseObject({
+            id: z.string(),
+            isResolved: z.boolean(),
+            comments: z.looseObject({ nodes: z.array(z.looseObject({ databaseId: z.number().nullish() })) }),
+          }),
+        ),
       }),
     }),
   }),
@@ -66,63 +64,35 @@ export function githubPullRequests(commands: Commands): PullRequests {
     async open(repository, request, signal) {
       const scoped = repositoryCommands(commands.withSignal(signal), repository)
       const owner = repository.split('/')[0] ?? ''
-      const open = await scoped.api(z.array(PullLite), `pulls?state=open&head=${owner}:${request.head}&per_page=10`)
+      const open = await scoped.get(z.array(PullLite), `pulls?state=open&head=${owner}:${request.head}&per_page=10`)
       const existing = open.find(pull => pull.head.ref === request.head)
       if (existing) return { number: existing.number, url: existing.html_url, created: false }
-      const created = await scoped.api(
-        PullLite,
-        'pulls',
-        '--method',
-        'POST',
-        '-f',
-        'title=' + request.title,
-        '-f',
-        'head=' + request.head,
-        '-f',
-        'base=' + request.base,
-        '-f',
-        'body=' + request.body,
-        '-F',
-        'draft=' + String(request.draft),
-      )
+      const created = await scoped.send(PullLite, 'POST', 'pulls', {
+        title: request.title,
+        head: request.head,
+        base: request.base,
+        body: request.body,
+        draft: request.draft,
+      })
       return { number: created.number, url: created.html_url, created: true }
     },
 
     async replyReviewThread(repository, pr, commentId, body, resolve, signal) {
       const root = commands.withSignal(signal)
       const scoped = repositoryCommands(root, repository)
-      const comment = await scoped.api(ReviewComment, `pulls/comments/${commentId}`)
+      const comment = await scoped.get(ReviewComment, `pulls/comments/${commentId}`)
       if (!comment.pull_request_url.endsWith('/pulls/' + pr))
         throw new Error(`Comment ${commentId} is not a review comment on PR #${pr}`)
       const rootId = comment.in_reply_to_id ?? comment.id
-      const reply = await scoped.api(
-        ReplyCreated,
-        `pulls/${pr}/comments/${rootId}/replies`,
-        '--method',
-        'POST',
-        '-f',
-        'body=' + body,
-      )
+      const reply = await scoped.send(ReplyCreated, 'POST', `pulls/${pr}/comments/${rootId}/replies`, { body })
       if (resolve) {
         const [owner = '', name = ''] = repository.split('/')
-        const data = await root.api(
-          Threads,
-          'graphql',
-          '-f',
-          'query=' + THREADS,
-          '-f',
-          'owner=' + owner,
-          '-f',
-          'name=' + name,
-          '-F',
-          'number=' + pr,
-        )
-        const thread = data.data.repository.pullRequest.reviewThreads.nodes.find(
+        const data = await root.graphql(Threads, THREADS, { owner, name, number: pr })
+        const thread = data.repository.pullRequest.reviewThreads.nodes.find(
           node => node.comments.nodes[0]?.databaseId === rootId,
         )
         if (!thread) throw new Error(`The review thread of comment ${rootId} was not found; the reply was posted`)
-        if (!thread.isResolved)
-          await root.api(z.unknown(), 'graphql', '-f', 'query=' + RESOLVE, '-f', 'id=' + thread.id)
+        if (!thread.isResolved) await root.graphql(z.unknown(), RESOLVE, { id: thread.id })
       }
       return { replyId: reply.id, resolved: resolve }
     },
@@ -130,30 +100,21 @@ export function githubPullRequests(commands: Commands): PullRequests {
     async enableAutoMerge(repository, pr, method, signal) {
       const root = commands.withSignal(signal)
       const scoped = repositoryCommands(root, repository)
-      const pull = await scoped.api(NodeLite, `pulls/${pr}`)
+      const pull = await scoped.get(NodeLite, `pulls/${pr}`)
       if (pull.state !== 'open') throw new Error('PR #' + pr + ' is not open')
-      await root.api(
-        z.unknown(),
-        'graphql',
-        '-f',
-        'query=' + AUTO,
-        '-f',
-        'id=' + pull.node_id,
-        '-f',
-        'method=' + method.toUpperCase(),
-      )
+      await root.graphql(z.unknown(), AUTO, { id: pull.node_id, method: method.toUpperCase() })
       return { enabled: true }
     },
 
     async close(repository, pr, reason, signal) {
       const scoped = repositoryCommands(commands.withSignal(signal), repository)
-      await scoped.api(z.unknown(), `issues/${pr}/comments`, '--method', 'POST', '-f', 'body=' + reason)
-      await scoped.api(z.unknown(), 'pulls/' + pr, '--method', 'PATCH', '-f', 'state=closed')
+      await scoped.send(z.unknown(), 'POST', `issues/${pr}/comments`, { body: reason })
+      await scoped.send(z.unknown(), 'PATCH', 'pulls/' + pr, { state: 'closed' })
       return { closed: true }
     },
 
     async pushPermission(repository, signal) {
-      const repo = await repositoryCommands(commands.withSignal(signal), repository).api(
+      const repo = await repositoryCommands(commands.withSignal(signal), repository).get(
         z.looseObject({ permissions: z.looseObject({ push: z.boolean().optional() }).nullish() }),
         '',
       )

@@ -1,6 +1,8 @@
 /**
  * CLI test fixtures: a fake gh program on PATH (builtins only), an in-process fake GitHub fetch, the environment that
  * starts the daemon, and a CliIo that records output and signal listeners.
+ * The first cliEnv call in a test file installs the default fake GitHub fetch. A per-test installFakeFetch must be
+ * called after the file's first cliEnv so that its restore returns to the default fake.
  */
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -34,8 +36,10 @@ export function fakeGhBin(
   return bin
 }
 
+let defaultInstalled = false
+
 export function installFakeFetch(
-  options: { login?: string; failUser?: boolean; inaccessible?: readonly string[] } = {},
+  options: { login?: string; failUser?: boolean; inaccessible?: readonly string[]; hang?: boolean } = {},
 ): { requests: string[]; restore(): void } {
   const previous = globalThis.fetch
   const requests: string[] = []
@@ -47,6 +51,13 @@ export function installFakeFetch(
     if (url.host !== 'api.github.com') return previous(input, init)
     const path = url.pathname.replace(/^\//, '')
     requests.push(request.method + ' ' + path)
+    if (options.hang) {
+      const signal = init?.signal ?? request.signal
+      return new Promise<Response>((_, reject) => {
+        if (signal.aborted) reject(signal.reason)
+        else signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    }
     if (path === 'user') {
       return options.failUser
         ? json(401, { message: 'Bad credentials' })
@@ -70,6 +81,10 @@ export function cliEnv(
   dir: string,
   extra: Record<string, string | undefined> = {},
 ): Record<string, string | undefined> {
+  if (!defaultInstalled) {
+    defaultInstalled = true
+    installFakeFetch()
+  }
   const env: Record<string, string | undefined> = {
     HOME: '/home/test',
     PATH: `${fakeGhBin(dir)}:/usr/bin:/bin`,

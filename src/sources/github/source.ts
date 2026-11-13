@@ -194,20 +194,14 @@ async function pollNotifications(
     state.set(GITHUB_STATE.begun(repository), round.started)
   }
   const path = `notifications?all=true&per_page=50&since=${encodeURIComponent(since)}`
-  const raw = await round.api.api(path, '--include')
-  const split = raw.search(/\r?\n\r?\n/)
-  if (split < 0) throw new Error('GitHub returned no HTTP headers')
-  const headers = raw.slice(0, split)
-  const body = raw.slice(split).trim()
-  const asked = Number(/x-poll-interval:\s*(\d+)/i.exec(headers)?.[1] ?? 60)
+  const first = await round.api.response(path)
+  const header = (name: string): string | undefined => /^\s*(\d+)/.exec(first.headers[name] ?? '')?.[1]
+  const asked = Number(header('x-poll-interval') ?? 60)
   const interval = Math.max(60, Number.isFinite(asked) ? asked : 60)
-  const rate = {
-    remaining: /x-ratelimit-remaining:\s*(\d+)/i.exec(headers)?.[1],
-    reset: /x-ratelimit-reset:\s*(\d+)/i.exec(headers)?.[1],
-  }
-  const notifications = /rel="next"/.test(headers)
-    ? await round.api.pages(NotificationSchema, path, round.tally)
-    : validItems(NotificationSchema, z.array(z.unknown()).parse(JSON.parse(body)), round.tally)
+  const rate = { remaining: header('x-ratelimit-remaining'), reset: header('x-ratelimit-reset') }
+  const notifications = /rel="next"/.test(first.headers.link ?? '')
+    ? await round.api.list(NotificationSchema, path, round.tally)
+    : validItems(NotificationSchema, z.array(z.unknown()).parse(first.data), round.tally)
   const retries = { ...state.get(GITHUB_STATE.retries(repository)) }
   // Failed items from the previous round run first, then newly notified items in chronological order;
   // each is read once.
@@ -258,7 +252,7 @@ async function readNotified(ctx: SourceContext, round: Round, number: number, it
   const firstRead = ctx.state.get(GITHUB_STATE.cursor(repository, number)) === undefined
   let isPr = item.pr
   if (!isPr) {
-    const issue = await round.api.api(IssueSchema, `issues/${number}`)
+    const issue = await round.api.get(IssueSchema, `issues/${number}`)
     // `issues/<n>` also returns PRs with `pull_request` set; handle them in the PR branch below.
     isPr = !!issue.pull_request
     if (!isPr) {
@@ -326,7 +320,7 @@ async function intakeComments(ctx: SourceContext, round: Round, ref: PullRef, si
         : kind === 'inline'
           ? `pulls/${ref.number}/comments?per_page=100${suffix}`
           : `pulls/${ref.number}/reviews?per_page=100`
-    const comments = await round.api.pages(CommentSchema, path, round.tally)
+    const comments = await round.api.list(CommentSchema, path, round.tally)
     for (const comment of comments) {
       // Stopping mid-read throws so the thread's cursor stays where it was.
       if (stopped(round)) throw new Error('The GitHub Source stopped during the poll')
@@ -427,7 +421,7 @@ async function pollThread(ctx: SourceContext, round: Round, thread: Thread): Pro
   round.read.add(number)
   let current = thread
   if (typeof thread.meta.isPr !== 'boolean' || typeof thread.meta.title !== 'string') {
-    const issue = await round.api.api(IssueSchema, `issues/${number}`)
+    const issue = await round.api.get(IssueSchema, `issues/${number}`)
     ctx.threads.patch(thread.key, {
       repository: round.repository,
       number,
@@ -472,7 +466,7 @@ export function githubSource(options: GithubSourceOptions): { kind: SourceKind<G
     const commands = options.commands.withSignal(signal)
     let account: string
     try {
-      account = (await commands.api(z.looseObject({ login: z.string() }), 'user')).login
+      account = (await commands.get(z.looseObject({ login: z.string() }), 'user')).login
     } catch (error) {
       ctx.report({ state: 'error', detail: `Could not read the agent account: ${String(error)}`, at: iso() })
       ctx.log('error', 'github.account_failed', { error: String(error) })
@@ -487,7 +481,7 @@ export function githubSource(options: GithubSourceOptions): { kind: SourceKind<G
       const at = iso()
       let access: RepositoryAccess
       try {
-        const repo = await repositoryCommands(commands, repository).api(
+        const repo = await repositoryCommands(commands, repository).get(
           z.looseObject({
             full_name: z.string(),
             permissions: z.looseObject({ push: z.boolean().optional() }).nullish(),

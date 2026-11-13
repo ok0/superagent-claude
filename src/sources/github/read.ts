@@ -80,13 +80,13 @@ export function ciFact(counts: { failed: number; running: number }): ThreadFact 
 /** Reads check runs and commit statuses for a commit without emitting a trigger. */
 export async function pullChecks(commands: Commands, head: string, tally?: Tally): Promise<CiSnapshot> {
   const page = z.looseObject({ check_runs: z.array(z.unknown()) })
-  const pages = await commands.api(z.array(page), `commits/${head}/check-runs?per_page=100`, '--paginate', '--slurp')
+  const pages = await commands.listPages(page, `commits/${head}/check-runs?per_page=100`)
   const runs = validItems(
     CheckSchema,
     pages.flatMap(page => page.check_runs),
     tally,
   )
-  const statuses = await commands.pages(StatusSchema, `commits/${head}/statuses?per_page=100`, tally)
+  const statuses = await commands.list(StatusSchema, `commits/${head}/statuses?per_page=100`, tally)
   const latest = new Map<string, string>()
   for (const status of statuses) if (!latest.has(status.context)) latest.set(status.context, status.state)
   const checks = runs.map(({ name, status, conclusion }) => ({ name, status, conclusion }))
@@ -130,7 +130,7 @@ async function reviewThread(
   comment: number,
   tally?: Tally,
 ): Promise<GithubComment[]> {
-  const comments = await commands.pages(CommentSchema, `pulls/${number}/comments?per_page=100`, tally)
+  const comments = await commands.list(CommentSchema, `pulls/${number}/comments?per_page=100`, tally)
   const root = comments.find(item => item.id === comment)?.in_reply_to_id ?? comment
   return comments
     .filter(item => item.id === root || item.in_reply_to_id === root)
@@ -171,7 +171,7 @@ export async function readGithub(commands: Commands, resource: string): Promise<
   const path = `${kind}/${number}`
   if (section === 'checks') {
     if (match[4]) throw new Error('Checks do not take a page number')
-    const pr = await commands.api(z.looseObject({ head: z.looseObject({ sha: z.string() }) }), path)
+    const pr = await commands.get(z.looseObject({ head: z.looseObject({ sha: z.string() }) }), path)
     return pullChecks(commands, pr.head.sha)
   }
   if (section === 'thread') {
@@ -182,7 +182,7 @@ export async function readGithub(commands: Commands, resource: string): Promise<
     return { messages: threadMessages(thread, item => String(item.id)) }
   }
   if (!section) {
-    const item = await commands.api(DescriptionSchema, path)
+    const item = await commands.get(DescriptionSchema, path)
     const branches = item.head && item.base ? { head: item.head.ref, base: item.base.ref } : {}
     const labels = item.labels?.length ? { labels: item.labels.map(label => label.name) } : {}
     return {
@@ -196,7 +196,7 @@ export async function readGithub(commands: Commands, resource: string): Promise<
       ...githubMessage(item, item.body ?? '', String(item.number)),
     }
   }
-  const listed = await commands.api(z.array(z.unknown()), `${path}/${section}?per_page=20&page=${page}`)
+  const listed = await commands.get(z.array(z.unknown()), `${path}/${section}?per_page=20&page=${page}`)
   const tally = { skipped: 0 }
   const items = validItems(CommentSchema, listed, tally)
   const messages = items.map(item =>
@@ -217,10 +217,10 @@ export async function readGithub(commands: Commands, resource: string): Promise<
 async function conversationPage(commands: Commands, number: number, page: number) {
   const messages: ContextMessage[] = []
   if (page === 1) {
-    const issue = await commands.api(IssueSchema, `issues/${number}`)
+    const issue = await commands.get(IssueSchema, `issues/${number}`)
     messages.push(githubMessage(issue, `${issue.title}\n\n${issue.body ?? ''}`, issue.html_url))
   }
-  const listed = await commands.api(z.array(z.unknown()), `issues/${number}/comments?per_page=100&page=${page}`)
+  const listed = await commands.get(z.array(z.unknown()), `issues/${number}/comments?per_page=100&page=${page}`)
   const tally = { skipped: 0 }
   const comments = validItems(CommentSchema, listed, tally)
   messages.push(

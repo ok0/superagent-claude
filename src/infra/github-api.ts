@@ -1,6 +1,8 @@
 /** GitHub REST and GraphQL client over Octokit core: link pagination on one origin, a per-request timeout, caller abort and CliError mapping that never carries the token, request body or URL. */
 import { Octokit } from '@octokit/core'
-import { CliError, TIMEOUT_MS } from './commands.ts'
+import { CliError, TIMEOUT_MS, type ApiClient, type ApiResponse } from './commands.ts'
+
+export type { ApiResponse }
 
 export const API_BASE = 'https://api.github.com'
 
@@ -8,12 +10,6 @@ export interface GitHubApiOptions {
   token: string
   fetch?: typeof globalThis.fetch
   timeoutMs?: number
-}
-
-export interface ApiResponse {
-  status: number
-  headers: Readonly<Record<string, string>>
-  data: unknown
 }
 
 type Obj = Record<string, unknown>
@@ -40,7 +36,7 @@ export function apiError(error: unknown): CliError {
   return new CliError('GitHub API request failed' + (code ? ': ' + code : ''))
 }
 
-export class GitHubApi {
+export class GitHubApi implements ApiClient {
   private readonly octokit: Octokit
   private readonly timeoutMs: number
 

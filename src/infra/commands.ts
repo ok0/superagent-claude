@@ -88,18 +88,32 @@ export const execProgram: Exec = async (program, args, options) => {
   return { stdout }
 }
 
+export interface ApiResponse {
+  status: number
+  headers: Readonly<Record<string, string>>
+  data: unknown
+}
+
+export interface ApiClient {
+  request(method: string, path: string, body?: Record<string, unknown>, signal?: AbortSignal): Promise<ApiResponse>
+  pages(path: string, signal?: AbortSignal): Promise<unknown[]>
+  graphql(query: string, variables: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>
+}
+
 export interface CommandsOptions {
-  apiProgram: string
+  apiProgram?: string
   baseEnv: Readonly<Record<string, string | undefined>>
   env?: Readonly<Record<string, string>>
   apiEnv?: Readonly<Record<string, string>>
   signal?: AbortSignal
   exec?: Exec
   root?: string
+  client?: ApiClient
 }
 
 /**
- * Runs the hosting API program and git subprocesses with whitelisted environments, timeouts and abort signals.
+ * Runs git and the hosting API program with whitelisted environments, timeouts and abort signals.
+ * Hosting API calls go through the injected ApiClient; the gh argv methods remain until they are removed.
  * API paths are confined to the root set by `at`, and failures become CliError instances without argv.
  */
 export class Commands {
@@ -149,6 +163,7 @@ export class Commands {
   }
 
   private runApi(args: string[]): Promise<string> {
+    if (!this.options.apiProgram) throw new Error('API program is not configured')
     return this.run(this.options.apiProgram, args, undefined, this.options.apiEnv ?? {})
   }
 
@@ -174,6 +189,57 @@ export class Commands {
       .array(z.array(z.unknown()))
       .parse(await this.call(['api', this.path(path), '--paginate', '--slurp']))
     return validItems(item, pages.flat(), tally)
+  }
+
+  private client(): ApiClient {
+    if (!this.options.client) throw new Error('API client is not configured')
+    return this.options.client
+  }
+
+  private apiPath(path: string): string {
+    if (/[{}]/.test(path)) throw new Error('API calls are restricted to the configured root')
+    return this.path(path)
+  }
+
+  async get<T>(schema: z.ZodType<T>, path: string): Promise<T> {
+    const url = this.apiPath(path)
+    const client = this.client()
+    return schema.parse((await client.request('GET', url, undefined, this.options.signal)).data)
+  }
+
+  async send<T>(
+    schema: z.ZodType<T>,
+    method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+    path: string,
+    body: Record<string, unknown>,
+  ): Promise<T> {
+    const url = this.apiPath(path)
+    const client = this.client()
+    return schema.parse((await client.request(method, url, body, this.options.signal)).data)
+  }
+
+  async response(path: string): Promise<ApiResponse> {
+    const url = this.apiPath(path)
+    const client = this.client()
+    return client.request('GET', url, undefined, this.options.signal)
+  }
+
+  async listPages<T>(page: z.ZodType<T>, path: string): Promise<T[]> {
+    const url = this.apiPath(path)
+    const client = this.client()
+    return z.array(page).parse(await client.pages(url, this.options.signal))
+  }
+
+  async list<T>(item: z.ZodType<T>, path: string, tally?: Tally): Promise<T[]> {
+    const url = this.apiPath(path)
+    const client = this.client()
+    const pages = z.array(z.array(z.unknown())).parse(await client.pages(url, this.options.signal))
+    return validItems(item, pages.flat(), tally)
+  }
+
+  async graphql<T>(schema: z.ZodType<T>, query: string, variables: Record<string, unknown>): Promise<T> {
+    const client = this.client()
+    return schema.parse(await client.graphql(query, variables, this.options.signal))
   }
 
   private path(path: string): string {

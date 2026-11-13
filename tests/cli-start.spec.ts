@@ -7,15 +7,18 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { main } from '../src/cli/main.ts'
 import { STOP_TIMEOUT_MS } from '../src/app/runtime.ts'
 import { waitUntil } from './fixtures/async.ts'
-import { cliEnv, cliIo } from './fixtures/cli.ts'
+import { cliEnv, cliIo, installFakeFetch } from './fixtures/cli.ts'
+import { fileGh, type FileGh } from './fixtures/file-gh.ts'
 
 const dirs: string[] = []
 const children: ChildProcess[] = []
+const githubs = new Map<string, FileGh>()
 
 afterEach(() => {
   for (const child of children.splice(0))
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  githubs.clear()
 })
 
 function tempDir(): string {
@@ -44,9 +47,11 @@ function io(cwd: string) {
 
 function spawnCli(args: string[], dir: string) {
   const entry = process.env.SUPERAGENT_CLAUDE_CLI ?? fileURLToPath(new URL('../src/cli/bin.ts', import.meta.url))
+  const gh = githubs.get(dir) ?? fileGh(dir, { repositories: { 'owner/repo': {} } })
+  githubs.set(dir, gh)
   const child = spawn(process.execPath, [entry, ...args], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, ...cliEnv(dir) } as NodeJS.ProcessEnv,
+    env: { ...process.env, ...cliEnv(dir), ...gh.env } as NodeJS.ProcessEnv,
   })
   children.push(child)
   const state = { out: '', err: '', code: undefined as number | null | undefined }
@@ -153,15 +158,20 @@ describe('start in process', () => {
     writeFileSync(gh, '#!/bin/sh\nexec sleep 30\n')
     chmodSync(gh, 0o755)
     const c = cliIo(dir, cliEnv(dir, { PATH: `${bin}:/usr/bin:/bin` }))
-    const p = main(['start', '--fake', '--config', writeConfig(dir)], c.io)
-    await waitUntil(() => c.listeners.SIGINT !== undefined, 10_000)
-    const at = Date.now()
-    c.listeners.SIGINT!()
-    expect(await p).toBe(0)
-    expect(Date.now() - at).toBeLessThan(STOP_TIMEOUT_MS)
-    const text = c.out.join('')
-    expect(hasEvent(text, 'runtime.started')).toBe(false)
-    expect(hasEvent(text, 'runtime.stopped')).toBe(true)
+    const fake = installFakeFetch({ hang: true })
+    try {
+      const p = main(['start', '--fake', '--config', writeConfig(dir)], c.io)
+      await waitUntil(() => c.listeners.SIGINT !== undefined, 10_000)
+      const at = Date.now()
+      c.listeners.SIGINT!()
+      expect(await p).toBe(0)
+      expect(Date.now() - at).toBeLessThan(STOP_TIMEOUT_MS)
+      const text = c.out.join('')
+      expect(hasEvent(text, 'runtime.started')).toBe(false)
+      expect(hasEvent(text, 'runtime.stopped')).toBe(true)
+    } finally {
+      fake.restore()
+    }
   }, 30_000)
 })
 

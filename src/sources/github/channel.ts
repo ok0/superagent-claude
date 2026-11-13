@@ -49,7 +49,7 @@ export function githubChannelAdapter(options: ChannelOptions): SourceChannel<Git
         if (target?.pr && target.discussion && target.number === number) {
           // Fall back to a top-level PR comment if the target inline review comment was deleted.
           const source = await commands
-            .api(CommentSchema, `pulls/comments/${target.discussion}`)
+            .get(CommentSchema, `pulls/comments/${target.discussion}`)
             .catch((error: unknown) => {
               if (missing(error)) return undefined
               throw error
@@ -65,9 +65,9 @@ export function githubChannelAdapter(options: ChannelOptions): SourceChannel<Git
         // Crash recovery: a post that succeeded before a restart is found here by its marker and settles as sent,
         // without a second comment. This relies on the comment list showing the created comment; one a person
         // deleted meanwhile is posted again.
-        if ((await commands.pages(CommentSchema, path)).some(mine)) return 'sent'
+        if ((await commands.list(CommentSchema, path)).some(mine)) return 'sent'
         const post = rootId === undefined ? path : `${path}/${rootId}/replies`
-        await commands.api(z.unknown(), post, '--method', 'POST', '-f', `body=${message.text}\n\n${marker}`)
+        await commands.send(z.unknown(), 'POST', post, { body: `${message.text}\n\n${marker}` })
         return 'sent'
       } catch (error) {
         if (gone(error)) return 'gone'

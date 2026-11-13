@@ -1,6 +1,6 @@
 /**
  * The Source kinds this build installs: the GitHub Source when SUPERAGENT_CLAUDE_GITHUB_TOKEN is set.
- * The token reaches only the gh calls, as GH_TOKEN. A missing or blank token refuses startup.
+ * The token reaches only the GitHub API client and never a subprocess environment. A missing or blank token refuses startup.
  * The token also authenticates the host's clone and fetch calls and pull request writes, through an
  * env-scoped header that never reaches worker sessions or git config.
  */
@@ -9,6 +9,7 @@ import type { Config } from './config.ts'
 import { StartupRefused } from './config.ts'
 import { assertAgentLogin, assertRepositoryAccess } from './credentials.ts'
 import { Commands } from '../infra/commands.ts'
+import { GitHubApi } from '../infra/github-api.ts'
 import type { SourceService } from '../sources/host.ts'
 import type { SourceKind } from '../sources/kind.ts'
 import type { PollTimers } from '../sources/poll.ts'
@@ -62,9 +63,7 @@ export function installedSources(
   const token = env[GITHUB_TOKEN_ENV]?.trim()
   if (!token) throw new StartupRefused('agent-token', `Startup refused (agent-token): ${GITHUB_TOKEN_ENV} is not set`)
   let login: string | undefined
-  const commands =
-    options.commands ??
-    new Commands({ apiProgram: 'gh', baseEnv: env, apiEnv: { GH_TOKEN: token, GH_PROMPT_DISABLED: '1' } })
+  const commands = options.commands ?? new Commands({ baseEnv: env, client: new GitHubApi({ token }) })
   const github = githubSource({
     repositories: config.repositories,
     commands,

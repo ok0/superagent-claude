@@ -4,11 +4,12 @@
  */
 import { afterEach, expect, it } from 'vitest'
 import type { Thread, Ticket } from '../src/core/index.ts'
-import { githubSource, type GithubSourceOptions } from '../src/sources/github/source.ts'
+import { githubSource, pollRepository, type GithubSourceOptions } from '../src/sources/github/source.ts'
 import { threadId, threadKeyOf } from '../src/sources/github/trigger.ts'
 import { sleep, waitUntil } from './fixtures/async.ts'
 import { ManualClock } from './fixtures/executor.ts'
 import {
+  AGENT,
   AT,
   comment,
   fakeGh,
@@ -371,4 +372,41 @@ it('an Issue read in two rounds yields one trigger and a duplicate on the second
     .filter(item => item.trigger.meta.kind === 'issue' && item.trigger.threads[0]!.id === 'acme/widgets#9')
     .map(item => item.result)
   expect(results).toEqual(['stored', 'duplicate'])
+})
+
+it('notifications polling takes interval, rate limit and next page from response headers, and a 304 fails the round', async () => {
+  const gh = fakeGh({
+    repositories: {
+      [A]: {
+        notificationHeaders: {
+          'x-poll-interval': '120',
+          'x-ratelimit-remaining': '42',
+          'x-ratelimit-reset': '1790000123',
+        },
+        notificationPages: [[notification(A, 1)], [notification(A, 2)]],
+        issues: { 1: issue(A, 1), 2: issue(A, 2) },
+      },
+    },
+  })
+  const source = githubSource({ repositories: [A], commands: gh.commands })
+  const rec = recordingHost(source.kind)
+  const poll = {
+    repository: A,
+    login: AGENT,
+    commands: gh.commands,
+    signal: new AbortController().signal,
+    now: () => START,
+  }
+  expect(await pollRepository(rec.context, poll)).toBe(120)
+  expect(gh.requests.some(r => r.method === 'GET' && r.path === 'repos/acme/widgets/issues/1')).toBe(true)
+  expect(gh.requests.some(r => r.method === 'GET' && r.path === 'repos/acme/widgets/issues/2')).toBe(true)
+  expect(
+    gh.requests.some(r => r.path.startsWith('repos/acme/widgets/notifications') && r.path.includes('page=2')),
+  ).toBe(true)
+  const health = rec.board.all[`github:${A}`]
+  expect(health?.values).toMatchObject({ rateRemaining: '42', rateReset: '1790000123' })
+  expect(health?.detail).toContain('2 notifications')
+  expect(health?.detail).toContain('next poll ≥ 120s')
+  gh.script.repositories[A]!.failures = { notifications: 304 }
+  await expect(pollRepository(rec.context, poll)).rejects.toMatchObject({ code: 304 })
 })

@@ -23,7 +23,7 @@ import { main } from '../src/cli/main.ts'
 import type { SourceService } from '../src/sources/host.ts'
 import type { RuntimeProbe } from '../src/executor/contract.ts'
 import { waitUntil } from './fixtures/async.ts'
-import { cliEnv, cliIo, fakeGhBin } from './fixtures/cli.ts'
+import { cliEnv, cliIo, fakeGhBin, installFakeFetch } from './fixtures/cli.ts'
 import { ManualClock } from './fixtures/executor.ts'
 import { fakeGh, issue, recordingHost, START } from './fixtures/fake-gh.ts'
 
@@ -317,11 +317,16 @@ describe('startup refusals through the CLI', () => {
   it('an agent account on policy.allowed exits 2 with rule 4', async () => {
     const dir = tempDir()
     const c = cliIo(dir, cliEnv(dir, { PATH: `${fakeGhBin(join(dir, 'alice'), { login: 'alice' })}:/usr/bin:/bin` }))
-    expect(
-      await main(['start', '--fake', '--config', writeConfig(dir, { policy: { allowed: ['alice'] } })], c.io),
-    ).toBe(2)
-    expect(c.err.join('')).toContain('Startup refused (agent-allowed): ')
-    expect(c.err.join('')).not.toMatch(/rule \d/)
+    const fake = installFakeFetch({ login: 'alice' })
+    try {
+      expect(
+        await main(['start', '--fake', '--config', writeConfig(dir, { policy: { allowed: ['alice'] } })], c.io),
+      ).toBe(2)
+      expect(c.err.join('')).toContain('Startup refused (agent-allowed): ')
+      expect(c.err.join('')).not.toMatch(/rule \d/)
+    } finally {
+      fake.restore()
+    }
   }, 30_000)
 
   it('a consented subscription starts, records the consent without the token value, and warns on stderr', async () => {

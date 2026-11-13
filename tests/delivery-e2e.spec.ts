@@ -280,6 +280,10 @@ it('publish twice opens one PR bound to the ticket, and a PR follow-up resumes t
   expect(
     gh.posted.filter(post => post.path === 'issues/1/comments' && post.body.includes('Pushed the follow-up.')),
   ).toHaveLength(0)
+  expect(gh.requests.length).toBeGreaterThan(0)
+  for (const r of gh.requests) expect(r.authorization).toContain('test-token')
+  expect(gh.execs.filter(e => e.program === 'gh')).toEqual([])
+  for (const e of gh.execs) expect(Object.values(e.env).join('\n')).not.toContain('test-token')
 })
 
 it('with branchFrom main and pullRequestTo dev the PR opens against dev from a worktree on main', async () => {

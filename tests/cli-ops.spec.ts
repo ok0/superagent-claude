@@ -12,15 +12,18 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { main } from '../src/cli/main.ts'
 import { waitUntil } from './fixtures/async.ts'
 import { cliEnv, cliIo } from './fixtures/cli.ts'
+import { fileGh, type FileGh } from './fixtures/file-gh.ts'
 import { seedState, TOKEN, writeStateConfig } from './fixtures/state.ts'
 
 const dirs: string[] = []
 const children: ChildProcess[] = []
+const githubs = new Map<string, FileGh>()
 
 afterEach(() => {
   for (const child of children.splice(0))
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  githubs.clear()
 })
 
 function tempDir(): string {
@@ -35,9 +38,11 @@ function io(dir: string) {
 
 function spawnCli(args: string[], dir: string) {
   const entry = process.env.SUPERAGENT_CLAUDE_CLI ?? fileURLToPath(new URL('../src/cli/bin.ts', import.meta.url))
+  const gh = githubs.get(dir) ?? fileGh(dir, { repositories: { 'owner/repo': {}, 'owner/other': {} } })
+  githubs.set(dir, gh)
   const child = spawn(process.execPath, [entry, ...args], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, ...cliEnv(dir) } as NodeJS.ProcessEnv,
+    env: { ...process.env, ...cliEnv(dir), ...gh.env } as NodeJS.ProcessEnv,
   })
   children.push(child)
   const state = { out: '', err: '', code: undefined as number | null | undefined }

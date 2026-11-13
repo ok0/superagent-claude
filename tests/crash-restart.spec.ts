@@ -80,7 +80,10 @@ function daemon(t: Setup, extra: Record<string, string> = {}): Daemon {
   const entry = process.env.SUPERAGENT_CLAUDE_CLI ?? fileURLToPath(new URL('../src/cli/bin.ts', import.meta.url))
   const child = spawn(process.execPath, [entry, 'start', '--fake', '--config', t.cfg], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, ...cliEnv(t.dir, { PATH: `${t.gh.bin}:/usr/bin:/bin`, ...extra }) } as NodeJS.ProcessEnv,
+    env: {
+      ...process.env,
+      ...cliEnv(t.dir, { PATH: `${t.gh.bin}:/usr/bin:/bin`, ...t.gh.env, ...extra }),
+    } as NodeJS.ProcessEnv,
   })
   children.push(child)
   const d: Daemon = { child, exited: false, code: null, signal: null, out: '', err: '' }

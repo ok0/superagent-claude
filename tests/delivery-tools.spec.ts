@@ -25,7 +25,7 @@ interface SetupOptions {
   failures?: Record<string, number>
   recorded?: boolean
   pushError?: Error
-  apiEnv?: Record<string, string>
+  token?: string
   issue?: { repository: string; number: number }
 }
 
@@ -43,7 +43,7 @@ function setup(opts: SetupOptions = {}) {
       ],
     },
   }
-  const gh = fakeGh({ repositories: { [A]: repo } }, { apiEnv: opts.apiEnv })
+  const gh = fakeGh({ repositories: { [A]: repo } }, opts.token ? { token: opts.token } : {})
   const follows = opts.follows ?? [{ thread: 'github:acme/widgets#2', own: true }]
   const bindThread = vi.fn()
   const push = vi.fn(async () => {
@@ -139,7 +139,7 @@ describe('worker delivery tools', () => {
   })
 
   it('a PR API 403 is a repository access error with the status and a failed report, without the token', async () => {
-    const { tools, bindThread, report } = setup({ failures: { pulls: 403 }, apiEnv: { GH_TOKEN: 'tok-secret-1' } })
+    const { gh, tools, bindThread, report } = setup({ failures: { pulls: 403 }, token: 'tok-secret-1' })
     const error = (await find(tools, 'orchestrator_publish')
       .execute({ title: 'Fix', body: 'Body' }, signal())
       .then(
@@ -154,6 +154,8 @@ describe('worker delivery tools', () => {
     expect(summary).toContain('HTTP 403')
     expect(summary).not.toContain('tok-secret-1')
     expect(bindThread).not.toHaveBeenCalled()
+    expect(gh.requests.some(r => r.authorization?.includes('tok-secret-1'))).toBe(true)
+    expect(gh.execs).toEqual([])
   })
 
   it('a push access error is reported failed', async () => {
