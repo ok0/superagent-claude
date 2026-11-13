@@ -2,6 +2,13 @@
 
 All notable changes to this project are listed here. Entries are generated from Conventional Commits, versions follow Semantic Versioning, and before 1.0 breaking changes bump the MINOR version.
 
+## [0.3.0] - 2026-11-13
+
+### Features
+
+- replies: post the reason when a ticket is blocked before work starts (0cd2bed)
+- config: add per-repository branchFrom and pullRequestTo (d288bcf)
+
 ## [0.2.0] - 2026-11-12
 
 ### Features
