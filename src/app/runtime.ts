@@ -389,7 +389,7 @@ export class Runtime implements SourceHost {
         options.workspaces === 'git'
           ? new Workspaces({
               stateDir: config.stateDir,
-              commands: new Commands({ apiProgram: 'gh', baseEnv: this.env, env: { GIT_TERMINAL_PROMPT: '0' } }),
+              commands: new Commands({ baseEnv: this.env, env: { GIT_TERMINAL_PROMPT: '0' } }),
               repositoryOf,
               access: options.access!,
             })

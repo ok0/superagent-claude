@@ -1,9 +1,5 @@
 // Ported from dsh-superagent-prototype (MIT) src/infra/commands.ts
-/**
- * Subprocess runner for the hosting API program and git, with timeouts, abort signals and sanitized errors.
- * API paths are confined to a root. Subprocesses get a whitelisted environment.
- * API-only variables reach only the API program.
- */
+/** Runs git and calls the hosting API through the injected ApiClient, with timeouts, abort signals and sanitized errors. API paths are confined to a root; git gets a whitelisted environment. */
 import { execFile } from 'node:child_process'
 import { basename } from 'node:path'
 import { promisify } from 'node:util'
@@ -43,7 +39,7 @@ export function commandError(error: unknown, program = 'command', timeoutMs = TI
     const code = parsed?.error?.code
     if (parsed?.error?.message)
       return new CliError(`${parsed.error.message}${code ? ` (${code})` : ''}`, code, exitCode)
-    // The API program exits non-zero on HTTP errors and on HTTP 304, which conditional reads rely on.
+    // A program may exit non-zero with an HTTP status in stderr.
     if (stderr)
       return new CliError(stderr.slice(0, 2000), Number(/\bHTTP (\d{3})\b/.exec(stderr)?.[1]) || undefined, exitCode)
   }
@@ -101,10 +97,8 @@ export interface ApiClient {
 }
 
 export interface CommandsOptions {
-  apiProgram?: string
   baseEnv: Readonly<Record<string, string | undefined>>
   env?: Readonly<Record<string, string>>
-  apiEnv?: Readonly<Record<string, string>>
   signal?: AbortSignal
   exec?: Exec
   root?: string
@@ -112,9 +106,7 @@ export interface CommandsOptions {
 }
 
 /**
- * Runs git and the hosting API program with whitelisted environments, timeouts and abort signals.
- * Hosting API calls go through the injected ApiClient; the gh argv methods remain until they are removed.
- * API paths are confined to the root set by `at`, and failures become CliError instances without argv.
+ * Runs git with a whitelisted environment and routes hosting API calls through the injected ApiClient; API paths are confined to the root set by `at`, and failures become CliError instances without argv.
  */
 export class Commands {
   private readonly options: CommandsOptions
@@ -160,35 +152,6 @@ export class Commands {
     } catch (error) {
       throw commandError(error, program, timeout)
     }
-  }
-
-  private runApi(args: string[]): Promise<string> {
-    if (!this.options.apiProgram) throw new Error('API program is not configured')
-    return this.run(this.options.apiProgram, args, undefined, this.options.apiEnv ?? {})
-  }
-
-  async call<T>(args: string[]): Promise<T> {
-    return JSON.parse(await this.runApi(args)) as T
-  }
-
-  /**
-   * Calls the hosting API under the root. Without a schema, returns raw output (raw files, `--include` headers).
-   * @throws CliError with the HTTP status as `code` on failure.
-   */
-  async api<T>(schema: z.ZodType<T>, path: string, ...flags: string[]): Promise<T>
-  async api(path: string, ...flags: string[]): Promise<string>
-  async api<T>(schema: z.ZodType<T> | string, ...rest: string[]): Promise<T | string> {
-    if (typeof schema === 'string') return this.runApi(['api', this.path(schema), ...rest])
-    const [path = '', ...flags] = rest
-    return schema.parse(await this.call(['api', this.path(path), ...flags]))
-  }
-
-  /** Fetches all pages of an API list under the root, skipping items that fail schema validation. */
-  async pages<T>(item: z.ZodType<T>, path: string, tally?: Tally): Promise<T[]> {
-    const pages = z
-      .array(z.array(z.unknown()))
-      .parse(await this.call(['api', this.path(path), '--paginate', '--slurp']))
-    return validItems(item, pages.flat(), tally)
   }
 
   private client(): ApiClient {
