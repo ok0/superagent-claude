@@ -2,6 +2,16 @@
 
 All notable changes to this project are listed here. Entries are generated from Conventional Commits, versions follow Semantic Versioning, and before 1.0 breaking changes bump the MINOR version.
 
+## [0.4.0] - 2026-11-13
+
+### Features
+
+- sandbox: allow local port binding by default with security.allowLocalBinding (be2e581)
+
+### Fixes
+
+- prompts: keep workers from asking for sandbox settings that do not exist (fae6043)
+
 ## [0.3.1] - 2026-11-13
 
 ### Fixes
