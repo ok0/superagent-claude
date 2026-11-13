@@ -70,6 +70,11 @@ export function limitText(limit: 'turn' | 'budget', pull?: string): string {
   )
 }
 
+/** The note a person gets when a configured branch is missing, so the task could not start. */
+export function workspaceBlockedText(reason: string): string {
+  return `I could not start this task. ${reason} Reply here once that is fixed to try again.`
+}
+
 /**
  * Each message is queued under a deterministic id, so it is never sent twice. Replies to a person go where the person's
  * message was written, and a result where the latest person's message to the ticket was written.
@@ -109,6 +114,28 @@ export class Replies extends EnginePart {
         kind: 'reply',
         ticketId: ticket.id,
       })
+  }
+  /**
+   * Queue the reason the task could not start where the latest person's message to the ticket was written, else where
+   * it started; nothing when there is no conversation. Its id is `workspace-blocked:<assignmentId>:<triggerId>` for
+   * the latest person's message, so a repeat or restart sends nothing more, and a person's reply that meets the same
+   * block is told again.
+   */
+  workspaceBlocked(ticket: Ticket, assignmentId: string, reason: string): void {
+    const channel = this.replyChannel(ticket)
+    if (!channel) return
+    const latest =
+      ticket.inputs.findLast(
+        (input): input is Extract<TicketInput, { kind: 'trigger' }> =>
+          input.kind === 'trigger' && input.human === true && !input.context,
+      )?.triggerId ?? (this.repo.triggers.get(ticket.origin.triggerId)?.human ? ticket.origin.triggerId : undefined)
+    this.options.outbox.send({
+      id: latest ? `workspace-blocked:${assignmentId}:${latest}` : `workspace-blocked:${assignmentId}`,
+      channel,
+      text: workspaceBlockedText(reason),
+      kind: 'reply',
+      ticketId: ticket.id,
+    })
   }
   withdrawAttention(attentionId: string): void {
     this.options.outbox.withdraw(key('attention-reply', attentionId))

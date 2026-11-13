@@ -69,7 +69,7 @@ function make(acceptMode: 'off' | 'observe' | 'auto' = 'auto') {
     if (!tool) throw new Error(`no tool ${name}`)
     return tool.execute(args, new AbortController().signal)
   }
-  return { tools }
+  return { tools, outbox }
 }
 const accept = (triggerId: string, extra: Record<string, unknown> = {}) => ({
   kind: 'accept',
@@ -128,6 +128,36 @@ describe('router tools', () => {
       reason: `Already accepted as ${id}; title and acknowledgement unchanged`,
     })
     expect(ticketsOf()).toHaveLength(1)
+  })
+
+  it('refuses every reply to a block before work started, which the host already told', async () => {
+    const { outbox } = make()
+    explicit('1')
+    await run('orchestrator_route', { decisions: [accept('1')] })
+    const ticket = ticketsOf()[0]!
+    engine.report(ticket.id, {
+      state: 'blocked',
+      summary: 'owner/repo has no branch dev. A person must create it.',
+      workspace: true,
+    })
+    const assignmentId = store.tickets.get(ticket.id)!.assignments[0]!.id
+    expect(outbox.send.mock.calls.map(c => c[0].id)).toEqual([`workspace-blocked:${assignmentId}:1`])
+    await expect(run('orchestrator_reply', { ticket_id: ticket.id, purpose: 'result', text: 'x' })).rejects.toThrow()
+    await expect(
+      run('orchestrator_reply', {
+        ticket_id: ticket.id,
+        purpose: 'attention',
+        human_action: 'owner/repo has no branch dev. A person must create it.',
+        text: 'x',
+      }),
+    ).rejects.toThrow()
+    await expect(
+      run('orchestrator_reply', { trigger_id: '1', ticket_id: ticket.id, purpose: 'answer', text: 'x' }),
+    ).rejects.toThrow()
+    await expect(
+      run('orchestrator_reply', { ticket_id: ticket.id, purpose: 'acknowledgement', text: 'x' }),
+    ).rejects.toThrow()
+    expect(outbox.send).toHaveBeenCalledTimes(1)
   })
 
   it('refuses an item alone', async () => {

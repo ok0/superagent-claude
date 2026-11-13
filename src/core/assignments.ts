@@ -24,6 +24,8 @@ export interface WorkerReport {
   title?: string
   /** Host-only: a turn or budget limit stopped the worker. A `blocked` report with it tells the person once. */
   limit?: 'turn' | 'budget'
+  /** Host-only: a configured branch is missing, so the workspace was not made. A `blocked` report with it tells the person once. */
+  workspace?: true
 }
 const RECOVERY_NOTE =
   'The host restarted during this ticket. Inspect the current worktree, git history and remote state before continuing. Do not repeat an already completed external operation. Finish the original assignment and report its status.'
@@ -169,6 +171,7 @@ export class Assignments extends EnginePart {
       ticket.undelivered = ticket.undelivered.filter(id => !automatic(ticket.inputs.find(input => input.id === id)))
     this.repo.tickets.save(ticket)
     if (report.limit && report.state === 'blocked') this.replies.limitStopped(ticket, assignment.id, report.limit, pull)
+    if (report.workspace && report.state === 'blocked') this.replies.workspaceBlocked(ticket, assignment.id, summary)
     // A ticket that follows Threads ends with them: a ready report ends it only once followsDone holds,
     // with that outcome.
     const ready = !ticket.follows?.length ? 'completed' : this.tickets.followsDone(ticket)?.outcome

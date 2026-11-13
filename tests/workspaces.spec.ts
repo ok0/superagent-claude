@@ -834,6 +834,24 @@ describe('repository branches', () => {
     w.close()
   })
 
+  it('a missing configured branch tells the person once why the task could not start', async () => {
+    const f = fixture()
+    const w = workerHarness({ prepare: t => f.ws.prepare(t, t.id, { pullRequestTo: 'gone' }) })
+    try {
+      const id = accepted(w, '1').ticketId!
+      await waitUntil(() => w.outbox.some(m => m.id.startsWith('workspace-blocked:')))
+      const notes = w.outbox.filter(m => m.id.startsWith('workspace-blocked:'))
+      expect(notes).toHaveLength(1)
+      expect(notes[0]!.text.startsWith('I could not start this task. ')).toBe(true)
+      expect(notes[0]!.text.endsWith(' Reply here once that is fixed to try again.')).toBe(true)
+      expect(notes[0]!.text).toContain('gone')
+      expect(notes[0]!.text).toContain('A person must')
+      expect(w.ticket(id).assignments[0]!.report!.state).toBe('blocked')
+    } finally {
+      await w.close()
+    }
+  })
+
   it('a pullRequestTo deleted before publish blocks the push', async () => {
     const f = fixture()
     withDev(f)

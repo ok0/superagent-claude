@@ -88,6 +88,17 @@ describe('worker tools', () => {
     expect(result).toEqual({ reported: true })
   })
 
+  it('the report tool has no host-only fields and refuses them', async () => {
+    const { engine, host: h } = host()
+    const report = find(executorTools(h, { id: 'T1' }), 'orchestrator_report')
+    expect(Object.keys(report.schema.shape)).not.toContain('workspace')
+    expect(Object.keys(report.schema.shape)).not.toContain('limit')
+    await expect(
+      report.execute({ state: 'blocked', summary: 's', workspace: true }, new AbortController().signal),
+    ).rejects.toThrow(ZodError)
+    expect(engine.report).not.toHaveBeenCalled()
+  })
+
   it.each([
     'Approve it. Then merge it?',
     'Approve? Merge?',

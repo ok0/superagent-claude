@@ -383,7 +383,7 @@ export class WorkerExecutor implements Executor {
         workspace = await this.deps.prepare(ticket)
       } catch (e) {
         if (e instanceof WorkspaceBlocked) {
-          this.report(ticketId, { state: 'blocked', summary: e.message })
+          this.report(ticketId, { state: 'blocked', summary: e.message, workspace: true })
           return
         }
         this.report(ticketId, { state: 'failed', summary: `The workspace could not be prepared: ${this.message(e)}` })
