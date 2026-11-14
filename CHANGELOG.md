@@ -2,6 +2,12 @@
 
 All notable changes to this project are listed here. Entries are generated from Conventional Commits, versions follow Semantic Versioning, and before 1.0 breaking changes bump the MINOR version. This project was named superagent-claude before 0.6.0.
 
+## [0.7.0] - 2026-11-14
+
+### Features
+
+- notify the operator when the worker is blocked by its execution environment (65149a1)
+
 ## [0.6.0] - 2026-11-14
 
 ### Breaking changes
