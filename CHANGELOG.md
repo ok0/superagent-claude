@@ -6,7 +6,7 @@ All notable changes to this project are listed here. Entries are generated from 
 
 ### Breaking changes
 
-- rename the project to issuecrew (5c55be9). The project was named superagent-claude and is renamed with no compatibility layer: the npm package and the CLI are now `issuecrew`, environment variables use the `ISSUECREW_` prefix (for example `ISSUECREW_GITHUB_TOKEN`), the config file is `issuecrew.json`, the data directory is `~/.issuecrew`, and the container image (`ghcr.io/ok0/issuecrew`), the repository (`github.com/ok0/issuecrew`) and the MCP server names use `issuecrew`. Existing data and settings under the old names are not migrated. The `superagent-claude` npm package is deprecated.
+- rename the project to issuecrew (5c55be9). The project was named superagent-claude and is renamed with no compatibility layer: the npm package and the CLI are now `issuecrew`, environment variables use the `ISSUECREW_` prefix (for example `ISSUECREW_GITHUB_TOKEN`), the config file is `issuecrew.json`, the data directory is `~/.issuecrew`, and the container image (`ghcr.io/ok0/issuecrew`), the repository (`github.com/ok0/issuecrew`) and the MCP server names use `issuecrew`. Existing data and settings under the old names are not migrated. The `superagent-claude` npm package was unpublished.
 
 ## [0.5.2] - 2026-11-13
 
