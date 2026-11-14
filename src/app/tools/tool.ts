@@ -1,9 +1,32 @@
 // Ported from dsh-superagent-prototype (MIT) src/app/tools/tool.ts
 import { z } from 'zod'
 import type { ToolSpec } from '../../executor/contract.ts'
-import { wordCount } from '../../infra/text.ts'
+import { escapeRegExp, wordCount } from '../../infra/text.ts'
+import { CONFIG_FILE, CONFIG_KEY_PATHS } from '../config.ts'
 
 export const HUMAN_WORDS = 100
+
+const HOST_CONFIG_NAMES = [CONFIG_FILE, ...CONFIG_KEY_PATHS]
+const HOST_CONFIG = new RegExp(
+  `(?<![A-Za-z0-9_.])(${HOST_CONFIG_NAMES.map(escapeRegExp).join('|')})(?![A-Za-z0-9_]|\\.[A-Za-z0-9_])`,
+)
+
+/** The first issuecrew setting or config file name the text contains, case-sensitive and on name boundaries. */
+export function namesHostConfig(text: string): string | undefined {
+  return HOST_CONFIG.exec(text)?.[1]
+}
+
+export function hostConfigMessage(field: string, name: string): string {
+  return `${field} names a host setting (${name}). Text posted to the issue or pull request must not name issuecrew settings or its config file; describe what you could not run in plain words. Report an environment block to the operator with orchestrator_report environment_blocked.`
+}
+
+/** A refinement that turns a host setting name in a posted field into a tool error. */
+export function noHostConfig(field: string): (text: string, ctx: z.core.$RefinementCtx<string>) => void {
+  return (text, ctx) => {
+    const name = namesHostConfig(text)
+    if (name) ctx.addIssue({ code: 'custom', message: hostConfigMessage(field, name) })
+  }
+}
 
 export function tool<S extends z.ZodObject>(definition: {
   name: string
@@ -38,6 +61,7 @@ export const AcknowledgementSchema = z
     text => wordCount(text) <= HUMAN_WORDS,
     `An acknowledgement has at most ${HUMAN_WORDS} words; write one short sentence.`,
   )
+  .superRefine(noHostConfig('text'))
 
 export const HumanActionSchema = z
   .string()
@@ -48,6 +72,7 @@ export const HumanActionSchema = z
     const problem = humanTextProblem(text)
     if (problem)
       ctx.addIssue({ code: 'custom', message: `human_action must be one concrete question for a person: ${problem}` })
+    noHostConfig('human_action')(text, ctx)
   })
 
 /** The `orchestrator_read` tool: one page of a resource that the grammar lists, read through `read`. */

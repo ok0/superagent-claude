@@ -348,6 +348,46 @@ describe('worker delivery tools', () => {
     expect(bindThread).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['title', { title: 'Use network.allow', body: 'b' }],
+    ['body', { title: 't', body: 'Add a host to network.allow.' }],
+  ])('publish with a setting name in the %s is a tool error before any GitHub call', async (field, args) => {
+    const { gh, tools, push } = setup()
+    const publish = find(tools, 'orchestrator_publish')
+    await expect(publish.execute(args, signal())).rejects.toThrow(/names a host setting \(network\.allow\)/)
+    await expect(publish.execute(args, signal())).rejects.toThrow(new RegExp(field))
+    await expect(publish.execute(args, signal())).rejects.toThrow(/environment_blocked/)
+    expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')).toHaveLength(0)
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('review_reply and pr_close with a setting name are tool errors and post nothing', async () => {
+    const { gh, tools } = setup()
+    const reply = find(tools, 'orchestrator_review_reply')
+    const close = find(tools, 'orchestrator_pr_close')
+    await expect(reply.execute({ pr: 2, comment_id: 70, body: 'see issuecrew.json' }, signal())).rejects.toThrow(
+      /names a host setting/,
+    )
+    await expect(close.execute({ pr: 2, reason: 'network.allow is missing' }, signal())).rejects.toThrow(
+      /names a host setting/,
+    )
+    expect(gh.requests.filter(r => r.method === 'POST')).toHaveLength(0)
+  })
+
+  it('publish with plain words about the network passes', async () => {
+    const { gh, tools } = setup()
+    const publish = find(tools, 'orchestrator_publish')
+    const result = await publish.execute(
+      {
+        title: 'Sync proto files',
+        body: 'Code generation was not run: the network allowlist did not reach the module proxy.',
+      },
+      signal(),
+    )
+    expect(result).toMatchObject({ published: true })
+    expect(gh.requests.filter(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')).toHaveLength(1)
+  })
+
   it('review_reply strips AI attribution and refuses an attribution-only reply', async () => {
     const { gh, tools } = setup()
     const reply = find(tools, 'orchestrator_review_reply')

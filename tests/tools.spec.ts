@@ -177,6 +177,106 @@ describe('worker tools', () => {
     ).rejects.toThrow()
     expect(engine.report).not.toHaveBeenCalled()
   })
+
+  it('environment_blocked reaches the engine as environment', async () => {
+    const { engine, host: h } = host()
+    const report = find(executorTools(h, { id: 'T1' }), 'orchestrator_report')
+    await report.execute(
+      {
+        state: 'blocked',
+        summary: 's',
+        environment_blocked: ' protoc missing; network.allow lacks proxy.golang.org ',
+      },
+      new AbortController().signal,
+    )
+    expect(engine.report).toHaveBeenCalledWith('T1', {
+      state: 'blocked',
+      summary: 's',
+      environment: 'protoc missing; network.allow lacks proxy.golang.org',
+    })
+  })
+
+  it.each(['progress', 'ready', 'failed', 'dropped'])(
+    'environment_blocked with state %s is a tool error',
+    async state => {
+      const { engine, host: h } = host()
+      const report = find(executorTools(h, { id: 'T1' }), 'orchestrator_report')
+      await expect(
+        report.execute({ state, summary: 's', environment_blocked: 'protoc missing' }, new AbortController().signal),
+      ).rejects.toThrow(/environment_blocked/)
+      expect(engine.report).not.toHaveBeenCalled()
+    },
+  )
+
+  it('environment_blocked with a human_action is a tool error, and over 500 characters too', async () => {
+    const { engine, host: h } = host()
+    const report = find(executorTools(h, { id: 'T1' }), 'orchestrator_report')
+    const signal = new AbortController().signal
+    await expect(
+      report.execute(
+        {
+          state: 'blocked',
+          summary: 's',
+          environment_blocked: 'protoc missing',
+          human_action: 'Can you install protoc?',
+        },
+        signal,
+      ),
+    ).rejects.toThrow(/environment_blocked/)
+    expect(engine.report).not.toHaveBeenCalled()
+    await expect(
+      report.execute(
+        { state: 'blocked', summary: 's', environment_blocked: 'protoc missing', human_action: null },
+        signal,
+      ),
+    ).resolves.toEqual({ reported: true })
+    await expect(
+      report.execute({ state: 'blocked', summary: 's', environment_blocked: 'x'.repeat(501) }, signal),
+    ).rejects.toThrow()
+  })
+
+  it.each([
+    ['human_action', 'Please allow proxy.golang.org in network.allow?'],
+    ['human_action', 'Can you edit issuecrew.json?'],
+    ['summary', 'Add the host to network.allow.'],
+  ])('%s naming a setting is a tool error', async (field, text) => {
+    const { engine, host: h } = host()
+    const report = find(executorTools(h, { id: 'T1' }), 'orchestrator_report')
+    const input =
+      field === 'summary' ? { state: 'ready', summary: text } : { state: 'progress', summary: 's', human_action: text }
+    await expect(report.execute(input, new AbortController().signal)).rejects.toThrow(
+      new RegExp(`${field} names a host setting`),
+    )
+    await expect(report.execute(input, new AbortController().signal)).rejects.toThrow(/environment_blocked/)
+    expect(engine.report).not.toHaveBeenCalled()
+  })
+
+  it('plain words pass', async () => {
+    const { engine, host: h } = host()
+    const report = find(executorTools(h, { id: 'T1' }), 'orchestrator_report')
+    const signal = new AbortController().signal
+    await report.execute(
+      { state: 'progress', summary: 'The network allowlist and the allowance stay as they are.' },
+      signal,
+    )
+    await report.execute(
+      { state: 'progress', summary: 's', human_action: 'Which date format should the label use?' },
+      signal,
+    )
+    expect(engine.report).toHaveBeenCalledTimes(2)
+  })
+
+  it('an acknowledgement naming a setting is a tool error', async () => {
+    const { engine, host: h } = host()
+    const ack = find(executorTools(h, { id: 'T1' }), 'orchestrator_ack')
+    const signal = new AbortController().signal
+    await expect(ack.execute({ trigger_id: '1', text: 'I will check network.allow.' }, signal)).rejects.toThrow(
+      /text names a host setting/,
+    )
+    expect(engine.reply).not.toHaveBeenCalled()
+    await ack.execute({ trigger_id: '1', text: 'On it.' }, signal)
+    expect(engine.reply).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('git_inspect tool', () => {

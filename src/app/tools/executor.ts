@@ -10,7 +10,7 @@ import type { ToolSpec } from '../../executor/contract.ts'
 import { parseThreadId, configured } from '../../sources/github/trigger.ts'
 import { resourceGrammar } from '../resources.ts'
 import { threadFollowedNotice, type Notice } from '../notices.ts'
-import { AcknowledgementSchema, HumanActionSchema, readTool, tool } from './tool.ts'
+import { AcknowledgementSchema, HumanActionSchema, noHostConfig, readTool, tool } from './tool.ts'
 import { deliveryTools, type DeliveryHost } from './delivery.ts'
 import { inspectTool } from './inspect.ts'
 import type { GitInspectRequest } from '../../executor/git-inspect.ts'
@@ -125,11 +125,21 @@ export function executorTools(host: ExecutorToolsHost, ticket: Pick<Ticket, 'id'
     }),
     tool({
       name: 'orchestrator_report',
-      description: 'Report progress, ready, blocked, failed or dropped, as the work and handoff sections say.',
+      description:
+        'Report progress, ready, blocked, failed or dropped, as the work and handoff sections say. When the execution environment blocks a step, report blocked with environment_blocked; the host tells the operator and posts a short note.',
       schema: z
         .object({
           state: z.enum(['progress', 'ready', 'blocked', 'failed', 'dropped']),
-          summary: z.string().min(1),
+          summary: z.string().min(1).superRefine(noHostConfig('summary')),
+          environment_blocked: z
+            .string()
+            .trim()
+            .min(1)
+            .max(500)
+            .optional()
+            .describe(
+              'Only with state: blocked, for the operator and never posted: exactly which tool, toolchain or network host was missing or unreachable and which commands could not run. Never with human_action.',
+            ),
           title: z
             .string()
             .trim()
@@ -158,9 +168,16 @@ export function executorTools(host: ExecutorToolsHost, ticket: Pick<Ticket, 'id'
         const current = host.ticket(ticketId)
         if (!current || !liveTicket(current))
           throw new Error('Ticket ended (PR was closed or work finished); do not resume it')
+        if (args.environment_blocked !== undefined && args.state !== 'blocked')
+          throw new Error('environment_blocked goes only with state: blocked.')
+        if (args.environment_blocked !== undefined && args.human_action != null)
+          throw new Error(
+            'An environment block goes to the operator through environment_blocked; do not ask the issue. Omit human_action.',
+          )
         const report: WorkerReport = {
           state: args.state,
           summary: args.summary,
+          ...(args.environment_blocked !== undefined ? { environment: args.environment_blocked } : {}),
           ...(args.title !== undefined ? { title: args.title } : {}),
           ...(args.human_action !== undefined ? { question: args.human_action } : {}),
           ...(args.question_for_trigger_id ? { askedBy: args.question_for_trigger_id } : {}),

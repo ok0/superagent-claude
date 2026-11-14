@@ -223,14 +223,15 @@ export interface RuntimeOptions {
   stopTimeoutMs?: number
 }
 
-function eventRecord(event: DomainEvent): LogRecord {
+export function eventRecord(event: DomainEvent): LogRecord {
   const data = event.data as Record<string, unknown>
   return {
-    level: 'info',
+    level: event.type === 'worker.environment_blocked' ? 'warn' : 'info',
     at: event.at,
     event: event.type,
     ...(typeof data.ticketId === 'string' ? { ticketId: data.ticketId } : {}),
     ...(typeof data.assignmentId === 'string' ? { assignmentId: data.assignmentId } : {}),
+    ...(typeof data.detail === 'string' ? { detail: data.detail } : {}),
   }
 }
 

@@ -152,6 +152,18 @@ export const ConfigSchema = z
   })
   .strict()
 
+/** Every `<top>.<key>` path of a config schema: the setting names worker-posted text must not contain. */
+export function configKeyPaths(schema: z.ZodObject): string[] {
+  const paths: string[] = []
+  for (const [top, value] of Object.entries(schema.shape)) {
+    let inner: unknown = value
+    while (inner instanceof z.ZodDefault || inner instanceof z.ZodOptional) inner = inner.unwrap()
+    if (inner instanceof z.ZodObject) for (const key of Object.keys(inner.shape)) paths.push(`${top}.${key}`)
+  }
+  return paths
+}
+export const CONFIG_KEY_PATHS: readonly string[] = configKeyPaths(ConfigSchema)
+
 export type Config = z.infer<typeof ConfigSchema> & {
   branches?: Readonly<Record<string, { branchFrom?: string; pullRequestTo?: string }>>
 }

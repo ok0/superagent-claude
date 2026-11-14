@@ -26,6 +26,8 @@ export interface WorkerReport {
   limit?: 'turn' | 'budget'
   /** Host-only: a configured branch is missing, so the workspace was not made. A `blocked` report with it tells the person once. */
   workspace?: true
+  /** Set by the worker: its execution environment blocked it (missing tool or toolchain, unreachable host). A `blocked` report with it tells the operator and posts one neutral note; never posted itself. */
+  environment?: string
 }
 const RECOVERY_NOTE =
   'The host restarted during this ticket. Inspect the current worktree, git history and remote state before continuing. Do not repeat an already completed external operation. Finish the original assignment and report its status.'
@@ -158,10 +160,13 @@ export class Assignments extends EnginePart {
     // A replaced or cleared attention question withdraws any pending unsent reply for the previous question
     // from the outbox.
     if (previous && previous.id !== attention?.id) this.replies.withdrawAttention(previous.id)
-    const pull = report.limit && report.state === 'blocked' ? this.ownPullUrl(ticket) : undefined
+    const environment = report.state === 'blocked' && report.environment ? report.environment : undefined
+    const pull = report.state === 'blocked' && (report.limit || environment) ? this.ownPullUrl(ticket) : undefined
     const summary = pull ? `${report.summary}. Work so far: ${pull}` : report.summary
     assignment.report = { state: report.state, summary, at }
     if (report.limit && report.state === 'blocked') assignment.limit = report.limit
+    if (environment) assignment.environment = environment
+    else delete assignment.environment
     ticket.updatedAt = at
     if (report.title !== undefined) ticket.title = report.title
     if (report.answers && !ticket.answers?.includes(report.answers))
@@ -172,6 +177,10 @@ export class Assignments extends EnginePart {
     this.repo.tickets.save(ticket)
     if (report.limit && report.state === 'blocked') this.replies.limitStopped(ticket, assignment.id, report.limit, pull)
     if (report.workspace && report.state === 'blocked') this.replies.workspaceBlocked(ticket, assignment.id, summary)
+    if (environment) {
+      this.emit('worker.environment_blocked', { ticketId, assignmentId: assignment.id, detail: environment })
+      this.replies.environmentBlocked(ticket, assignment.id, pull)
+    }
     // A ticket that follows Threads ends with them: a ready report ends it only once followsDone holds,
     // with that outcome.
     const ready = !ticket.follows?.length ? 'completed' : this.tickets.followsDone(ticket)?.outcome

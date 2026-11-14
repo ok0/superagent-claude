@@ -21,7 +21,7 @@ import { CliError } from '../../infra/commands.ts'
 import { escapeRegExp, stripAiAttribution } from '../../infra/text.ts'
 import type { PullRequests } from '../../sources/github/delivery.ts'
 import { configured, threadId, threadKeyOf } from '../../sources/github/trigger.ts'
-import { tool } from './tool.ts'
+import { noHostConfig, tool } from './tool.ts'
 
 export interface DeliveryHost {
   repositoryOf(ticketId: string): string
@@ -127,8 +127,8 @@ export function deliveryTools(host: DeliveryToolsHost, ticketId: string): ToolSp
         "Push this ticket's commits and open its pull request, or reuse the open one for the branch; never force-pushes. Binds the PR thread to this ticket. Returns published: false, pushing nothing, when the agent account has no write access to the repository. Returns published: false with review_required, pushing nothing, when the host requires a review first: run the issuecrew-reviewer subagent, then publish again. Returns published: false, pushing nothing, when the configured target branch is missing on the remote.",
       schema: z
         .object({
-          title: z.string().trim().min(1).max(256),
-          body: z.string().trim().min(1).max(60000),
+          title: z.string().trim().min(1).max(256).superRefine(noHostConfig('title')),
+          body: z.string().trim().min(1).max(60000).superRefine(noHostConfig('body')),
           draft: z.boolean().optional(),
           coAuthors: z.array(z.string().regex(CO_AUTHOR, 'A co-author is Name <email>')).max(10).optional(),
         })
@@ -227,7 +227,7 @@ export function deliveryTools(host: DeliveryToolsHost, ticketId: string): ToolSp
             .describe(
               'GitHub id of any comment in the review thread, as github/pulls/<n>/comments or #discussion_r<id> shows',
             ),
-          body: z.string().trim().min(1).max(8000),
+          body: z.string().trim().min(1).max(8000).superRefine(noHostConfig('body')),
           resolve: z.boolean().optional(),
           repository: z.string().optional(),
         })
@@ -281,7 +281,7 @@ export function deliveryTools(host: DeliveryToolsHost, ticketId: string): ToolSp
       schema: z
         .object({
           pr: z.number().int().positive(),
-          reason: z.string().trim().min(1).max(1000),
+          reason: z.string().trim().min(1).max(1000).superRefine(noHostConfig('reason')),
           repository: z.string().optional(),
         })
         .strict(),

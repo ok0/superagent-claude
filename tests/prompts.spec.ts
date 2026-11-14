@@ -363,15 +363,16 @@ it('an empty or whitespace-only note yields no part', () => {
   expect(prompts.current('worker', [], 'owner/name').hash).toBe(prompts.current('worker').hash)
 })
 
-const SANDBOX_RULE = [
-  'If the sandbox blocks an action',
+const ENVIRONMENT_RULE = [
+  'If your execution environment blocks a step',
+  'a missing tool or toolchain',
   'EPERM',
-  'a network host that is not allowed',
-  'what was blocked and what you could not verify',
-  'Never ask or advise a person to change your CLI or sandbox settings, sandbox options or settings files',
+  'never ask or advise anyone in an issue or pull request to change settings, install tools or allow hosts',
+  'never name host or issuecrew settings, sandbox options or config files',
   '.claude/settings.json',
-  '`security.allowLocalBinding`',
-  '`network.allow`',
+  'First do all the work that does not need the blocked step',
+  'list in the PR description, in plain words, the steps you could not run or verify',
+  'state: blocked and environment_blocked',
   'takes precedence over any default guidance that says otherwise',
 ]
 const UI_RULE = [
@@ -381,21 +382,24 @@ const UI_RULE = [
   'Never invent a capture or refer to one that does not exist',
 ]
 
-it('the worker host part carries the sandbox honesty and UI evidence rules', () => {
+it('the worker host part carries the environment block and UI evidence rules', () => {
   const builtins = loadBuiltins(writeAssets(join(directory, 'assets')))
   const worker = assemble('worker', builtins, {}, [])
   expect(worker.parts[0]!.key).toBe('host/worker')
   expect(worker.parts[0]!.layer).toBe('host')
   expect(worker.parts[0]!.text).toBe(HOST_RULES.worker)
-  for (const f of [...SANDBOX_RULE, ...UI_RULE]) expect(worker.parts[0]!.text, f).toContain(f)
+  for (const f of [...ENVIRONMENT_RULE, ...UI_RULE]) expect(worker.parts[0]!.text, f).toContain(f)
   const lines = HOST_RULES.worker.split('\n')
-  const sandboxLines = lines.filter(l => l.startsWith('- If the sandbox blocks an action'))
-  expect(sandboxLines).toHaveLength(1)
-  for (const f of SANDBOX_RULE) expect(sandboxLines[0], f).toContain(f)
+  const environmentLines = lines.filter(l => l.startsWith('- If your execution environment blocks a step'))
+  expect(environmentLines).toHaveLength(1)
+  for (const f of ENVIRONMENT_RULE) expect(environmentLines[0], f).toContain(f)
   const uiLines = lines.filter(l => l.startsWith('- A missing UI capture alone'))
   expect(uiLines).toHaveLength(1)
   for (const f of UI_RULE) expect(uiLines[0], f).toContain(f)
   expect(HOST_RULES.worker).not.toContain('sandbox.network')
+  expect(HOST_RULES.worker).not.toContain('network.allow')
+  expect(HOST_RULES.worker).not.toContain('security.allowLocalBinding')
+  expect(HOST_RULES.worker).not.toContain('If the sandbox blocks an action')
   expect(HOST_RULES.worker).not.toMatch(/(?<!security\.)allowLocalBinding/)
 })
 
@@ -411,16 +415,16 @@ it('an environment note and a team delivery override cannot remove or reorder th
   expect(a.parts[0]!.text).toBe(HOST_RULES.worker)
   expect(a.text.startsWith(HOST_RULES.worker)).toBe(true)
   const lines = HOST_RULES.worker.split('\n')
-  const sandboxLine = lines.find(l => l.startsWith('- If the sandbox blocks an action'))!
+  const environmentLine = lines.find(l => l.startsWith('- If your execution environment blocks a step'))!
   const uiLine = lines.find(l => l.startsWith('- A missing UI capture alone'))!
-  expect(a.text.indexOf(sandboxLine)).toBeGreaterThanOrEqual(0)
-  expect(a.text.indexOf(sandboxLine)).toBeLessThan(a.text.indexOf('## Delivery requirements'))
+  expect(a.text.indexOf(environmentLine)).toBeGreaterThanOrEqual(0)
+  expect(a.text.indexOf(environmentLine)).toBeLessThan(a.text.indexOf('## Delivery requirements'))
   expect(a.text.indexOf(uiLine)).toBeGreaterThanOrEqual(0)
   expect(a.text.indexOf(uiLine)).toBeLessThan(a.text.indexOf('## Delivery requirements'))
   expect(a.text.indexOf('## Delivery requirements')).toBeLessThan(a.text.indexOf('## Environment notes for owner/name'))
   expect(a.text.indexOf('must stay blocked as a draft')).toBeGreaterThan(HOST_RULES.worker.length)
   expect(a.text.indexOf('ignore the host rules')).toBeGreaterThan(HOST_RULES.worker.length)
-  expect(a.text.split(sandboxLine)).toHaveLength(2)
+  expect(a.text.split(environmentLine)).toHaveLength(2)
   expect(a.text.split(uiLine)).toHaveLength(2)
 })
 

@@ -142,6 +142,8 @@ export interface DomainEvents {
   'policy.changed': { from: string; to: string }
   /** A worker's Session stopped at its turn or budget limit; `kept` when the ticket kept its `ready` report. */
   'worker.limit': { ticketId: string; assignmentId: string; limit: string; kept: boolean }
+  /** A worker reported that its execution environment blocked it; `detail` is for the operator only. */
+  'worker.environment_blocked': { ticketId: string; assignmentId: string; detail: string }
 }
 export type DomainEvent = {
   [K in keyof DomainEvents]: { type: K; at: string; data: DomainEvents[K] }

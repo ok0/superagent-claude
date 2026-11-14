@@ -27,6 +27,8 @@ export interface LiveScenario {
   ambiguity?: 'clarify-or-state'
   answer?: string
   prepare?: PrepareSpec
+  /** The run must take the environment-blocked path; judged by judgeEnvironmentBlock, head checks recorded but not required. */
+  environmentBlock?: true
 }
 
 export const SCENARIO_DIR = join(import.meta.dirname, 'scenarios')
@@ -104,6 +106,8 @@ export function scenarioProblems(value: unknown): string[] {
     if (!nonEmpty(value.answer)) problems.push('answer must be a non-empty string')
     if (typeof value.answer === 'string') problems.push(...contentProblems('answer', value.answer))
   }
+  if (value.environmentBlock !== undefined && value.environmentBlock !== true)
+    problems.push('environmentBlock must be true')
   const prepare = value.prepare
   if (prepare !== undefined) {
     if (!isObject(prepare)) {
@@ -194,7 +198,7 @@ export function renderScenario(s: LiveScenario, target: LiveTarget): LiveScenari
   return rendered
 }
 
-export type VerdictPart = 'checks' | 'hidden' | 'diff' | 'base-failure' | 'ambiguity' | 'prepared'
+export type VerdictPart = 'checks' | 'hidden' | 'diff' | 'base-failure' | 'ambiguity' | 'prepared' | 'environment-block'
 
 export function judgeScenario(
   scenario: LiveScenario,
@@ -205,14 +209,16 @@ export function judgeScenario(
     base: { passed: boolean } | null
     ambiguity?: { passed: boolean } | null
     prepared?: { passed: boolean } | null
+    environment?: { passed: boolean } | null
   },
 ): { passed: boolean; failed: VerdictPart[] } {
   const failed: VerdictPart[] = []
-  if (input.checks !== 'success') failed.push('checks')
+  if (input.checks !== 'success' && scenario.environmentBlock !== true) failed.push('checks')
   if (scenario.hidden && input.hidden?.passed !== true) failed.push('hidden')
   if (!input.diff.pass) failed.push('diff')
   if (scenario.diff.newTestFailsOnBase === true && input.base?.passed !== true) failed.push('base-failure')
   if (scenario.ambiguity === 'clarify-or-state' && input.ambiguity?.passed !== true) failed.push('ambiguity')
   if (scenario.prepare && input.prepared?.passed !== true) failed.push('prepared')
+  if (scenario.environmentBlock === true && input.environment?.passed !== true) failed.push('environment-block')
   return { passed: failed.length === 0, failed }
 }

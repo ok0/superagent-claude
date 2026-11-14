@@ -290,6 +290,8 @@ export interface Assignment {
   idleAt?: string
   /** Set when a turn or budget limit stopped this Assignment and it reported `blocked`. */
   limit?: 'turn' | 'budget'
+  /** Set when the worker reported an execution environment block with this detail (operator only, never posted). */
+  environment?: string
 }
 
 export type TicketInput =

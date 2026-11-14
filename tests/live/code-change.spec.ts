@@ -7,7 +7,10 @@
  * scenario also needs its new test to fail on the base. A scenario with an answer gets that answer once when the agent
  * asks a question before its pull request, and a scenario that gets a reply and no pull request within the grace period
  * fails instead of waiting out the whole timeout; an ambiguity scenario also needs a question or a stated
- * interpretation; a prepared scenario starts from an owner pull request that adds one failing test. A review follow-up
+ * interpretation; a prepared scenario starts from an owner pull request that adds one failing test. An environment-block
+ * scenario passes only when the worker reported the block (warn log record with detail), the issue got exactly one neutral
+ * note, needs shows it, and no worker-posted text names a host setting or asks to change settings, install tools or allow
+ * hosts; its head checks are recorded only. A review follow-up
  * is judged again on the new head with the cumulative PR diff. Evidence is read from the store, GitHub and the logs.
  * Gated by ISSUECREW_LIVE=1, a configured ISSUECREW_LIVE_REPO with its login settings, and the three
  * tokens; never prints a token; all GitHub access goes through the guarded helper; After judging, the owner
@@ -34,6 +37,8 @@ import type { Ticket, Trigger } from '../../src/core/index.ts'
 import { main } from '../../src/cli/main.ts'
 import { DATABASE_FILE, databasePath } from '../../src/app/store.ts'
 import { openReadOnly } from '../../src/app/store-read.ts'
+import { needsView } from '../../src/app/status.ts'
+import { environmentBlockedText } from '../../src/core/replies.ts'
 import { sleep } from '../fixtures/async.ts'
 import { downloadTree, ghJson, ghStatus, localIdentity, tokenLogin } from './gh.ts'
 import { assertAllowedRepo } from './guard.ts'
@@ -57,6 +62,7 @@ import {
 } from './rules.ts'
 import { loadSeed } from './seed-playground.ts'
 import { judgeScenario, loadScenarios, renderScenario, scenarioFlows } from './scenarios.ts'
+import { judgeEnvironmentBlock } from './environment-evidence.ts'
 import type { LiveScenario } from './scenarios.ts'
 import { FIXTURES_DIR, NPM_CACHE_DIR, runHidden, runLocalCi, testsFailOnBase } from './hidden.ts'
 import {
@@ -302,6 +308,43 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
     storeRows<Trigger>('trigger').find(
       trigger => trigger.meta.kind === 'issue' && trigger.meta.number === n && trigger.meta.repository === REPO,
     )
+  const ticketOfIssue = (n: number): Ticket | undefined => {
+    const trigger = triggerOfIssue(n)
+    return trigger && storeRows<Ticket>('ticket').find(t => t.origin.triggerId === trigger.id)
+  }
+  const environmentEvidence = async (issue: number, pull: PullInfo) => {
+    const ticketId = ticketOfIssue(issue)?.id
+    await until(
+      () => lines.find(l => l.event === 'worker.environment_blocked' && l.ticketId === ticketId),
+      LIVE_WAIT.replyGraceMs,
+      LIVE_WAIT.stepMs,
+      'worker.environment_blocked',
+    ).catch(() => undefined)
+    await until(
+      async () =>
+        (await issueComments(issue)).find(
+          c => c.user.login === AGENT && (c.body ?? '').startsWith(environmentBlockedText()),
+        ),
+      180_000,
+      15_000,
+      'environment note',
+    ).catch(() => undefined)
+    const comments = await issueComments(issue)
+    const fresh = await owner<PullInfo>(['repos/' + REPO + '/pulls/' + pull.number])
+    let needs: { label?: string; text?: string } | undefined
+    try {
+      const reader = openReadOnly(databasePath(join(dir, 'state')))
+      try {
+        const view = needsView(reader, { all: true, endedWithinMs: 86_400_000, now: Date.now() })
+        needs = [...view.person, ...view.others].find(item => item.ticketId === ticketId)
+      } finally {
+        reader.close()
+      }
+    } catch {
+      needs = undefined
+    }
+    return judgeEnvironmentBlock({ ticketId, agent: AGENT, log: lines, comments, pull: fresh, needs })
+  }
   const agentPullsSince = async (): Promise<PullInfo[]> =>
     (await owner<PullInfo[]>(['repos/' + REPO + '/pulls?state=all&per_page=100'])).filter(
       pull => pull.user.login === AGENT && Date.parse(pull.created_at) >= Date.parse(startedAt),
@@ -425,6 +468,8 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
           ),
         }
       : null
+    const environment =
+      scenario.environmentBlock === true && issue !== null ? await environmentEvidence(issue, pull) : null
     const checks = await judgeHead(head)
     const hidden = scenario.hidden
       ? await runHidden(head, scenario, { fetchTree: (sha, d) => downloadTree(OWNER_TOKEN!, REPO, sha, d) })
@@ -438,6 +483,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
       base,
       ambiguity,
       prepared: prepared && { passed: prepared.problems.length === 0 },
+      environment,
     })
     verdicts.push({
       id: scenario.id,
@@ -457,11 +503,12 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
       base: base && { ...base, output: base.output.slice(-2000) },
       ambiguity,
       prepared,
+      environment,
       asked: asks[scenario.id] ?? null,
       verdict,
       seconds: Math.round((Date.now() - started) / 1000),
     })
-    return verdict
+    return { ...verdict, problems: environment?.problems ?? [] }
   }
 
   const cleanup = async (): Promise<{
@@ -788,7 +835,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
         const state = flowState.get(flow.initial.id)
         if (!state) continue
         const verdict = await judgeScenarioHead(flow.initial, state.pull, state.pull.head.sha, state.issue)
-        if (!verdict.passed) failures.push(flow.initial.id + ': ' + verdict.failed.join(', '))
+        if (!verdict.passed) failures.push(flow.initial.id + ': ' + [...verdict.failed, ...verdict.problems].join('; '))
       }
       evidence.scenarios = verdicts
       expect(failures, 'failed verdict parts').toEqual([])

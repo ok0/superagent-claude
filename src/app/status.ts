@@ -187,7 +187,7 @@ export interface NeedItem {
   ticketId: string
   title: string
   stage: string
-  label?: 'Question' | 'Report' | 'Delivery error'
+  label?: 'Question' | 'Report' | 'Delivery error' | 'Environment blocked'
   text?: string
   links: string[]
   pulls: string[]
@@ -221,6 +221,7 @@ export function needsView(
       })
     let label: NeedItem['label']
     let text: string | undefined
+    const latest = latestAssignment(t)
     if (s.stage === 'person') {
       if (s.action === 'answer') {
         label = 'Question'
@@ -228,6 +229,9 @@ export function needsView(
       } else if (s.action === 'delivery') {
         label = 'Delivery error'
         text = t.delivery?.error
+      } else if (latest?.environment && latest?.report?.state === 'blocked') {
+        label = 'Environment blocked'
+        text = latest.environment
       } else {
         label = 'Report'
         text = latestReport(t)?.summary

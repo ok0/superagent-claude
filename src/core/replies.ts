@@ -75,6 +75,11 @@ export function workspaceBlockedText(reason: string): string {
   return `I could not start this task. ${reason} Reply here once that is fixed to try again.`
 }
 
+/** The note a person gets when the execution environment blocked the work; names no tool, setting or detail. */
+export function environmentBlockedText(pull?: string): string {
+  return `I could not finish verifying this task because of a problem in my execution environment, so I am waiting for the operator to check it.${pull ? ` Work so far: ${pull}.` : ''}`
+}
+
 /**
  * Each message is queued under a deterministic id, so it is never sent twice. Replies to a person go where the person's
  * message was written, and a result where the latest person's message to the ticket was written.
@@ -124,11 +129,7 @@ export class Replies extends EnginePart {
   workspaceBlocked(ticket: Ticket, assignmentId: string, reason: string): void {
     const channel = this.replyChannel(ticket)
     if (!channel) return
-    const latest =
-      ticket.inputs.findLast(
-        (input): input is Extract<TicketInput, { kind: 'trigger' }> =>
-          input.kind === 'trigger' && input.human === true && !input.context,
-      )?.triggerId ?? (this.repo.triggers.get(ticket.origin.triggerId)?.human ? ticket.origin.triggerId : undefined)
+    const latest = this.latestPersonTrigger(ticket)
     this.options.outbox.send({
       id: latest ? `workspace-blocked:${assignmentId}:${latest}` : `workspace-blocked:${assignmentId}`,
       channel,
@@ -136,6 +137,32 @@ export class Replies extends EnginePart {
       kind: 'reply',
       ticketId: ticket.id,
     })
+  }
+  /**
+   * Queue the note that the execution environment blocked the work, where the latest person's message to the ticket was
+   * written, else where it started; nothing when there is no conversation. Its id is
+   * `environment-blocked:<assignmentId>:<triggerId>` for the latest person's message, so a repeat or restart sends
+   * nothing more, and a person's reply that meets the same block is told again.
+   */
+  environmentBlocked(ticket: Ticket, assignmentId: string, pull?: string): void {
+    const channel = this.replyChannel(ticket)
+    if (!channel) return
+    const latest = this.latestPersonTrigger(ticket)
+    this.options.outbox.send({
+      id: latest ? `environment-blocked:${assignmentId}:${latest}` : `environment-blocked:${assignmentId}`,
+      channel,
+      text: environmentBlockedText(pull),
+      kind: 'reply',
+      ticketId: ticket.id,
+    })
+  }
+  private latestPersonTrigger(ticket: Ticket): string | undefined {
+    return (
+      ticket.inputs.findLast(
+        (input): input is Extract<TicketInput, { kind: 'trigger' }> =>
+          input.kind === 'trigger' && input.human === true && !input.context,
+      )?.triggerId ?? (this.repo.triggers.get(ticket.origin.triggerId)?.human ? ticket.origin.triggerId : undefined)
+    )
   }
   withdrawAttention(attentionId: string): void {
     this.options.outbox.withdraw(key('attention-reply', attentionId))
