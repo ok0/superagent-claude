@@ -16,7 +16,7 @@ describe('Commands', () => {
         HOME: '/h',
         LANG: 'C',
         ANTHROPIC_API_KEY: 'k',
-        SUPERAGENT_CLAUDE_GITHUB_TOKEN: 't',
+        ISSUECREW_GITHUB_TOKEN: 't',
         AWS_SECRET_ACCESS_KEY: 's',
         GH_TOKEN: 'leak',
       },

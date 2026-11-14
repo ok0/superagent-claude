@@ -44,7 +44,7 @@ describe('spike:sdk runner', () => {
   it('blocks live items without credentials', TEST_TIMEOUT, () => {
     const { tmp, home, tmpT } = sandbox('no-credential')
     const doc = join(tmp, 'doc.md')
-    const result = run(['--out', doc], { SUPERAGENT_CLAUDE_LIVE: '1' }, { home, tmpT })
+    const result = run(['--out', doc], { ISSUECREW_LIVE: '1' }, { home, tmpT })
     expect(result.status).toBe(3)
     expect(result.stderr).toContain('ANTHROPIC_API_KEY')
     expect(result.stderr).toContain('CLAUDE_CODE_OAUTH_TOKEN')
@@ -78,7 +78,7 @@ describe('spike:sdk runner', () => {
     const doc = join(tmp, 'doc.md')
     const result = run(
       ['--out', doc],
-      { SUPERAGENT_CLAUDE_LIVE: '1', ANTHROPIC_API_KEY: K, CLAUDE_CODE_OAUTH_TOKEN: T },
+      { ISSUECREW_LIVE: '1', ANTHROPIC_API_KEY: K, CLAUDE_CODE_OAUTH_TOKEN: T },
       { home, tmpT },
     )
     expect(result.status).toBe(4)
@@ -92,7 +92,7 @@ describe('spike:sdk runner', () => {
   it('refuses invalid SPIKE_AUTH_MODE', TEST_TIMEOUT, () => {
     const { tmp, home, tmpT } = sandbox('bogus-mode')
     const doc = join(tmp, 'doc.md')
-    const result = run(['--out', doc], { SUPERAGENT_CLAUDE_LIVE: '1', SPIKE_AUTH_MODE: 'bogus' }, { home, tmpT })
+    const result = run(['--out', doc], { ISSUECREW_LIVE: '1', SPIKE_AUTH_MODE: 'bogus' }, { home, tmpT })
     expect(result.status).toBe(4)
     expect(existsSync(doc)).toBe(false)
   })

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="766" viewBox="0 0 960 766" role="img" aria-labelledby="t d">
-  <title id="t">superagent-claude flow</title>
-  <desc id="d">Three lanes: GitHub, the superagent-claude daemon on your host, and an isolated session per ticket. An allowed person mentions the agent; the daemon polls, admits, routes and opens a ticket; the ticket's session works in its own git worktree and reaches GitHub only through the daemon's host tools, which post a reply comment or open a pull request.</desc>
+  <title id="t">issuecrew flow</title>
+  <desc id="d">Three lanes: GitHub, the issuecrew daemon on your host, and an isolated session per ticket. An allowed person mentions the agent; the daemon polls, admits, routes and opens a ticket; the ticket's session works in its own git worktree and reaches GitHub only through the daemon's host tools, which post a reply comment or open a pull request.</desc>
   <style>
     :root {
       --bg: #fbfaf8; --lane: #f3f1ed; --node: #ffffff;
@@ -56,7 +56,7 @@
 
   <text class="lh" x="36" y="44">GitHub</text>
   <text class="ls" x="36" y="62">threads, branches, pull requests</text>
-  <text class="lh" x="336" y="44">superagent-claude daemon</text>
+  <text class="lh" x="336" y="44">issuecrew daemon</text>
   <text class="ls" x="336" y="62">on your host</text>
   <text class="lh" x="660" y="44">Isolated session</text>
   <text class="ls" x="660" y="62">sandbox, one per ticket, no GitHub token</text>

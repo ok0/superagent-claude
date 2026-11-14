@@ -504,7 +504,7 @@ describe('hidden acceptance', () => {
     'host credentials are not passed',
     async () => {
       vi.stubEnv('GH_TOKEN', 'gh-secret-value')
-      vi.stubEnv('SUPERAGENT_CLAUDE_GITHUB_TOKEN', 'agent-secret-value')
+      vi.stubEnv('ISSUECREW_GITHUB_TOKEN', 'agent-secret-value')
       const scenario = probe(['node', '-e', 'console.log(JSON.stringify(process.env))'])
       const result = await runHidden('head', scenario, {
         fetchTree: fetchApi,

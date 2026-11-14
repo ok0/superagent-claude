@@ -1,7 +1,7 @@
 /**
  * Live check that repository auto-run settings do not run: a local repository with settings hooks, an MCP config and
  * git hooks is opened by a real subscription session in a ticket worktree, and no marker outside the worktree appears.
- * A trusted control shows the markers can be made. Gated by SUPERAGENT_CLAUDE_LIVE=1 and
+ * A trusted control shows the markers can be made. Gated by ISSUECREW_LIVE=1 and
  * CLAUDE_CODE_OAUTH_TOKEN; skipped otherwise.
  */
 import { execFileSync } from 'node:child_process'
@@ -26,12 +26,12 @@ import { Commands } from '../../src/infra/commands.ts'
 import { ClaudeRuntime, type QueryFn, type QueryHandle } from '../../src/runtimes/claude/runtime.ts'
 import { waitUntil } from '../fixtures/async.ts'
 
-const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
+const LIVE = process.env.ISSUECREW_LIVE === '1'
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
-const MODEL = process.env.SUPERAGENT_CLAUDE_LIVE_MODEL ?? 'haiku'
+const MODEL = process.env.ISSUECREW_LIVE_MODEL ?? 'haiku'
 const RAW = join(process.cwd(), '.docs', 'acceptance', 'raw')
 const REPOSITORY = 'local/sample'
-const KEEP = process.env.SUPERAGENT_CLAUDE_LIVE_KEEP === '1'
+const KEEP = process.env.ISSUECREW_LIVE_KEEP === '1'
 const roots: string[] = []
 
 interface Observed {

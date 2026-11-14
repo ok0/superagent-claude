@@ -47,7 +47,7 @@ import('./main.ts')
     },
     (error: unknown) => {
       if (json) process.stdout.write(event('error', 'cli.failed', String(error)))
-      else process.stderr.write(`superagent-claude: ${String(error)}\n`)
+      else process.stderr.write(`issuecrew: ${String(error)}\n`)
       process.exitCode = 1
       exitSoon()
     },

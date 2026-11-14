@@ -124,10 +124,7 @@ describe('UI scenarios', () => {
   it('judgeAmbiguity counts an agent question or a stated interpretation', async () => {
     const pr = { body: 'Updated TaskRow.tsx and styles.css to space the rows.', createdAt: '2026-11-11T10:00:00Z' }
     const files = ['web/src/components/TaskRow.tsx', 'web/src/styles.css']
-    const question = agentComment(
-      'Should the rows get more spacing?\n\n<!-- superagent-claude:x -->',
-      '2026-11-11T09:00:00Z',
-    )
+    const question = agentComment('Should the rows get more spacing?\n\n<!-- issuecrew:x -->', '2026-11-11T09:00:00Z')
 
     expect(judgeAmbiguity([question], { body: 'Closes #3', createdAt: pr.createdAt }, files, AGENT)).toMatchObject({
       passed: true,
@@ -166,7 +163,7 @@ describe('UI scenarios', () => {
     ]) {
       expect(isQuestionLine(line), line).toBe(true)
     }
-    for (const line of ['Done.', '> quoted?', '<!-- superagent-claude:x -->', '']) {
+    for (const line of ['Done.', '> quoted?', '<!-- issuecrew:x -->', '']) {
       expect(isQuestionLine(line), line).toBe(false)
     }
   })
@@ -176,7 +173,7 @@ describe('UI scenarios', () => {
     const files = ['web/src/styles.css']
     const pr = { body: 'Closes #42', createdAt: '2026-11-11T04:23:49Z' }
     const created = '2026-11-11T04:23:48Z'
-    for (const body of [ACK, `${ACK}\n\n<!-- superagent-claude:12fec983ad307a91c95694587d0a040e -->`]) {
+    for (const body of [ACK, `${ACK}\n\n<!-- issuecrew:12fec983ad307a91c95694587d0a040e -->`]) {
       const verdict = judgeAmbiguity([agentComment(body, created)], pr, files, AGENT)
       expect(verdict).toMatchObject({ passed: true, via: 'interpretation', source: 'comment' })
       expect(verdict.statement).toContain('다듬겠습니다')
@@ -469,7 +466,7 @@ describe('UI scenarios', () => {
   })
 })
 
-describe.skipIf(process.env.SUPERAGENT_CLAUDE_SEED_INSTALL !== '1')('UI hidden tests with an installed seed', () => {
+describe.skipIf(process.env.ISSUECREW_SEED_INSTALL !== '1')('UI hidden tests with an installed seed', () => {
   let installed = ''
   let installRoot = ''
 

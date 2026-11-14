@@ -454,7 +454,7 @@ it('gives the Engine the same results as the in-memory repositories, keeps them 
   expect(memory.duplicate).toBe('duplicate')
   const store = new Store(databasePath(directory))
   expect(scenario(store)).toEqual(memory)
-  expect(() => new Store(databasePath(directory))).toThrow('Another superagent-claude process')
+  expect(() => new Store(databasePath(directory))).toThrow('Another issuecrew process')
   store.close()
   const reopened = new Store(databasePath(directory))
   expect({ tickets: reopened.tickets.list(), threads: reopened.threads.list() }).toEqual({
@@ -482,7 +482,7 @@ it('refuses a fresh lock recorded on another host even when that pid is not runn
   mkdirSync(path + '.lock')
   try {
     writeFileSync(path + '.owner', `${gone} other-host`)
-    expect(() => new Store(path)).toThrow('Another superagent-claude process')
+    expect(() => new Store(path)).toThrow('Another issuecrew process')
   } finally {
     rmSync(path + '.lock', { recursive: true, force: true })
   }
@@ -503,9 +503,9 @@ it('refuses a fresh lock whose owner still runs or is unknown', () => {
   mkdirSync(path + '.lock')
   try {
     writeFileSync(path + '.owner', String(process.pid))
-    expect(() => new Store(path)).toThrow('Another superagent-claude process')
+    expect(() => new Store(path)).toThrow('Another issuecrew process')
     rmSync(path + '.owner')
-    expect(() => new Store(path)).toThrow('Another superagent-claude process')
+    expect(() => new Store(path)).toThrow('Another issuecrew process')
   } finally {
     rmSync(path + '.lock', { recursive: true, force: true })
   }

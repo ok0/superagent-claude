@@ -654,7 +654,7 @@ describe('install retry offline', () => {
   })
 })
 
-describe.skipIf(process.env.SUPERAGENT_CLAUDE_SEED_INSTALL !== '1')('extended hidden tests with a real install', () => {
+describe.skipIf(process.env.ISSUECREW_SEED_INSTALL !== '1')('extended hidden tests with a real install', () => {
   it(
     '(f) bump only fails typecheck on SlowBuffer',
     async () => {

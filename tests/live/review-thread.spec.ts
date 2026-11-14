@@ -3,7 +3,7 @@
  * (githubPullRequests over GitHubApi) run with the agent token, opening a PR, re-opening it through the idempotent
  * head lookup, replying to an owner review comment and resolving its thread, reading push permission and closing the
  * PR. The owner side uses the harness gh. The branch agent/review-thread-<run> is left for pnpm live:cleanup. Gated by
- * SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO and the two tokens; never prints a token.
+ * ISSUECREW_LIVE=1, a configured ISSUECREW_LIVE_REPO and the two tokens; never prints a token.
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -19,8 +19,8 @@ import { liveEnabled, liveTarget } from './target.ts'
 
 const TARGET = liveTarget()
 const LIVE = liveEnabled()
-const AGENT_TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
-const OWNER_TOKEN = process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN?.trim()
+const AGENT_TOKEN = process.env.ISSUECREW_GITHUB_TOKEN?.trim()
+const OWNER_TOKEN = process.env.ISSUECREW_LIVE_OWNER_TOKEN?.trim()
 const REPO = TARGET ? assertAllowedRepo(TARGET.repo) : ''
 const AGENT = TARGET?.agentLogin ?? ''
 const TOKENS = [AGENT_TOKEN, OWNER_TOKEN].filter((token): token is string => Boolean(token))

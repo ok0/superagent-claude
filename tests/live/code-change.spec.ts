@@ -1,7 +1,7 @@
 /**
  * Live code-change scenarios against the playground repository: the daemon started through the CLI in auto mode with
  * subscription OAuth. Scenarios come from the registry in tests/live/scenarios (core always, extended by
- * SUPERAGENT_CLAUDE_LIVE_SCENARIOS). Each initial scenario's issue becomes one agent PR. A scenario passes only when
+ * ISSUECREW_LIVE_SCENARIOS). Each initial scenario's issue becomes one agent PR. A scenario passes only when
  * the PR head checks succeed (playground CI, or npm ci, npm run typecheck and npm test locally on the head tree when
  * the workflow is not seeded), its hidden acceptance tests pass on the PR head, and the diff check passes; the bug
  * scenario also needs its new test to fail on the base. A scenario with an answer gets that answer once when the agent
@@ -9,12 +9,12 @@
  * fails instead of waiting out the whole timeout; an ambiguity scenario also needs a question or a stated
  * interpretation; a prepared scenario starts from an owner pull request that adds one failing test. A review follow-up
  * is judged again on the new head with the cumulative PR diff. Evidence is read from the store, GitHub and the logs.
- * Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three
+ * Gated by ISSUECREW_LIVE=1, a configured ISSUECREW_LIVE_REPO with its login settings, and the three
  * tokens; never prints a token; all GitHub access goes through the guarded helper; After judging, the owner
  * squash-merges at most one passing pull request per scenario kind (bug, feature, ui). Cleanup then closes this run's
- * other pull requests without merging, deletes their agent branches, and closes this run's issues. SUPERAGENT_CLAUDE_LIVE_ONLY
- * (comma-separated scenario ids), SUPERAGENT_CLAUDE_LIVE_REVIEW=off (pre-publish review disabled) and
- * SUPERAGENT_CLAUDE_LIVE_MERGE=off (no owner squash-merge) select a subset and the A/B settings.
+ * other pull requests without merging, deletes their agent branches, and closes this run's issues. ISSUECREW_LIVE_ONLY
+ * (comma-separated scenario ids), ISSUECREW_LIVE_REVIEW=off (pre-publish review disabled) and
+ * ISSUECREW_LIVE_MERGE=off (no owner squash-merge) select a subset and the A/B settings.
  */
 import { EventEmitter } from 'node:events'
 import {
@@ -87,18 +87,18 @@ import {
 
 const TARGET = liveTarget()
 const LIVE = liveEnabled()
-const AGENT_TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
-const OWNER_TOKEN = process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN?.trim()
+const AGENT_TOKEN = process.env.ISSUECREW_GITHUB_TOKEN?.trim()
+const OWNER_TOKEN = process.env.ISSUECREW_LIVE_OWNER_TOKEN?.trim()
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
 const REPO = TARGET ? assertAllowedRepo(TARGET.repo) : ''
 const AGENT = TARGET?.agentLogin ?? ''
 const OWNER = TARGET?.ownerLogin ?? ''
 const RUN = runTag()
-const ONLY = process.env.SUPERAGENT_CLAUDE_LIVE_ONLY?.split(',')
+const ONLY = process.env.ISSUECREW_LIVE_ONLY?.split(',')
   .map(s => s.trim())
   .filter(Boolean)
-const REVIEW = process.env.SUPERAGENT_CLAUDE_LIVE_REVIEW === 'off' ? 'off' : 'on'
-const MERGE = process.env.SUPERAGENT_CLAUDE_LIVE_MERGE !== 'off'
+const REVIEW = process.env.ISSUECREW_LIVE_REVIEW === 'off' ? 'off' : 'on'
+const MERGE = process.env.ISSUECREW_LIVE_MERGE !== 'off'
 const LOADED = await loadScenarios(process.env)
 for (const id of ONLY ?? []) if (!LOADED.some(s => s.id === id)) throw new Error('unknown scenario id: ' + id)
 const RAW = ONLY ? LOADED.filter(s => ONLY.includes(s.id)) : LOADED
@@ -573,7 +573,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live code chan
     }
 
     dir = mkdtempSync(join(tmpdir(), 'sac-code-change-'))
-    configPath = join(dir, 'superagent-claude.json')
+    configPath = join(dir, 'issuecrew.json')
     config = liveConfig({ repo: REPO, owner: OWNER, stateDir: join(dir, 'state'), review: REVIEW === 'on' })
     evidence.reviewMode = REVIEW
     evidence.only = ONLY ?? null

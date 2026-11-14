@@ -1,8 +1,8 @@
 /**
  * Live forced-stop run against the playground repository: the daemon is started as a child process through the CLI
  * entry with subscription OAuth, SIGKILLed while a ticket's Assignment runs, restarted on the same stateDir, and
- * checked through the store and the GitHub comment list. Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured
- * SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token.
+ * checked through the store and the GitHub comment list. Gated by ISSUECREW_LIVE=1, a configured
+ * ISSUECREW_LIVE_REPO with its login settings, and the three tokens; never prints a token.
  */
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -20,8 +20,8 @@ import { liveEnabled, liveTarget, renderLiveText } from './target.ts'
 
 const TARGET = liveTarget()
 const LIVE = liveEnabled()
-const AGENT_TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
-const OWNER_TOKEN = process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN?.trim()
+const AGENT_TOKEN = process.env.ISSUECREW_GITHUB_TOKEN?.trim()
+const OWNER_TOKEN = process.env.ISSUECREW_LIVE_OWNER_TOKEN?.trim()
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
 const REPO = TARGET ? assertAllowedRepo(TARGET.repo) : ''
 const AGENT = TARGET?.agentLogin ?? ''
@@ -29,8 +29,8 @@ const OWNER = TARGET?.ownerLogin ?? ''
 const text = (value: string): string => (TARGET ? renderLiveText(value, TARGET) : value)
 const LIMITS = { max: 2, maxTurns: 40, maxBudgetUsd: 2 }
 const TIMELINE = ['ticket.created', 'assignment.started', 'assignment.ended', 'ticket.ended']
-const MARKER = /<!--\s*superagent-claude:(.+?)\s*-->/
-const STRIP = /<!--\s*superagent-claude:.*?-->/g
+const MARKER = /<!--\s*issuecrew:(.+?)\s*-->/
+const STRIP = /<!--\s*issuecrew:.*?-->/g
 
 type Line = Record<string, unknown> & { run?: number }
 interface Comment {
@@ -82,7 +82,7 @@ async function until<T>(
 
 function markerId(body: string): string {
   const match = MARKER.exec(body)
-  if (!match) throw new Error('no superagent-claude marker in comment')
+  if (!match) throw new Error('no issuecrew marker in comment')
   return match[1]!
 }
 
@@ -141,7 +141,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live forced st
     storeRows<Receipt>('outbox').filter(row => row.ticketId === ticketId)
 
   const daemon = (run: 1 | 2): Daemon => {
-    const entry = process.env.SUPERAGENT_CLAUDE_CLI ?? fileURLToPath(new URL('../../src/cli/bin.ts', import.meta.url))
+    const entry = process.env.ISSUECREW_CLI ?? fileURLToPath(new URL('../../src/cli/bin.ts', import.meta.url))
     const proc = spawn(process.execPath, [entry, 'start', '--config', configPath], {
       cwd: dir,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -187,7 +187,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live forced st
 
   beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), 'sac-live-crash-'))
-    configPath = join(dir, 'superagent-claude.json')
+    configPath = join(dir, 'issuecrew.json')
     config = {
       repositories: [REPO],
       policy: { allowed: [OWNER], acceptMode: 'auto' },

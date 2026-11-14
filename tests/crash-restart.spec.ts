@@ -20,7 +20,7 @@ import { fileGh, NOW, type FileGh } from './fixtures/file-gh.ts'
 
 const A = 'acme/widgets'
 const ISSUE_PATH = 'issues/1/comments'
-const MARKER = /<!-- superagent-claude:(.+?) -->/
+const MARKER = /<!-- issuecrew:(.+?) -->/
 const poll = (check: () => boolean, timeout: number): Promise<void> =>
   vi.waitFor(
     () => {
@@ -63,7 +63,7 @@ function setup(): Setup {
     },
   }
   const gh = fileGh(dir, script)
-  const cfg = join(dir, 'superagent-claude.json')
+  const cfg = join(dir, 'issuecrew.json')
   writeFileSync(
     cfg,
     JSON.stringify({
@@ -77,7 +77,7 @@ function setup(): Setup {
 }
 
 function daemon(t: Setup, extra: Record<string, string> = {}): Daemon {
-  const entry = process.env.SUPERAGENT_CLAUDE_CLI ?? fileURLToPath(new URL('../src/cli/bin.ts', import.meta.url))
+  const entry = process.env.ISSUECREW_CLI ?? fileURLToPath(new URL('../src/cli/bin.ts', import.meta.url))
   const child = spawn(process.execPath, [entry, 'start', '--fake', '--config', t.cfg], {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
@@ -148,7 +148,7 @@ function runningTicket(dir: string): { ticket: Ticket; running: string } | undef
 describe('daemon forced stops', () => {
   it('a daemon stopped by SIGKILL while its Assignment runs resumes it with the recovery note and posts no comment twice', async () => {
     const t = setup()
-    const d1 = daemon(t, { SUPERAGENT_CLAUDE_FAKE_HOLD: '1' })
+    const d1 = daemon(t, { ISSUECREW_FAKE_HOLD: '1' })
     await poll(() => runningTicket(t.dir) !== undefined, 60_000)
     const { ticket: seen, running: runningId } = runningTicket(t.dir)!
     const ticketId = seen.id
@@ -163,7 +163,7 @@ describe('daemon forced stops', () => {
     const d2 = daemon(t)
     await poll(() => d2.exited || (tickets(t.dir)[0]?.ended !== undefined && delivered(t)), 60_000)
     expect(d2.exited, d2.err).toBe(false)
-    expect(d2.err).not.toContain('Another superagent-claude process')
+    expect(d2.err).not.toContain('Another issuecrew process')
     await stop(d2)
 
     const list = tickets(t.dir)
@@ -309,15 +309,11 @@ describe('daemon forced stops', () => {
     }
     const names = [
       ...new Set(
-        [...contents.values()].flatMap(text =>
-          [...text.matchAll(/SUPERAGENT_CLAUDE_[A-Z][A-Z_]*/g)].map(match => match[0]),
-        ),
+        [...contents.values()].flatMap(text => [...text.matchAll(/ISSUECREW_[A-Z][A-Z_]*/g)].map(match => match[0])),
       ),
     ]
     expect(names.filter(name => /CRASH|KILL|FAULT|INJECT/.test(name))).toEqual([])
-    const holders = [...contents]
-      .filter(([, text]) => text.includes('SUPERAGENT_CLAUDE_FAKE_HOLD'))
-      .map(([file]) => file)
+    const holders = [...contents].filter(([, text]) => text.includes('ISSUECREW_FAKE_HOLD')).map(([file]) => file)
     expect(holders).toEqual(['src/cli/main.ts'])
     expect(Object.keys(ConfigSchema.shape)).toEqual([
       'repositories',

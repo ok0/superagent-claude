@@ -104,8 +104,8 @@ describe('guard', () => {
       'example/playground' + '-readonly2',
       'example/main-archived',
       'example/playground-archived',
-      'OK0/Superagent-Claude-Playground-Archived',
-      'other/superagent-claude',
+      'OK0/Issuecrew-Playground-Archived',
+      'other/issuecrew',
       '',
       ' example/main',
       'example/main/extra',
@@ -760,7 +760,7 @@ describe('fixtures', () => {
   it('live config allows the npm registry and raises the limits', () => {
     const dir = scratch()
     try {
-      const path = join(dir, 'superagent-claude.json')
+      const path = join(dir, 'issuecrew.json')
       writeFileSync(
         path,
         JSON.stringify(
@@ -782,9 +782,9 @@ describe('seed rules', () => {
 
   it('README rules reject a sample without each clause', () => {
     expect(readmeProblems(README)).toEqual([])
-    expect(
-      readmeProblems(README.replace('test playground for superagent-claude', 'sample repository')).length,
-    ).toBeGreaterThan(0)
+    expect(readmeProblems(README.replace('test playground for issuecrew', 'sample repository')).length).toBeGreaterThan(
+      0,
+    )
     expect(readmeProblems(README.replace('It is not a real project:', 'Note:')).length).toBeGreaterThan(0)
     expect(readmeProblems(README.replace('opened and closed by automated tests', 'welcome')).length).toBeGreaterThan(0)
   })

@@ -6,7 +6,7 @@ import { packagePath } from '../src/infra/paths.ts'
 import { escapeRegExp, fill, wordCount } from '../src/infra/text.ts'
 
 it('finds the package root by its name', () => {
-  expect(JSON.parse(readFileSync(packagePath('package.json'), 'utf8')).name).toBe('superagent-claude')
+  expect(JSON.parse(readFileSync(packagePath('package.json'), 'utf8')).name).toBe('issuecrew')
 })
 
 it('keeps word counting and templates, without the IM limit or a second sameName', async () => {

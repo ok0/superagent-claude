@@ -1,6 +1,6 @@
 /**
  * The canonical host tool names. Prompts, skills and tool registrations use these names;
- * the model sees them as `mcp__superagent__<name>`.
+ * the model sees them as `mcp__issuecrew__<name>`.
  */
 export const ROUTER_TOOLS = [
   'orchestrator_read',
@@ -30,18 +30,18 @@ export const WORKER_TOOLS = [
 ] as const
 export type ToolName = (typeof ROUTER_TOOLS)[number] | (typeof WORKER_TOOLS)[number]
 export const TOOL_NAMES: readonly ToolName[] = [...new Set([...ROUTER_TOOLS, ...WORKER_TOOLS])]
-export const MCP_TOOL_PREFIX = 'mcp__superagent__'
+export const MCP_TOOL_PREFIX = 'mcp__issuecrew__'
 
 export function toolNameViolations(text: string): string[] {
   const found: { index: number; value: string }[] = []
   for (const match of text.matchAll(/(?<!\w)orchestrator_[a-z_]+/g)) {
     found.push({ index: match.index ?? 0, value: `${match[0]} (missing ${MCP_TOOL_PREFIX})` })
   }
-  for (const match of text.matchAll(/mcp__superagent__([a-z_]+)/g)) {
+  for (const match of text.matchAll(/mcp__issuecrew__([a-z_]+)/g)) {
     const name = match[1] ?? ''
     if (!(TOOL_NAMES as readonly string[]).includes(name)) found.push({ index: match.index ?? 0, value: name })
   }
-  for (const match of text.matchAll(/mcp__(?!superagent__)[a-z0-9_]+/g)) {
+  for (const match of text.matchAll(/mcp__(?!issuecrew__)[a-z0-9_]+/g)) {
     found.push({ index: match.index ?? 0, value: match[0] })
   }
   return found.sort((a, b) => a.index - b.index).map(entry => entry.value)

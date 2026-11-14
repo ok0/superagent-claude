@@ -22,21 +22,20 @@ const FAKE_SCRIPT: FakeScript = ({ index }) =>
     ? { tools: [{ name: 'orchestrator_report', args: { state: 'ready', summary: 'Done: the fake worker finished' } }] }
     : {}
 /**
- * With SUPERAGENT_CLAUDE_FAKE_HOLD=1 (read only with --fake) the fake worker never ends a turn, so a test can stop
+ * With ISSUECREW_FAKE_HOLD=1 (read only with --fake) the fake worker never ends a turn, so a test can stop
  * the daemon while an Assignment runs.
  */
 const HOLD_SCRIPT: FakeScript = () => ({ hold: new Promise<never>(() => {}) })
-const fakeScript = (env: CliIo['env']): FakeScript =>
-  env.SUPERAGENT_CLAUDE_FAKE_HOLD === '1' ? HOLD_SCRIPT : FAKE_SCRIPT
+const fakeScript = (env: CliIo['env']): FakeScript => (env.ISSUECREW_FAKE_HOLD === '1' ? HOLD_SCRIPT : FAKE_SCRIPT)
 
 export const HELP: string =
   [
-    'Usage: superagent-claude [--help | --version]',
-    '       superagent-claude start [--config <path>] [--fake] [--log-format text|json]',
-    '       superagent-claude status [--config <path>]',
-    '       superagent-claude needs [--all] [--config <path>]',
-    '       superagent-claude prompts diff [--config <path>]',
-    '       superagent-claude health --live|--ready [--config <path>]',
+    'Usage: issuecrew [--help | --version]',
+    '       issuecrew start [--config <path>] [--fake] [--log-format text|json]',
+    '       issuecrew status [--config <path>]',
+    '       issuecrew needs [--all] [--config <path>]',
+    '       issuecrew prompts diff [--config <path>]',
+    '       issuecrew health --live|--ready [--config <path>]',
     '',
     'Commands:',
     '  start          Run the daemon in the foreground',
@@ -48,9 +47,9 @@ export const HELP: string =
     'Options:',
     '  -h, --help     Show this help',
     '  -v, --version  Show the version',
-    '  --config PATH  Config file (default: ./superagent-claude.json)',
+    '  --config PATH  Config file (default: ./issuecrew.json)',
     '  --fake         Use the scripted fake runtime (no model calls)',
-    '  --log-format F  With start: text (default) or json, one JSON event per line on stdout only (env SUPERAGENT_CLAUDE_LOG_FORMAT)',
+    '  --log-format F  With start: text (default) or json, one JSON event per line on stdout only (env ISSUECREW_LOG_FORMAT)',
     '  --all          With needs: also list the other open tickets and the tickets ended within retention.endedTicketDays',
     '',
     'Exit codes: 0 done, 1 unknown argument or failed health check, 2 refused start, config error or bad health arguments, 3 no readable state database (status, needs)',
@@ -75,10 +74,10 @@ export function run(argv: readonly string[], out: (s: string) => void, err: (s: 
     return 0
   }
   if (first === '--version' || first === '-v') {
-    out(`superagent-claude ${VERSION}\n`)
+    out(`issuecrew ${VERSION}\n`)
     return 0
   }
-  err(`superagent-claude: unknown argument '${first}'\n` + HELP)
+  err(`issuecrew: unknown argument '${first}'\n` + HELP)
   return 1
 }
 
@@ -117,11 +116,11 @@ function startOutput(format: LogFormat, io: CliIo): StartOutput {
   }
   return {
     refuse: (message, usage = false) => {
-      io.err(mask(`superagent-claude: ${message}\n` + (usage ? HELP : '')))
+      io.err(mask(`issuecrew: ${message}\n` + (usage ? HELP : '')))
       return EXIT_REFUSED
     },
     warn: message => {
-      io.err(mask(`superagent-claude: warning: ${message}\n`))
+      io.err(mask(`issuecrew: warning: ${message}\n`))
     },
   }
 }
@@ -129,7 +128,7 @@ function startOutput(format: LogFormat, io: CliIo): StartOutput {
 async function start(argv: readonly string[], io: CliIo): Promise<number> {
   const format = logFormat(argv, io.env)
   if (format === undefined) {
-    io.err(`superagent-claude: --log-format and SUPERAGENT_CLAUDE_LOG_FORMAT take text or json\n` + HELP)
+    io.err(`issuecrew: --log-format and ISSUECREW_LOG_FORMAT take text or json\n` + HELP)
     return EXIT_REFUSED
   }
   const say = startOutput(format, io)

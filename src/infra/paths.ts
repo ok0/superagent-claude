@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const PACKAGE_NAME = 'superagent-claude'
+const PACKAGE_NAME = 'issuecrew'
 let cached: string | undefined
 export function packageRoot(): string {
   if (cached) return cached

@@ -102,7 +102,7 @@ function start(
   const clock = new ManualClock(START)
   const sources = installedSources(
     config,
-    { SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'test-token' },
+    { ISSUECREW_GITHUB_TOKEN: 'test-token' },
     { commands: gh.commands, timers: clock, now: clock.now },
   )
   const fake = new FakeRuntime(turn => (turn.spec.role === 'router' ? router(turn) : workerScript(turn)))
@@ -123,7 +123,7 @@ it('session mode: a mentioned issue gets one acknowledgement and one result from
   expect(gh.posted.some(post => post.body.startsWith('Worker summary text'))).toBe(false)
   expect(runtime!.store.tickets.list()).toHaveLength(1)
 
-  const ids = gh.posted.map(post => /<!-- superagent-claude:(.+) -->/.exec(post.body)![1]!)
+  const ids = gh.posted.map(post => /<!-- issuecrew:(.+) -->/.exec(post.body)![1]!)
   expect(ids[0]).not.toBe(ids[1])
   for (const id of ids) expect(runtime!.store.receipts.get(id)!.status).toBe('sent')
 

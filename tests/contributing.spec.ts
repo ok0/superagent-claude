@@ -36,13 +36,13 @@ export const REQUIRED_CONTRIBUTING = [
   'No AI attribution',
   'pnpm check:all',
   '`pnpm format`',
-  'docker build -t superagent-claude:local .',
+  'docker build -t issuecrew:local .',
   '](CODE_OF_CONDUCT.md)',
   '## Run live tests against your own playground',
-  '`SUPERAGENT_CLAUDE_LIVE_REPO`',
-  '`SUPERAGENT_CLAUDE_LIVE_OWNER_LOGIN`',
-  '`SUPERAGENT_CLAUDE_LIVE_AGENT_LOGIN`',
-  '`SUPERAGENT_CLAUDE_LIVE_REPORT_REPO`',
+  '`ISSUECREW_LIVE_REPO`',
+  '`ISSUECREW_LIVE_OWNER_LOGIN`',
+  '`ISSUECREW_LIVE_AGENT_LOGIN`',
+  '`ISSUECREW_LIVE_REPORT_REPO`',
   'your-name/your-playground',
   '`pnpm live:seed`',
   '`pnpm live:cleanup`',
@@ -68,7 +68,7 @@ export const REQUIRED_RELEASING = [
   '**Trusted Publisher**',
   '**GitHub Actions**',
   'Organization or user: `ok0`',
-  'Repository: `superagent-claude`',
+  'Repository: `issuecrew`',
   'Workflow filename: `release.yml`',
   'Environment name: leave it empty',
   'within 2 days',
@@ -82,11 +82,11 @@ export const REQUIRED_RELEASING = [
   '**Change visibility**',
   'org.opencontainers.image.source',
   'nothing is published',
-  'npm view superagent-claude',
+  'npm view issuecrew',
   'gh release view v<version>',
-  'docker pull ghcr.io/ok0/superagent-claude:',
+  'docker pull ghcr.io/ok0/issuecrew:',
   '10001:10001',
-  'npm dist-tag add superagent-claude@<version> <tag>',
+  'npm dist-tag add issuecrew@<version> <tag>',
   '**Re-run failed jobs**',
   'The interface may change',
 ] as const
@@ -118,10 +118,7 @@ export const REQUIRED_CONDUCT = [
   '## Reporting',
 ] as const
 
-export const REQUIRED_SECURITY = [
-  'https://github.com/ok0/superagent-claude/security/advisories/new',
-  'public issue',
-] as const
+export const REQUIRED_SECURITY = ['https://github.com/ok0/issuecrew/security/advisories/new', 'public issue'] as const
 
 export const REQUIRED_PR_TEMPLATE = ['- [ ] `pnpm check:all`', 'Conventional Commits', 'No AI attribution'] as const
 
@@ -262,16 +259,16 @@ describe('contributing docs', () => {
 
   it('README test repositories section names only the allowed playground example', () => {
     const allowedExample =
-      "The project's own live runs use [ok0/superagent-claude-playground](https://github.com/ok0/superagent-claude-playground) as the playground."
+      "The project's own live runs use [ok0/issuecrew-playground](https://github.com/ok0/issuecrew-playground) as the playground."
     const readme = read('README.md')
     const start = readme.indexOf('## Test repositories')
     const end = readme.indexOf('\n## ', start + 1)
     const section = readme.slice(start, end === -1 ? undefined : end)
     expect(section.split(allowedExample).length - 1).toBeLessThanOrEqual(1)
     const rest = section.replaceAll(allowedExample, '')
-    expect(rest).not.toMatch(/superagent-claude-playground/)
+    expect(rest).not.toMatch(/issuecrew-playground/)
     expect(rest).not.toMatch(/\bok0\b/)
-    expect(section).toContain('SUPERAGENT_CLAUDE_LIVE_REPO')
+    expect(section).toContain('ISSUECREW_LIVE_REPO')
     expect(section).toContain('](CONTRIBUTING.md#run-live-tests-against-your-own-playground)')
   })
 

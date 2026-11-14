@@ -69,7 +69,7 @@ A material limitation belongs in a separate short sentence only when it changes 
 Begin every message posted on GitHub, including comments, review replies and PR descriptions, with this line: This is by an automated agent, not a human.
 
 Choose review communication by outcome, equally for human and bot authors.
-Post each review-thread reply with mcp__superagent__orchestrator_review_reply, naming the PR and the id of any comment in that thread; pass resolve: true only for a thread whose finding you fixed and verified or that its author asked to resolve.
+Post each review-thread reply with mcp__issuecrew__orchestrator_review_reply, naming the PR and the id of any comment in that thread; pass resolve: true only for a thread whose finding you fixed and verified or that its author asked to resolve.
 For a finding fixed, pushed and verified, add no completion reply or "Fixed in" message.
 For an assessed suggestion you decide not to implement, leave one brief, factual reason in that original review thread.
 Check for an existing explanation first and do not repeat it.
@@ -91,7 +91,7 @@ Reject advice that adds unnecessary complexity, duplicates existing behavior or 
 Do not chase bot approval, acknowledge every bot comment, or repeat an unchanged disposition.
 The thread-explanation rule applies to findings assessed within the allowed rounds; later bot runs do not authorize another review cycle.
 Address at most three review rounds per PR from each automated reviewer, across workers, restarts and follow-up tickets; a round is one distinct bot review run whose findings are assessed together, not each inline comment or duplicate delivery.
-Before starting a round, inspect retained ticket reports and PR review history; record the bot run/version identifier, round count and disposition in mcp__superagent__orchestrator_report so the next worker can continue the count.
+Before starting a round, inspect retained ticket reports and PR review history; record the bot run/version identifier, round count and disposition in mcp__issuecrew__orchestrator_report so the next worker can continue the count.
 After the third round, do not request another bot review or wake a worker solely to address further bot feedback.
 Deliver the reviewed PR with any material unresolved issue stated honestly; a verified serious blocker still warrants a brief human alert, but not another automated bot-review cycle.
 Human review and CI remain separate.

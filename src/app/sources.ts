@@ -1,5 +1,5 @@
 /**
- * The Source kinds this build installs: the GitHub Source when SUPERAGENT_CLAUDE_GITHUB_TOKEN is set.
+ * The Source kinds this build installs: the GitHub Source when ISSUECREW_GITHUB_TOKEN is set.
  * The token reaches only the GitHub API client and never a subprocess environment. A missing or blank token refuses startup.
  * The token also authenticates the host's clone and fetch calls and pull request writes, through an
  * env-scoped header that never reaches worker sessions or git config.
@@ -18,7 +18,7 @@ import { githubSource } from '../sources/github/source.ts'
 import { readGithub, repositoryCommands } from '../sources/github/read.ts'
 import { githubPullRequests, type PullRequests } from '../sources/github/delivery.ts'
 
-export const GITHUB_TOKEN_ENV = 'SUPERAGENT_CLAUDE_GITHUB_TOKEN'
+export const GITHUB_TOKEN_ENV = 'ISSUECREW_GITHUB_TOKEN'
 
 /**
  * Repository access for git workspaces: remote URLs carry no credentials.

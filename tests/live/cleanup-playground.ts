@@ -188,13 +188,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       console.error(TARGET_SKIP_LINE)
       process.exitCode = 0
     } else if (target !== undefined) {
-      if (process.env.SUPERAGENT_CLAUDE_LIVE !== '1' || !process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN) {
-        console.log('STATUS: SKIP (set SUPERAGENT_CLAUDE_LIVE=1 and SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN)')
+      if (process.env.ISSUECREW_LIVE !== '1' || !process.env.ISSUECREW_LIVE_OWNER_TOKEN) {
+        console.log('STATUS: SKIP (set ISSUECREW_LIVE=1 and ISSUECREW_LIVE_OWNER_TOKEN)')
         process.exitCode = 0
       } else {
         try {
           process.exitCode = await runCleanup({
-            token: process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN,
+            token: process.env.ISSUECREW_LIVE_OWNER_TOKEN,
             apply: args.includes('--apply'),
             out: console.log,
             recordDir: resolve('.docs/acceptance/raw'),

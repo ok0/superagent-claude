@@ -26,12 +26,12 @@ const META = {
   id: 'reviewer-subagent',
   req: 'reviewer-subagent',
   title: 'custom subagent tools, hook agent_type, prompt rewrite, tool response, cost, worktree .git writes',
-  repro: 'SUPERAGENT_CLAUDE_LIVE=1 node spikes/sdk/items/r48-reviewer-subagent.ts',
+  repro: 'ISSUECREW_LIVE=1 node spikes/sdk/items/r48-reviewer-subagent.ts',
 }
 const AGENT = 'Agent'
 const DEFINITION = 'spike-reviewer'
 const STUB = 'spike_echo'
-const STUB_TOOL = 'mcp__superagent__spike_echo'
+const STUB_TOOL = 'mcp__issuecrew__spike_echo'
 const NONCE = randomUUID().slice(0, 8)
 const FINAL = randomUUID().slice(0, 8)
 const SIDE_EFFECT_TOOLS = ['Bash', 'Write', 'Edit']
@@ -166,7 +166,7 @@ function mainAgentUse(run: Run): { id: string; input: Msg } | undefined {
 
 function stubServer(stubCalls: string[]) {
   return createSdkMcpServer({
-    name: 'superagent',
+    name: 'issuecrew',
     version: '0.0.0',
     tools: [
       tool(STUB, 'Echo a text back with a host marker.', { text: z.string() }, async ({ text }) => {
@@ -223,7 +223,7 @@ async function runReviewer(ctx: SpikeContext, attempt: number): Promise<Run> {
     allowedTools: ['Agent', 'Read', 'Glob', 'Grep', 'Bash', 'Write', 'Edit', STUB_TOOL],
     disallowedTools: ['AskUserQuestion', 'WebFetch', 'WebSearch'],
     canUseTool: async (name: string) => ({ behavior: 'deny', message: name + ' is not allowed' }),
-    mcpServers: { superagent: stubServer(stubCalls) },
+    mcpServers: { issuecrew: stubServer(stubCalls) },
     strictMcpConfig: true,
     agents: {
       [DEFINITION]: {

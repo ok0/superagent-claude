@@ -1,5 +1,5 @@
 {
-  "seedVersion": "70d58b4b88eeaeb283587f78f33a1c82e5e081de49ea4244b25c6419a6378663",
+  "seedVersion": "19a22b1ef465656dfb4d03670d56e3dcb0d6acb25de3f70967bba74e434e34cc",
   "rows": {
     "overdue": "<li class=\"task-row\"><span class=\"task-title\">Pay the invoice</span><span class=\"badge badge-todo\">To do</span><span class=\"task-due\">Due 2000-01-01</span></li>",
     "future": "<li class=\"task-row\"><span class=\"task-title\">Plan the trip</span><span class=\"badge badge-doing\">In progress</span><span class=\"task-due\">Due 2999-12-31</span></li>",

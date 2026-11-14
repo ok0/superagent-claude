@@ -7,8 +7,8 @@ import { AUTH_ENV, type AuthMode } from '../runtimes/claude/options.ts'
 import { LIMITS } from '../policy/limits.ts'
 import { LoginSchema, PolicyConfigSchema, SettingsSchema, type Settings } from '../policy/policy.ts'
 
-export const CONFIG_FILE = 'superagent-claude.json'
-export const DEFAULT_STATE_DIR = '~/.superagent-claude'
+export const CONFIG_FILE = 'issuecrew.json'
+export const DEFAULT_STATE_DIR = '~/.issuecrew'
 
 export const RepositorySchema = z
   .string()

@@ -23,7 +23,7 @@ function tempDir(): string {
 
 function setup(): { dir: string; configPath: string; stateDir: string; teamDir: string } {
   const dir = tempDir()
-  const configPath = join(dir, 'superagent-claude.json')
+  const configPath = join(dir, 'issuecrew.json')
   writeFileSync(
     configPath,
     JSON.stringify({ repositories: ['owner/repo'], policy: { allowed: ['alice'] }, stateDir: './state' }),

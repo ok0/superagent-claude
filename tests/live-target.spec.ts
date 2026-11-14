@@ -66,37 +66,35 @@ const CLAUDE_ONLY_SPECS = [
 describe('live target', () => {
   it('no target without the repository setting', () => {
     expect(liveTarget({})).toBeNull()
-    expect(liveTarget({ SUPERAGENT_CLAUDE_LIVE_REPO: '' })).toBeNull()
-    expect(liveTarget({ SUPERAGENT_CLAUDE_LIVE_REPO: '  ' })).toBeNull()
-    expect(liveEnabled({ SUPERAGENT_CLAUDE_LIVE: '1' })).toBe(false)
+    expect(liveTarget({ ISSUECREW_LIVE_REPO: '' })).toBeNull()
+    expect(liveTarget({ ISSUECREW_LIVE_REPO: '  ' })).toBeNull()
+    expect(liveEnabled({ ISSUECREW_LIVE: '1' })).toBe(false)
     expect(liveEnabled({ ...E })).toBe(false)
-    expect(liveEnabled({ ...E, SUPERAGENT_CLAUDE_LIVE: '1' })).toBe(true)
+    expect(liveEnabled({ ...E, ISSUECREW_LIVE: '1' })).toBe(true)
   })
 
   it('reads the target', () => {
     expect(liveTarget(E)).toEqual(EXAMPLE_TARGET)
-    const withoutReport = liveTarget({ ...E, SUPERAGENT_CLAUDE_LIVE_REPORT_REPO: undefined })
+    const withoutReport = liveTarget({ ...E, ISSUECREW_LIVE_REPORT_REPO: undefined })
     expect(withoutReport).not.toBeNull()
     expect(Object.keys(withoutReport!)).not.toContain('reportRepo')
   })
 
   it('rejects bad settings', () => {
-    expect(() => liveTarget({ ...E, SUPERAGENT_CLAUDE_LIVE_OWNER_LOGIN: undefined })).toThrow(LiveTargetError)
-    expect(() => liveTarget({ ...E, SUPERAGENT_CLAUDE_LIVE_AGENT_LOGIN: undefined })).toThrow(LiveTargetError)
+    expect(() => liveTarget({ ...E, ISSUECREW_LIVE_OWNER_LOGIN: undefined })).toThrow(LiveTargetError)
+    expect(() => liveTarget({ ...E, ISSUECREW_LIVE_AGENT_LOGIN: undefined })).toThrow(LiveTargetError)
     for (const repo of ['example', 'example/x/y', ' example/x', 'https://github.com/example/x']) {
-      expect(() => liveTarget({ ...E, SUPERAGENT_CLAUDE_LIVE_REPO: repo })).toThrow(LiveTargetError)
+      expect(() => liveTarget({ ...E, ISSUECREW_LIVE_REPO: repo })).toThrow(LiveTargetError)
     }
-    expect(() => liveTarget({ ...E, SUPERAGENT_CLAUDE_LIVE_REPO: 'example' })).toThrow(/"example"/)
+    expect(() => liveTarget({ ...E, ISSUECREW_LIVE_REPO: 'example' })).toThrow(/"example"/)
     for (const login of ['bad login', 'a@b']) {
-      expect(() => liveTarget({ ...E, SUPERAGENT_CLAUDE_LIVE_OWNER_LOGIN: login })).toThrow(LiveTargetError)
-      expect(() => liveTarget({ ...E, SUPERAGENT_CLAUDE_LIVE_AGENT_LOGIN: login })).toThrow(LiveTargetError)
+      expect(() => liveTarget({ ...E, ISSUECREW_LIVE_OWNER_LOGIN: login })).toThrow(LiveTargetError)
+      expect(() => liveTarget({ ...E, ISSUECREW_LIVE_AGENT_LOGIN: login })).toThrow(LiveTargetError)
     }
     for (const report of ['example/playground', 'Example/PLAYGROUND', 'nope']) {
-      expect(() => liveTarget({ ...E, SUPERAGENT_CLAUDE_LIVE_REPORT_REPO: report })).toThrow(LiveTargetError)
+      expect(() => liveTarget({ ...E, ISSUECREW_LIVE_REPORT_REPO: report })).toThrow(LiveTargetError)
     }
-    expect(() => liveEnabled({ ...E, SUPERAGENT_CLAUDE_LIVE: '1', SUPERAGENT_CLAUDE_LIVE_REPO: 'bad' })).toThrow(
-      LiveTargetError,
-    )
+    expect(() => liveEnabled({ ...E, ISSUECREW_LIVE: '1', ISSUECREW_LIVE_REPO: 'bad' })).toThrow(LiveTargetError)
   })
 
   it('does not read tokens', () => {
@@ -196,9 +194,9 @@ describe('live target', () => {
       if (GITHUB_IMPORTS.test(read(name))) expect(GITHUB_SPECS, name).toContain(name)
     }
     for (const name of CLAUDE_ONLY_SPECS) {
-      expect(read(name), name).toContain("process.env.SUPERAGENT_CLAUDE_LIVE === '1'")
+      expect(read(name), name).toContain("process.env.ISSUECREW_LIVE === '1'")
       expect(read(name), name).not.toContain('./target.ts')
-      expect(read(name), name).not.toContain('SUPERAGENT_CLAUDE_LIVE_REPO')
+      expect(read(name), name).not.toContain('ISSUECREW_LIVE_REPO')
     }
   })
 })

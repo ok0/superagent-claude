@@ -44,7 +44,7 @@ export class GitHubApi implements ApiClient {
     this.timeoutMs = options.timeoutMs ?? TIMEOUT_MS
     this.octokit = new Octokit({
       auth: options.token,
-      userAgent: 'superagent-claude',
+      userAgent: 'issuecrew',
       request: options.fetch ? { fetch: options.fetch } : {},
     })
   }

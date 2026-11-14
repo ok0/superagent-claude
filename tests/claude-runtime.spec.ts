@@ -290,8 +290,8 @@ describe('claude runtime', () => {
   it('tool calls through the MCP server reach execute', async () => {
     const sdk = stubSdk()
     const { stub } = await open(sdk)
-    expect(stub.options.mcpServers?.superagent).toBeDefined()
-    expect(stub.options.allowedTools).toContain('mcp__superagent__report')
+    expect(stub.options.mcpServers?.issuecrew).toBeDefined()
+    expect(stub.options.allowedTools).toContain('mcp__issuecrew__report')
   })
 
   it('an invalid human_action through MCP is a tool error', async () => {

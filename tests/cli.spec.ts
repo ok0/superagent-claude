@@ -24,14 +24,14 @@ describe('cli', () => {
     const c = collect()
     const code = run(['--version'], c.write, c.fail)
     expect(code).toBe(0)
-    expect(c.out.join('')).toBe(`superagent-claude ${pkg.version}\n`)
+    expect(c.out.join('')).toBe(`issuecrew ${pkg.version}\n`)
   })
 
   it('prints help with no arguments', () => {
     const c = collect()
     const code = run([], c.write, c.fail)
     expect(code).toBe(0)
-    expect(c.out.join('')).toContain('Usage: superagent-claude')
+    expect(c.out.join('')).toContain('Usage: issuecrew')
   })
 
   it('rejects unknown argument', () => {

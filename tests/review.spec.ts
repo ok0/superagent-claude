@@ -328,7 +328,7 @@ describe('review brief and findings', () => {
     const admitted = await reviews.admit('T1', '/w')
     expect(workspaces.diffText).toHaveBeenCalledWith('/w', 'mb', 60_000)
     expect(admitted!.preamble).toContain('[diff truncated at 60000 of 70000 characters')
-    expect(admitted!.preamble).toContain('read the rest with mcp__superagent__git_inspect')
+    expect(admitted!.preamble).toContain('read the rest with mcp__issuecrew__git_inspect')
     expect(reviewBrief('r', [], { text: 'small', truncated: false }, 'a..b')).not.toContain('truncated')
   })
 
@@ -404,7 +404,7 @@ describe('review brief and findings', () => {
         {
           hook_event_name: 'PreToolUse',
           tool_name: 'Agent',
-          tool_input: { prompt: 'p', description: 'd', subagent_type: 'superagent-reviewer' },
+          tool_input: { prompt: 'p', description: 'd', subagent_type: 'issuecrew-reviewer' },
           session_id: 's',
           transcript_path: 't',
           cwd: '/w',

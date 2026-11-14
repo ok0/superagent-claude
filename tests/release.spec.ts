@@ -191,12 +191,12 @@ describe('package.json metadata', () => {
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 
   it('declares repository, homepage, bugs, and publish access', () => {
-    expect(pkg.repository.url).toBe('git+https://github.com/ok0/superagent-claude.git')
+    expect(pkg.repository.url).toBe('git+https://github.com/ok0/issuecrew.git')
     expect(pkg.publishConfig.access).toBe('public')
     expect(typeof pkg.homepage).toBe('string')
-    expect(pkg.homepage).toMatch(/^https:\/\/github\.com\/ok0\/superagent-claude/)
+    expect(pkg.homepage).toMatch(/^https:\/\/github\.com\/ok0\/issuecrew/)
     expect(typeof pkg.bugs.url).toBe('string')
-    expect(pkg.bugs.url).toMatch(/^https:\/\/github\.com\/ok0\/superagent-claude/)
+    expect(pkg.bugs.url).toMatch(/^https:\/\/github\.com\/ok0\/issuecrew/)
   })
 
   it('declares the release scripts', () => {

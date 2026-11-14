@@ -102,7 +102,7 @@ it('writes the health snapshot each pass', async () => {
 
 it('a reload applies a changed retention.endedTicketDays without asking for a restart', async () => {
   const dir = directory()
-  const path = join(dir, 'superagent-claude.json')
+  const path = join(dir, 'issuecrew.json')
   const env = { HOME: '/home/test' }
   const write = (days: number): void => {
     writeFileSync(

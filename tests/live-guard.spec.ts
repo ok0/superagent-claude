@@ -61,7 +61,7 @@ describe('live guard static scan', () => {
   })
 
   it('every literal repository is allowed', () => {
-    const literal = /['"`]([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]*superagent[A-Za-z0-9_.-]*)['"`]/g
+    const literal = /['"`]([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]*issuecrew[A-Za-z0-9_.-]*)['"`]/g
     for (const [, body] of contents) {
       for (const match of body.matchAll(literal)) {
         const repo = match[1] ?? ''
@@ -152,6 +152,6 @@ describe('live guard static scan', () => {
       expect(body, name).not.toMatch(/\bimport\(\s*['"][^'"]*fixtures\/playground-seed\//)
     }
     for (const name of seedTs)
-      expect(text(name), name).not.toMatch(/api\.github\.com|github\.com\/[^\s'"]*superagent|child_process/)
+      expect(text(name), name).not.toMatch(/api\.github\.com|github\.com\/[^\s'"]*issuecrew|child_process/)
   })
 })

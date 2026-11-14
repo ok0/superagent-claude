@@ -16,14 +16,14 @@ import { waitUntil } from '../fixtures/async.ts'
 import { briefMarkers, forbiddenSummary, reviewerSidechains, toolOutcome, transcriptFiles } from './review-evidence.ts'
 import type { HookRecord, Sidechain, ToolOutcome } from './review-evidence.ts'
 
-const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
+const LIVE = process.env.ISSUECREW_LIVE === '1'
 const mode: AuthMode | undefined =
-  (process.env.SUPERAGENT_CLAUDE_LIVE_AUTH as AuthMode | undefined) ??
+  (process.env.ISSUECREW_LIVE_AUTH as AuthMode | undefined) ??
   (process.env.CLAUDE_CODE_OAUTH_TOKEN ? 'subscription' : process.env.ANTHROPIC_API_KEY ? 'api-key' : undefined)
-const model = process.env.SUPERAGENT_CLAUDE_LIVE_MODEL ?? 'haiku'
+const model = process.env.ISSUECREW_LIVE_MODEL ?? 'haiku'
 const TOKENS = [
-  process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN,
-  process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN,
+  process.env.ISSUECREW_GITHUB_TOKEN,
+  process.env.ISSUECREW_LIVE_OWNER_TOKEN,
   process.env.CLAUDE_CODE_OAUTH_TOKEN,
   process.env.ANTHROPIC_API_KEY,
 ]
@@ -34,10 +34,10 @@ const GIT = ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'c
 const REPO_ROOT = resolve(import.meta.dirname, '../..')
 const RAW = join(REPO_ROOT, '.docs', 'acceptance', 'raw')
 const REVIEW_REASON =
-  'Run the superagent-reviewer subagent before publishing, give it the original request and the human constraints, apply only bug and missing-requirement findings, then call orchestrator_publish again'
+  'Run the issuecrew-reviewer subagent before publishing, give it the original request and the human constraints, apply only bug and missing-requirement findings, then call orchestrator_publish again'
 const WORKER_REVIEW_RULE = readFileSync(join(REPO_ROOT, 'prompts', 'worker.md'), 'utf8')
   .split('\n')
-  .find(line => line.startsWith('When mcp__superagent__orchestrator_publish returns review_required'))
+  .find(line => line.startsWith('When mcp__issuecrew__orchestrator_publish returns review_required'))
 if (!WORKER_REVIEW_RULE) throw new Error('prompts/worker.md has no review_required rule')
 const BUGGY = `// Sum of price times quantity over all cart items.
 export function cartTotal(items) {
@@ -60,9 +60,9 @@ const PROBE_REVIEWER_INSTRUCTIONS =
 const WORKER_INSTRUCTIONS =
   'You are a worker in a local test repository. Your change is already committed on the current branch. ' +
   WORKER_REVIEW_RULE +
-  ' Commit with git commit -am; never push. Publish with mcp__superagent__orchestrator_publish; when it returns published true, reply with one line.'
+  ' Commit with git commit -am; never push. Publish with mcp__issuecrew__orchestrator_publish; when it returns published true, reply with one line.'
 const PROBE_WORKER_PROMPT =
-  'Call the Agent tool exactly once with subagent_type "superagent-reviewer" and the prompt "Run the probe.". Do not use any other tool. After it returns, reply with its answer.'
+  'Call the Agent tool exactly once with subagent_type "issuecrew-reviewer" and the prompt "Run the probe.". Do not use any other tool. After it returns, reply with its answer.'
 
 type TurnEnded = Extract<RuntimeEvent, { type: 'turnEnded' }>
 

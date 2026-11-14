@@ -16,28 +16,28 @@
 
 ## Service setup
 
-To run superagent-claude as a service, run `superagent-claude start` in the foreground under a service manager. On SIGTERM it cleans up for at most 10 seconds and exits with code 0 within 15 seconds, and SIGHUP reloads the config. Keep the secrets in an env file that only the service user can read, with `chmod 600`.
+To run issuecrew as a service, run `issuecrew start` in the foreground under a service manager. On SIGTERM it cleans up for at most 10 seconds and exits with code 0 within 15 seconds, and SIGHUP reloads the config. Keep the secrets in an env file that only the service user can read, with `chmod 600`.
 
-Env file `~/.config/superagent-claude/env`:
+Env file `~/.config/issuecrew/env`:
 
 ```sh
-SUPERAGENT_CLAUDE_GITHUB_TOKEN=<agent account token>
+ISSUECREW_GITHUB_TOKEN=<agent account token>
 ANTHROPIC_API_KEY=<API key>
 ```
 
-systemd unit `/etc/systemd/system/superagent-claude.service`:
+systemd unit `/etc/systemd/system/issuecrew.service`:
 
 ```ini
 [Unit]
-Description=superagent-claude
+Description=issuecrew
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=agent
-EnvironmentFile=/home/agent/.config/superagent-claude/env
-ExecStart=/usr/bin/superagent-claude start --config /home/agent/superagent-claude/superagent-claude.json
+EnvironmentFile=/home/agent/.config/issuecrew/env
+ExecStart=/usr/bin/issuecrew start --config /home/agent/issuecrew/issuecrew.json
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 TimeoutStopSec=20
@@ -46,9 +46,9 @@ TimeoutStopSec=20
 WantedBy=multi-user.target
 ```
 
-Enable and start it with `systemctl enable --now superagent-claude`.
+Enable and start it with `systemctl enable --now issuecrew`.
 
-launchd plist `~/Library/LaunchAgents/dev.superagent-claude.plist`:
+launchd plist `~/Library/LaunchAgents/dev.issuecrew.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -56,12 +56,12 @@ launchd plist `~/Library/LaunchAgents/dev.superagent-claude.plist`:
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>dev.superagent-claude</string>
+  <string>dev.issuecrew</string>
   <key>ProgramArguments</key>
   <array>
     <string>/bin/sh</string>
     <string>-c</string>
-    <string>set -a; . "$HOME/.config/superagent-claude/env"; exec /usr/local/bin/superagent-claude start --config "$HOME/superagent-claude/superagent-claude.json"</string>
+    <string>set -a; . "$HOME/.config/issuecrew/env"; exec /usr/local/bin/issuecrew start --config "$HOME/issuecrew/issuecrew.json"</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
@@ -73,38 +73,38 @@ launchd plist `~/Library/LaunchAgents/dev.superagent-claude.plist`:
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/Users/<user>/Library/Logs/superagent-claude.out.log</string>
+  <string>/Users/<user>/Library/Logs/issuecrew.out.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/<user>/Library/Logs/superagent-claude.err.log</string>
+  <string>/Users/<user>/Library/Logs/issuecrew.err.log</string>
 </dict>
 </plist>
 ```
 
-Load it with `launchctl load ~/Library/LaunchAgents/dev.superagent-claude.plist`.
+Load it with `launchctl load ~/Library/LaunchAgents/dev.issuecrew.plist`.
 
 ## Docker
 
-The image is published as `ghcr.io/ok0/superagent-claude`. A stable release is tagged with its version (for example `0.3.0`), `MAJOR.MINOR` and `latest`, and a pre-release only with its version. Pull it with `docker pull ghcr.io/ok0/superagent-claude:<version>` and use that name in place of `superagent-claude:local` below, or build the image locally:
+The image is published as `ghcr.io/ok0/issuecrew`. A stable release is tagged with its version (for example `0.3.0`), `MAJOR.MINOR` and `latest`, and a pre-release only with its version. Pull it with `docker pull ghcr.io/ok0/issuecrew:<version>` and use that name in place of `issuecrew:local` below, or build the image locally:
 
 ```sh
-docker build -t superagent-claude:local .
+docker build -t issuecrew:local .
 ```
 
 The image runs as uid 10001 with tini as PID 1, so `docker stop` sends SIGTERM to the service.
 
-State lives in the volume `/var/lib/superagent-claude`. The default `stateDir` resolves to `/var/lib/superagent-claude/.superagent-claude` because `HOME` points there.
+State lives in the volume `/var/lib/issuecrew`. The default `stateDir` resolves to `/var/lib/issuecrew/.issuecrew` because `HOME` points there.
 
-The config is mounted read-only at `/etc/superagent-claude/superagent-claude.json`. Secrets come only from `--env-file` (the env file above) or `-e NAME`, and are never written into the image.
+The config is mounted read-only at `/etc/issuecrew/issuecrew.json`. Secrets come only from `--env-file` (the env file above) or `-e NAME`, and are never written into the image.
 
 Recommended run, with the hardened flags of the first step of the sandbox ladder below:
 
 ```sh
-docker run -d --name superagent-claude \
+docker run -d --name issuecrew \
   --cap-drop ALL --security-opt no-new-privileges \
-  --env-file "$HOME/.config/superagent-claude/env" \
-  -v superagent-claude-state:/var/lib/superagent-claude \
-  -v "$HOME/superagent-claude/superagent-claude.json:/etc/superagent-claude/superagent-claude.json:ro" \
-  superagent-claude:local
+  --env-file "$HOME/.config/issuecrew/env" \
+  -v issuecrew-state:/var/lib/issuecrew \
+  -v "$HOME/issuecrew/issuecrew.json:/etc/issuecrew/issuecrew.json:ro" \
+  issuecrew:local
 ```
 
 ## Sandbox in containers
@@ -133,19 +133,19 @@ Running the container with full host privileges is not recommended.
 
 ## Kubernetes
 
-`deploy/k8s/superagent-claude.yaml` runs the image as one pod. It sets no namespace, so apply it to the namespace you choose. Make the image available to the cluster: replace `superagent-claude:local` with the published image `ghcr.io/ok0/superagent-claude:<version>`, or load a local build, for example with `kind load docker-image superagent-claude:local`.
+`deploy/k8s/issuecrew.yaml` runs the image as one pod. It sets no namespace, so apply it to the namespace you choose. Make the image available to the cluster: replace `issuecrew:local` with the published image `ghcr.io/ok0/issuecrew:<version>`, or load a local build, for example with `kind load docker-image issuecrew:local`.
 
 ```yaml
-# superagent-claude on Kubernetes: one replica, state on a ReadWriteOnce volume.
+# issuecrew on Kubernetes: one replica, state on a ReadWriteOnce volume.
 # The Secret below holds empty placeholders only; set the values with kubectl create secret (docs/deploy.md).
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: superagent-claude
+  name: issuecrew
   labels:
-    app.kubernetes.io/name: superagent-claude
+    app.kubernetes.io/name: issuecrew
 data:
-  superagent-claude.json: |
+  issuecrew.json: |
     {
       "repositories": ["<owner>/<repository>"],
       "policy": { "allowed": ["<github-login>"] },
@@ -155,21 +155,21 @@ data:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: superagent-claude
+  name: issuecrew
   labels:
-    app.kubernetes.io/name: superagent-claude
+    app.kubernetes.io/name: issuecrew
     app.kubernetes.io/component: credentials
 type: Opaque
 stringData:
-  SUPERAGENT_CLAUDE_GITHUB_TOKEN: ""
+  ISSUECREW_GITHUB_TOKEN: ""
   ANTHROPIC_API_KEY: ""
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: superagent-claude-state
+  name: issuecrew-state
   labels:
-    app.kubernetes.io/name: superagent-claude
+    app.kubernetes.io/name: issuecrew
 spec:
   accessModes:
     - ReadWriteOnce
@@ -180,20 +180,20 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: superagent-claude
+  name: issuecrew
   labels:
-    app.kubernetes.io/name: superagent-claude
+    app.kubernetes.io/name: issuecrew
 spec:
   replicas: 1
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: superagent-claude
+      app.kubernetes.io/name: issuecrew
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: superagent-claude
+        app.kubernetes.io/name: issuecrew
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -205,26 +205,26 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: superagent-claude
-          image: superagent-claude:local
+        - name: issuecrew
+          image: issuecrew:local
           imagePullPolicy: IfNotPresent
-          args: ["start", "--config", "/etc/superagent-claude/superagent-claude.json", "--log-format", "json"]
+          args: ["start", "--config", "/etc/issuecrew/issuecrew.json", "--log-format", "json"]
           envFrom:
             - secretRef:
-                name: superagent-claude
+                name: issuecrew
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
           readinessProbe:
             exec:
-              command: ["superagent-claude", "health", "--ready", "--config", "/etc/superagent-claude/superagent-claude.json"]
+              command: ["issuecrew", "health", "--ready", "--config", "/etc/issuecrew/issuecrew.json"]
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
           livenessProbe:
             exec:
-              command: ["superagent-claude", "health", "--live", "--config", "/etc/superagent-claude/superagent-claude.json"]
+              command: ["issuecrew", "health", "--live", "--config", "/etc/issuecrew/issuecrew.json"]
             initialDelaySeconds: 30
             periodSeconds: 20
             timeoutSeconds: 5
@@ -238,45 +238,45 @@ spec:
               memory: 2Gi
           volumeMounts:
             - name: state
-              mountPath: /var/lib/superagent-claude
+              mountPath: /var/lib/issuecrew
             - name: config
-              mountPath: /etc/superagent-claude
+              mountPath: /etc/issuecrew
               readOnly: true
       volumes:
         - name: state
           persistentVolumeClaim:
-            claimName: superagent-claude-state
+            claimName: issuecrew-state
         - name: config
           configMap:
-            name: superagent-claude
+            name: issuecrew
 ```
 
-1. Replace the placeholders in the ConfigMap's `superagent-claude.json` (`repositories`, `policy.allowed`). The pod does not start with the placeholder values.
-2. Apply the file: `kubectl apply -f deploy/k8s/superagent-claude.yaml`.
+1. Replace the placeholders in the ConfigMap's `issuecrew.json` (`repositories`, `policy.allowed`). The pod does not start with the placeholder values.
+2. Apply the file: `kubectl apply -f deploy/k8s/issuecrew.yaml`.
 3. Set the secrets from the env file at the top of this page, then restart the pod:
 
    ```sh
-   kubectl create secret generic superagent-claude \
-     --from-env-file="$HOME/.config/superagent-claude/env" \
+   kubectl create secret generic issuecrew \
+     --from-env-file="$HOME/.config/issuecrew/env" \
      --dry-run=client -o yaml | kubectl apply -f -
-   kubectl rollout restart deployment/superagent-claude
+   kubectl rollout restart deployment/issuecrew
    ```
 
-   The Secret in the file has empty values only, so applying the whole file again empties it. Apply later changes without it: `kubectl apply -f deploy/k8s/superagent-claude.yaml -l 'app.kubernetes.io/component!=credentials'`. For another `auth.mode`, put that mode's variables in the env file instead of `ANTHROPIC_API_KEY`.
+   The Secret in the file has empty values only, so applying the whole file again empties it. Apply later changes without it: `kubectl apply -f deploy/k8s/issuecrew.yaml -l 'app.kubernetes.io/component!=credentials'`. For another `auth.mode`, put that mode's variables in the env file instead of `ANTHROPIC_API_KEY`.
 
 ### One replica
 
-The state (the SQLite database and the worktrees) lives on the `ReadWriteOnce` volume at `/var/lib/superagent-claude`, and only one process may write it. `replicas: 1` and `strategy: Recreate` stop the old pod before the new one starts. Do not scale it up: a second pod never becomes ready. On another node it cannot mount the volume. On the same node it finds the state lock held and exits with code 2. After a forced kill, a new pod can wait up to 30 seconds for the old lock to expire.
+The state (the SQLite database and the worktrees) lives on the `ReadWriteOnce` volume at `/var/lib/issuecrew`, and only one process may write it. `replicas: 1` and `strategy: Recreate` stop the old pod before the new one starts. Do not scale it up: a second pod never becomes ready. On another node it cannot mount the volume. On the same node it finds the state lock held and exits with code 2. After a forced kill, a new pod can wait up to 30 seconds for the old lock to expire.
 
 ### Probes and stopping
 
-Both probes run `superagent-claude health`, which exits 0 when the check passes and 1 when it fails (2 for bad arguments). `superagent-claude health --ready` passes once the daemon has opened its state, loaded the config and finished recovery. `superagent-claude health --live` passes while the process holding the state lock runs and its health snapshot is less than 60 seconds old, so a stopped or hung process fails it.
+Both probes run `issuecrew health`, which exits 0 when the check passes and 1 when it fails (2 for bad arguments). `issuecrew health --ready` passes once the daemon has opened its state, loaded the config and finished recovery. `issuecrew health --live` passes while the process holding the state lock runs and its health snapshot is less than 60 seconds old, so a stopped or hung process fails it.
 
 On SIGTERM the daemon fails readiness at once, stops taking new work and records running work as interrupted. It then cleans up for at most 10 seconds and exits with code 0 within 15 seconds, inside `terminationGracePeriodSeconds: 30`. The next start resumes the interrupted work, and replies that were already posted are not posted again. If the grace period runs out, Kubernetes kills the process, and the next start recovers in the same way.
 
 ### JSON logs
 
-`--log-format json`, or the env variable `SUPERAGENT_CLAUDE_LOG_FORMAT=json`, writes every line as one JSON event on stdout, warnings included, and nothing on stderr. The default `text` keeps the JSON events on stdout and plain-text warnings on stderr. In both formats, secret values and token shapes are replaced with `[redacted]`.
+`--log-format json`, or the env variable `ISSUECREW_LOG_FORMAT=json`, writes every line as one JSON event on stdout, warnings included, and nothing on stderr. The default `text` keeps the JSON events on stdout and plain-text warnings on stderr. In both formats, secret values and token shapes are replaced with `[redacted]`.
 
 ### Sandbox on Kubernetes
 
@@ -289,13 +289,13 @@ An `Unconfined` seccomp or AppArmor profile is rejected at `baseline` and `restr
 
 ## Extending the image
 
-The image has the tools the service needs (git, ripgrep and the sandbox), but no language toolchain for your projects. To let the worker build and test them, build your own image `FROM` the published image `ghcr.io/ok0/superagent-claude` and install the toolchain in it. `deploy/docker/Dockerfile.toolchain` is an example. It installs `python3` and `make` as root, then switches back to uid 10001:
+The image has the tools the service needs (git, ripgrep and the sandbox), but no language toolchain for your projects. To let the worker build and test them, build your own image `FROM` the published image `ghcr.io/ok0/issuecrew` and install the toolchain in it. `deploy/docker/Dockerfile.toolchain` is an example. It installs `python3` and `make` as root, then switches back to uid 10001:
 
 ```dockerfile
-# Example: extend the published superagent-claude image with a toolchain.
+# Example: extend the published issuecrew image with a toolchain.
 # Installs as root, then switches back to the image's non-root user.
 # Keep secrets out of ENV and ARG; pass them when the container runs.
-ARG BASE=ghcr.io/ok0/superagent-claude:0.5
+ARG BASE=ghcr.io/ok0/issuecrew:0.5
 FROM ${BASE}
 USER root
 RUN apt-get update \
@@ -305,31 +305,31 @@ USER 10001:10001
 # ENTRYPOINT, CMD, HOME and the state volume come from the base image.
 ```
 
-Build it on a published version, or with `--build-arg BASE=superagent-claude:local` on a local build:
+Build it on a published version, or with `--build-arg BASE=issuecrew:local` on a local build:
 
 ```sh
-docker build --build-arg BASE=ghcr.io/ok0/superagent-claude:0.5 \
-  -f deploy/docker/Dockerfile.toolchain -t superagent-claude:toolchain .
+docker build --build-arg BASE=ghcr.io/ok0/issuecrew:0.5 \
+  -f deploy/docker/Dockerfile.toolchain -t issuecrew:toolchain .
 ```
 
-The new image keeps the entrypoint, `HOME`, the state volume and the non-root user of the base image, so run it like the base image above. Do not put secrets in `ENV` or `ARG`. From a clone of this repository, `bash scripts/check-image-secrets.sh superagent-claude:toolchain` checks the built image.
+The new image keeps the entrypoint, `HOME`, the state volume and the non-root user of the base image, so run it like the base image above. Do not put secrets in `ENV` or `ARG`. From a clone of this repository, `bash scripts/check-image-secrets.sh issuecrew:toolchain` checks the built image.
 
 The worker does not detect which tools the image has. List them, with the commands that build and test the project, in the repository's environment note, so the worker knows to use them. [Configuration](configuration.md#environment-notes) gives the note's path and size limit. Keep secrets out of the note. A command that downloads packages while the worker runs, such as `pip install`, also needs its hosts in `network.allow`.
 
 ## Running multiple accounts/projects
 
-One process uses one GitHub token, `SUPERAGENT_CLAUDE_GITHUB_TOKEN`. To work for more than one account, organization or project, run one instance for each, from its own directory. Each instance has its own config file, its own `stateDir` and its own `SUPERAGENT_CLAUDE_GITHUB_TOKEN`. Set `stateDir` in each config, for example `"stateDir": "~/agents/acme/state"`, and start each instance in its own shell:
+One process uses one GitHub token, `ISSUECREW_GITHUB_TOKEN`. To work for more than one account, organization or project, run one instance for each, from its own directory. Each instance has its own config file, its own `stateDir` and its own `ISSUECREW_GITHUB_TOKEN`. Set `stateDir` in each config, for example `"stateDir": "~/agents/acme/state"`, and start each instance in its own shell:
 
 ```sh
 cd ~/agents/acme
-export SUPERAGENT_CLAUDE_GITHUB_TOKEN=<token of the acme agent account>
-superagent-claude start --config superagent-claude.json
+export ISSUECREW_GITHUB_TOKEN=<token of the acme agent account>
+issuecrew start --config issuecrew.json
 ```
 
 ```sh
 cd ~/agents/personal
-export SUPERAGENT_CLAUDE_GITHUB_TOKEN=<token of the personal agent account>
-superagent-claude start --config superagent-claude.json
+export ISSUECREW_GITHUB_TOKEN=<token of the personal agent account>
+issuecrew start --config issuecrew.json
 ```
 
 As a service, copy the systemd unit or the launchd plist from [Service setup](#service-setup) once for each instance, each with its own env file and `--config` path.
@@ -338,7 +338,7 @@ A second `start` with the same `stateDir` is refused: the first instance holds t
 
 Keep one instance per repository: do not list the same repository in the `repositories` of two instances. Nothing detects two instances that watch the same repository. If they overlap, both can answer the same issue.
 
-On Kubernetes, give each instance its own Deployment and PVC, and its own Secret and ConfigMap. Copy `deploy/k8s/superagent-claude.yaml`, rename the four objects and the references to them in the Deployment, and keep `replicas: 1`. With Docker, give each container its own name, state volume, env file and config. In both cases, keep the repositories of the instances apart.
+On Kubernetes, give each instance its own Deployment and PVC, and its own Secret and ConfigMap. Copy `deploy/k8s/issuecrew.yaml`, rename the four objects and the references to them in the Deployment, and keep `replicas: 1`. With Docker, give each container its own name, state volume, env file and config. In both cases, keep the repositories of the instances apart.
 
 There is no command that creates an instance. These steps are manual.
 

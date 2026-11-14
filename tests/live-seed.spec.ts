@@ -74,7 +74,7 @@ function seedRunner(opts: SeedRoute) {
   const calls: Call[] = []
   let blobCount = 0
   let putCount = 0
-  const P = EXAMPLE_TARGET_ENV.SUPERAGENT_CLAUDE_LIVE_REPO
+  const P = EXAMPLE_TARGET_ENV.ISSUECREW_LIVE_REPO
   const repoStatus = opts.repoStatus ?? 200
   const localLogin = opts.localLogin === undefined ? 'example-owner' : opts.localLogin
   const run = makeRunner(call => {
@@ -158,7 +158,7 @@ function seedOptions(overrides: SeedRoute & { withoutCi: boolean; upgrade?: bool
   }
 }
 
-const P = EXAMPLE_TARGET_ENV.SUPERAGENT_CLAUDE_LIVE_REPO
+const P = EXAMPLE_TARGET_ENV.ISSUECREW_LIVE_REPO
 
 function emptyRepositoryWrites(): string[] {
   const expected = loadSeed(false)
@@ -678,10 +678,10 @@ describe('live seed target gates', () => {
   const ROOT_DIR = fileURLToPath(new URL('../', import.meta.url))
   const SCRIPTS = ['tests/live/seed-playground.ts', 'tests/live/cleanup-playground.ts']
   const TARGET_NAMES = [
-    'SUPERAGENT_CLAUDE_LIVE_REPO',
-    'SUPERAGENT_CLAUDE_LIVE_REPORT_REPO',
-    'SUPERAGENT_CLAUDE_LIVE_OWNER_LOGIN',
-    'SUPERAGENT_CLAUDE_LIVE_AGENT_LOGIN',
+    'ISSUECREW_LIVE_REPO',
+    'ISSUECREW_LIVE_REPORT_REPO',
+    'ISSUECREW_LIVE_OWNER_LOGIN',
+    'ISSUECREW_LIVE_AGENT_LOGIN',
   ]
 
   function runScript(script: string, extra: Record<string, string>) {
@@ -697,8 +697,8 @@ describe('live seed target gates', () => {
       timeout: 30_000,
       env: {
         ...env,
-        SUPERAGENT_CLAUDE_LIVE: '1',
-        SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN: 'fake',
+        ISSUECREW_LIVE: '1',
+        ISSUECREW_LIVE_OWNER_TOKEN: 'fake',
         NODE_NO_WARNINGS: '1',
         GH_MARKER: marker,
         PATH: dir + ':' + (process.env.PATH ?? ''),
@@ -730,7 +730,7 @@ describe('live seed target gates', () => {
   })
 
   it('cleanup without a report repository touches one repository', async () => {
-    stubLiveTarget({ ...EXAMPLE_TARGET_ENV, SUPERAGENT_CLAUDE_LIVE_REPORT_REPO: undefined })
+    stubLiveTarget({ ...EXAMPLE_TARGET_ENV, ISSUECREW_LIVE_REPORT_REPO: undefined })
     const calls: Call[] = []
     const lines: string[] = []
     await runCleanup({
@@ -776,7 +776,7 @@ describe('live seed target gates', () => {
       const { result, marker, dir } = runScript(script, {})
       try {
         expect(result.status, script).toBe(0)
-        expect(result.stderr.trim(), script).toBe('skipped: SUPERAGENT_CLAUDE_LIVE_REPO is not set')
+        expect(result.stderr.trim(), script).toBe('skipped: ISSUECREW_LIVE_REPO is not set')
         expect(existsSync(marker), script).toBe(false)
       } finally {
         rmSync(dir, { recursive: true, force: true })
@@ -786,10 +786,10 @@ describe('live seed target gates', () => {
 
   it('scripts fail fast on a bad target', () => {
     for (const script of SCRIPTS) {
-      const { result, marker, dir } = runScript(script, { SUPERAGENT_CLAUDE_LIVE_REPO: 'bad' })
+      const { result, marker, dir } = runScript(script, { ISSUECREW_LIVE_REPO: 'bad' })
       try {
         expect(result.status, script).toBe(1)
-        expect(result.stderr, script).toContain('SUPERAGENT_CLAUDE_LIVE_REPO must be owner/name')
+        expect(result.stderr, script).toContain('ISSUECREW_LIVE_REPO must be owner/name')
         expect(existsSync(marker), script).toBe(false)
       } finally {
         rmSync(dir, { recursive: true, force: true })

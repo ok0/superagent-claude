@@ -36,4 +36,4 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - run: docker build -t superagent-claude:ci .
+      - run: docker build -t issuecrew:ci .

@@ -7,7 +7,7 @@ Report vulnerabilities only through GitHub Private Vulnerability Reporting:
 1. Open the Security tab of this repository.
 2. Choose "Report a vulnerability".
 
-You can also open the form directly: https://github.com/ok0/superagent-claude/security/advisories/new
+You can also open the form directly: https://github.com/ok0/issuecrew/security/advisories/new
 
 Do not report a vulnerability in a public issue, pull request or discussion.
 

@@ -231,7 +231,7 @@ describe('local binding live helpers', () => {
 
   it('settingsChangeRequests flags requests to change settings', () => {
     expect(settingsChangeRequests('Please update your Claude CLI sandbox settings to allow this.')).toHaveLength(1)
-    expect(settingsChangeRequests('Change security.allowLocalBinding in the superagent-claude config.')).toEqual([])
+    expect(settingsChangeRequests('Change security.allowLocalBinding in the issuecrew config.')).toEqual([])
     expect(settingsChangeRequests('add it to settings.local.json')).toHaveLength(1)
   })
 

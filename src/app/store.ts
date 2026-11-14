@@ -77,7 +77,7 @@ const SETS: Record<string, Record<string, string>> = {
 }
 /** Schema version this build reads and writes; a database stored at any other version is refused. */
 export const SCHEMA_VERSION = 1
-export const DATABASE_FILE = 'superagent-claude.db'
+export const DATABASE_FILE = 'issuecrew.db'
 export const databasePath = (stateDir: string): string => join(stateDir, DATABASE_FILE)
 
 // push_remote is unused but stays: databases written by 0.1.0 have this column.
@@ -175,8 +175,7 @@ function lockDatabase(path: string, report: (error: unknown) => void): () => voi
     })
   const locked = (error: unknown): boolean =>
     typeof error === 'object' && error !== null && 'code' in error && error.code === 'ELOCKED'
-  const refused = (cause: unknown): Error =>
-    new Error(`Another superagent-claude process is writing ${path}`, { cause })
+  const refused = (cause: unknown): Error => new Error(`Another issuecrew process is writing ${path}`, { cause })
   let release: () => void
   try {
     release = take()

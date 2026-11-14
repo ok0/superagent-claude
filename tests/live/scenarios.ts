@@ -30,7 +30,7 @@ export interface LiveScenario {
 }
 
 export const SCENARIO_DIR = join(import.meta.dirname, 'scenarios')
-export const SCENARIO_ENV = 'SUPERAGENT_CLAUDE_LIVE_SCENARIOS'
+export const SCENARIO_ENV = 'ISSUECREW_LIVE_SCENARIOS'
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)

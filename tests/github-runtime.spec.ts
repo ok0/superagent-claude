@@ -52,7 +52,7 @@ it('auto: a mentioned issue gets one reply in its own repository, and re-polling
   const clock = new ManualClock(START)
   const sources = installedSources(
     config,
-    { SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'test-token' },
+    { ISSUECREW_GITHUB_TOKEN: 'test-token' },
     { commands: gh.commands, timers: clock, now: clock.now },
   )
   expect(sources.kinds.map(k => k.kind)).toEqual(['github'])
@@ -72,7 +72,7 @@ it('auto: a mentioned issue gets one reply in its own repository, and re-polling
   expect(gh.posted).toHaveLength(1)
   expect(runtime.store.tickets.list()).toHaveLength(1)
 
-  const id = /<!-- superagent-claude:(.+) -->/.exec(gh.posted[0]!.body)![1]!
+  const id = /<!-- issuecrew:(.+) -->/.exec(gh.posted[0]!.body)![1]!
   expect(runtime.store.receipts.get(id)!.status).toBe('sent')
   runtime.outbox.send({
     id,
@@ -88,7 +88,7 @@ it('refuses startup without the token', () => {
   directory = mkdtempSync(join(tmpdir(), 'github-runtime-'))
   const config = ConfigSchema.parse({ repositories: [A], policy: { allowed: ['alice'] }, stateDir: directory })
   expect(() => installedSources(config, {})).toThrow(StartupRefused)
-  expect(() => installedSources(config, { SUPERAGENT_CLAUDE_GITHUB_TOKEN: '  ' })).toThrow(StartupRefused)
+  expect(() => installedSources(config, { ISSUECREW_GITHUB_TOKEN: '  ' })).toThrow(StartupRefused)
   try {
     installedSources(config, {})
   } catch (error) {

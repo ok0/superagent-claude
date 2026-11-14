@@ -120,7 +120,7 @@ export const READONLY_GIT_RULES = [
 
 function isSecretName(key: string): boolean {
   if (Object.values(AUTH_ENV).some(keys => keys.includes(key))) return true
-  if (/^(SUPERAGENT_CLAUDE_|GITHUB_|GH_)/.test(key)) return true
+  if (/^(ISSUECREW_|GITHUB_|GH_)/.test(key)) return true
   if (/(TOKEN|SECRET|PASSWORD|API_KEY|CREDENTIAL)/i.test(key)) return true
   return key === 'CLAUDE_CONFIG_DIR' || key === 'CLAUDE_CODE_DISABLE_AUTO_MEMORY'
 }
@@ -401,7 +401,7 @@ export function sdkOptions(spec: SessionSpec, ctx: OptionsContext): Options {
       spec.role === 'worker' ? { type: 'preset', preset: 'claude_code', append: spec.instructions } : spec.instructions,
     allowedTools: allowed,
     disallowedTools: spec.role === 'worker' ? tools.disallowed : [...tools.disallowed, AGENT_TOOL],
-    mcpServers: ctx.mcp ? { superagent: ctx.mcp } : {},
+    mcpServers: ctx.mcp ? { issuecrew: ctx.mcp } : {},
     strictMcpConfig: true,
     ...(agents ? { agents } : {}),
     hooks: {

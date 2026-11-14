@@ -23,7 +23,7 @@ afterEach(async () => {
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), 'health-'))
   dirs.push(dir)
-  const cfg = join(dir, 'superagent-claude.json')
+  const cfg = join(dir, 'issuecrew.json')
   writeFileSync(
     cfg,
     JSON.stringify({ repositories: ['owner/repo'], policy: { allowed: ['alice'] }, stateDir: join(dir, 'state') }),

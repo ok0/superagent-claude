@@ -1,5 +1,5 @@
 /**
- * Live auth check: one followup turn per auth mode whose credential is set, gated by SUPERAGENT_CLAUDE_LIVE=1; never
+ * Live auth check: one followup turn per auth mode whose credential is set, gated by ISSUECREW_LIVE=1; never
  * prints credential values.
  */
 import { mkdtempSync } from 'node:fs'
@@ -12,8 +12,8 @@ import { ClaudeRuntime } from '../../src/runtimes/claude/runtime.ts'
 import { waitUntil } from '../fixtures/async.ts'
 import { contractSpec } from '../fixtures/runtime-contract.ts'
 
-const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
-const model = process.env.SUPERAGENT_CLAUDE_LIVE_MODEL ?? 'haiku'
+const LIVE = process.env.ISSUECREW_LIVE === '1'
+const model = process.env.ISSUECREW_LIVE_MODEL ?? 'haiku'
 
 describe.skipIf(!LIVE)('claude live auth', () => {
   for (const mode of ['api-key', 'subscription'] as const) {

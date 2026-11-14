@@ -21,7 +21,7 @@ const CommentSchema = z.looseObject({
 const gone = (error: unknown): boolean =>
   error instanceof CliError && (error.code === 410 || (error.code === 403 && /locked/i.test(error.message)))
 const missing = (error: unknown): boolean => error instanceof CliError && (error.code === 404 || error.code === 410)
-export const MARKER = (id: string): string => `<!-- superagent-claude:${id} -->`
+export const MARKER = (id: string): string => `<!-- issuecrew:${id} -->`
 
 export interface ChannelOptions {
   commands: Commands

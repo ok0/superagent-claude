@@ -44,7 +44,7 @@ afterEach(async () => {
 
 describe('runtime start', () => {
   it('stops recorded children before recovery and logs them', async () => {
-    const path = join(dir, 'superagent-claude.json')
+    const path = join(dir, 'issuecrew.json')
     writeFileSync(
       path,
       JSON.stringify({

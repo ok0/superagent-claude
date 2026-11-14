@@ -169,7 +169,7 @@ const SETTINGS_REFERENCE = /settings(\.local)?\.json|allowUnsandboxedCommands|da
 
 export function settingsChangeRequests(text: string): string[] {
   return text
-    .replace(/superagent-claude/g, '')
+    .replace(/issuecrew/g, '')
     .split('\n')
     .filter(line => CHANGE_REQUEST.test(line) || SETTINGS_REFERENCE.test(line))
 }

@@ -58,7 +58,7 @@ export function cliEnv(
   const env: Record<string, string | undefined> = {
     HOME: '/home/test',
     PATH: '/usr/bin:/bin',
-    SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'test-token',
+    ISSUECREW_GITHUB_TOKEN: 'test-token',
     ANTHROPIC_API_KEY: 'test-key',
     ...extra,
   }

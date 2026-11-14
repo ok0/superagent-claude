@@ -124,7 +124,7 @@ function renderSub(sub: ItemResult, depth: number): string[] {
 }
 
 function reproCommand(id: string): string {
-  return id === 'version' ? 'pnpm spike:sdk --only version' : `SUPERAGENT_CLAUDE_LIVE=1 pnpm spike:sdk --only ${id}`
+  return id === 'version' ? 'pnpm spike:sdk --only version' : `ISSUECREW_LIVE=1 pnpm spike:sdk --only ${id}`
 }
 
 function findItem(run: RunRecord, id: string): ItemResult | undefined {

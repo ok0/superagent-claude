@@ -1,7 +1,7 @@
 /**
  * Live issue→reply run against the playground repository: the daemon started through the CLI in auto mode with
  * subscription OAuth, issues and comments written as the owner account, and evidence read from the logs, the store,
- * GitHub and the session transcripts. Gated by SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with
+ * GitHub and the session transcripts. Gated by ISSUECREW_LIVE=1, a configured ISSUECREW_LIVE_REPO with
  * its login settings, and the three tokens; never prints a token.
  */
 import { EventEmitter } from 'node:events'
@@ -30,8 +30,8 @@ import { liveEnabled, liveTarget, renderLiveText } from './target.ts'
 
 const TARGET = liveTarget()
 const LIVE = liveEnabled()
-const AGENT_TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
-const OWNER_TOKEN = process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN?.trim()
+const AGENT_TOKEN = process.env.ISSUECREW_GITHUB_TOKEN?.trim()
+const OWNER_TOKEN = process.env.ISSUECREW_LIVE_OWNER_TOKEN?.trim()
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
 const REPO = TARGET ? assertAllowedRepo(TARGET.repo) : ''
 const AGENT = TARGET?.agentLogin ?? ''
@@ -46,8 +46,8 @@ const TIMELINE = [
   'ticket.ended',
   'trigger.requeued',
 ]
-const MARKER = /<!--\s*superagent-claude:(.+?)\s*-->/
-const STRIP = /<!--\s*superagent-claude:.*?-->/g
+const MARKER = /<!--\s*issuecrew:(.+?)\s*-->/
+const STRIP = /<!--\s*issuecrew:.*?-->/g
 
 type Line = Record<string, unknown>
 interface Comment {
@@ -113,7 +113,7 @@ async function until<T>(
 
 function markerId(body: string): string {
   const match = MARKER.exec(body)
-  if (!match) throw new Error('no superagent-claude marker in comment')
+  if (!match) throw new Error('no issuecrew marker in comment')
   return match[1]!
 }
 
@@ -211,7 +211,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live issue rep
 
   beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), 'sac-live-e2e-'))
-    configPath = join(dir, 'superagent-claude.json')
+    configPath = join(dir, 'issuecrew.json')
     config = {
       repositories: [REPO],
       policy: { allowed: [OWNER], acceptMode: 'auto' },
@@ -287,7 +287,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live issue rep
           }
         }
       }
-      const badRouterTools = [...routerTools].filter(name => !name.startsWith('mcp__superagent__'))
+      const badRouterTools = [...routerTools].filter(name => !name.startsWith('mcp__issuecrew__'))
       expect(badRouterTools).toEqual([])
       expect(workerPermissionModes.has('bypassPermissions')).toBe(false)
       evidence.transcripts = {

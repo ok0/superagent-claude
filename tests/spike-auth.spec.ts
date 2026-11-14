@@ -3,7 +3,7 @@ import { buildSdkEnv, resolveAuth } from '../spikes/sdk/lib/auth.ts'
 
 const K = 'sk-' + 'ant-' + 'test-AAAAAAAAAAAA'
 const T = 'sk-' + 'ant-' + 'oat01-test-BBBBBBBB'
-const LIVE = { SUPERAGENT_CLAUDE_LIVE: '1' }
+const LIVE = { ISSUECREW_LIVE: '1' }
 
 describe('resolveAuth', () => {
   it('accepts an API key alone when live is enabled', () => {
@@ -53,7 +53,7 @@ describe('resolveAuth', () => {
     const result = resolveAuth({ ANTHROPIC_API_KEY: K })
     expect(result.kind).toBe('missing')
     const text = result.kind === 'ok' ? '' : result.problems.join('\n')
-    expect(text).toContain('SUPERAGENT_CLAUDE_LIVE=1')
+    expect(text).toContain('ISSUECREW_LIVE=1')
   })
 
   it('reports missing when the explicit mode lacks its variable', () => {

@@ -52,11 +52,11 @@ const hang: typeof globalThis.fetch = (_input, init) =>
   })
 
 describe('GitHubApi', () => {
-  it('sends token auth and the superagent-claude user agent', async () => {
+  it('sends token auth and the issuecrew user agent', async () => {
     const r = recorder(() => json(200, {}))
     await new GitHubApi({ token: TOKEN, fetch: r.fetch }).request('GET', 'user')
     expect(at(r.seen, 0).headers.get('authorization')).toContain(TOKEN)
-    expect(at(r.seen, 0).headers.get('user-agent')).toContain('superagent-claude')
+    expect(at(r.seen, 0).headers.get('user-agent')).toContain('issuecrew')
     expect(at(r.seen, 0).url).toBe('https://api.github.com/user')
   })
 

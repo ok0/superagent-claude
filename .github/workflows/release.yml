@@ -63,11 +63,11 @@ jobs:
       - name: docker build
         env:
           VERSION: ${{ steps.meta.outputs.version }}
-        run: docker build --label org.opencontainers.image.source=https://github.com/ok0/superagent-claude --label "org.opencontainers.image.version=$VERSION" -t superagent-claude:release .
+        run: docker build --label org.opencontainers.image.source=https://github.com/ok0/issuecrew --label "org.opencontainers.image.version=$VERSION" -t issuecrew:release .
       - name: image runs as non-root
-        run: test "$(docker image inspect --format '{{.Config.User}}' superagent-claude:release)" = "10001:10001"
+        run: test "$(docker image inspect --format '{{.Config.User}}' issuecrew:release)" = "10001:10001"
       - name: image secret scan
-        run: bash scripts/check-image-secrets.sh superagent-claude:release
+        run: bash scripts/check-image-secrets.sh issuecrew:release
 
   npm:
     needs: [verify]
@@ -101,9 +101,9 @@ jobs:
       - name: check published
         id: published
         run: |
-          if npm view "superagent-claude@$VERSION" version > /dev/null 2>&1; then
+          if npm view "issuecrew@$VERSION" version > /dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "superagent-claude@$VERSION is already published, skipping publish"
+            echo "issuecrew@$VERSION is already published, skipping publish"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
@@ -114,14 +114,14 @@ jobs:
         run: |
           actual=""
           for attempt in $(seq 1 30); do
-            actual="$(npm view superagent-claude "dist-tags.$DIST_TAG" 2> /dev/null || true)"
+            actual="$(npm view issuecrew "dist-tags.$DIST_TAG" 2> /dev/null || true)"
             if [ "$actual" = "$VERSION" ]; then
               echo "dist-tag $DIST_TAG points to $VERSION (attempt $attempt)"
               exit 0
             fi
             sleep 10
           done
-          echo "dist-tag $DIST_TAG points to '$actual', expected $VERSION. Fix it locally: npm dist-tag add superagent-claude@$VERSION $DIST_TAG" >&2
+          echo "dist-tag $DIST_TAG points to '$actual', expected $VERSION. Fix it locally: npm dist-tag add issuecrew@$VERSION $DIST_TAG" >&2
           exit 1
 
   image:
@@ -141,7 +141,7 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: docker build
-        run: docker build --label org.opencontainers.image.source=https://github.com/ok0/superagent-claude --label "org.opencontainers.image.version=$VERSION" -t superagent-claude:release .
+        run: docker build --label org.opencontainers.image.source=https://github.com/ok0/issuecrew --label "org.opencontainers.image.version=$VERSION" -t issuecrew:release .
       - name: login to ghcr.io
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -150,8 +150,8 @@ jobs:
         run: |
           IFS=',' read -r -a tags <<< "$IMAGE_TAGS"
           for tag in "${tags[@]}"; do
-            docker tag superagent-claude:release "ghcr.io/ok0/superagent-claude:$tag"
-            docker push "ghcr.io/ok0/superagent-claude:$tag"
+            docker tag issuecrew:release "ghcr.io/ok0/issuecrew:$tag"
+            docker push "ghcr.io/ok0/issuecrew:$tag"
           done
       - name: logout
         if: always()

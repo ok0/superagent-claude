@@ -6,7 +6,7 @@ To report a vulnerability, see [SECURITY.md](../SECURITY.md).
 
 ## Repository settings that run code
 
-Sessions use `settingSources: []`: the repository's `.claude/settings.json` and `settings.local.json` hooks, permission rules and CLAUDE.md are not loaded. `.mcp.json` is ignored (`strictMcpConfig`); the only MCP server is the host-provided `superagent` server.
+Sessions use `settingSources: []`: the repository's `.claude/settings.json` and `settings.local.json` hooks, permission rules and CLAUDE.md are not loaded. `.mcp.json` is ignored (`strictMcpConfig`); the only MCP server is the host-provided `issuecrew` server.
 
 Git hooks: the clone's `core.hooksPath` points to an empty directory, re-set on every prepare, and every host git call passes `-c core.hooksPath=<empty dir>`, so `.husky` or any repository hook path does not run.
 
@@ -36,15 +36,15 @@ Limits: `workers.maxTurns` and `workers.maxBudgetUsd`.
 
 ## Subagents
 
-Only worker sessions may use the `Agent` tool; the router may not. Worker sessions get one custom subagent definition, `superagent-reviewer`; the router gets none.
+Only worker sessions may use the `Agent` tool; the router may not. Worker sessions get one custom subagent definition, `issuecrew-reviewer`; the router gets none.
 
 A subagent runs inside the worker's CLI process: same environment (no extra variables or secrets), sandbox and network allow list, allow/deny lists, `dontAsk` mode and `PreToolUse` guard. It can never have more access than its worker.
 
-Allowed types: subagent type omitted or one of `general-purpose`, `Explore`, `Plan`, `superagent-reviewer`; repository-defined agents (loadable with `security.trustRepoConfig`) are refused.
+Allowed types: subagent type omitted or one of `general-purpose`, `Explore`, `Plan`, `issuecrew-reviewer`; repository-defined agents (loadable with `security.trustRepoConfig`) are refused.
 
 `isolation` is refused; a subagent cannot start another subagent.
 
-Subagents cannot call host tools (`mcp__superagent__*`): status reports, human questions and publishing stay with the worker. The one exception is `mcp__superagent__git_inspect` for `superagent-reviewer`.
+Subagents cannot call host tools (`mcp__issuecrew__*`): status reports, human questions and publishing stay with the worker. The one exception is `mcp__issuecrew__git_inspect` for `issuecrew-reviewer`.
 
 Inside a subagent the guard applies the same rules: no writes outside the worktree, no `git push` / `gh`, no `/proc` reads.
 
@@ -54,9 +54,9 @@ Guard denials inside a subagent are logged as `worker.tool_denied` with an `agen
 
 ### Pre-publish reviewer
 
-When `orchestrator_publish` returns `review_required`, the worker may start `superagent-reviewer`. The guard admits that `Agent` call only while a host-decided review is pending, once per pending review, and the review counts from that moment.
+When `orchestrator_publish` returns `review_required`, the worker may start `issuecrew-reviewer`. The guard admits that `Agent` call only while a host-decided review is pending, once per pending review, and the review counts from that moment.
 
-Its tools are `Read`, `Glob`, `Grep` and `mcp__superagent__git_inspect`. Its definition also disallows `Bash`, `Write`, `Edit`, `NotebookEdit`, `Agent` and the web tools, and the `PreToolUse` guard denies every other tool for a call whose `agent_type` is `superagent-reviewer`. The denial is made in the hook, because tools on the worker's allow list are approved before any permission check.
+Its tools are `Read`, `Glob`, `Grep` and `mcp__issuecrew__git_inspect`. Its definition also disallows `Bash`, `Write`, `Edit`, `NotebookEdit`, `Agent` and the web tools, and the `PreToolUse` guard denies every other tool for a call whose `agent_type` is `issuecrew-reviewer`. The denial is made in the hook, because tools on the worker's allow list are approved before any permission check.
 
 The host puts a brief before its prompt: the original request, the human messages since, and the host diff (at most 60,000 characters, with a truncation marker), each as external data. Only the counts of its final `FINDINGS` line are logged, as `worker.review`.
 

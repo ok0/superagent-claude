@@ -61,19 +61,19 @@ describe('ported prompt and skill assets', () => {
     for (const asset of ASSETS) {
       const text = body(read(asset))
       expect(toolNameViolations(text), asset).toEqual([])
-      for (const match of text.matchAll(/mcp__superagent__([a-z_]+)/g)) names.add(match[1] ?? '')
+      for (const match of text.matchAll(/mcp__issuecrew__([a-z_]+)/g)) names.add(match[1] ?? '')
     }
     expect(names.size).toBeGreaterThan(0)
     for (const name of names) expect(TOOL_NAMES as readonly string[]).toContain(name)
   })
 
   it('detects a tool outside the canonical set', () => {
-    expect(toolNameViolations('call mcp__superagent__orchestrator_settings_save now')).toEqual([
+    expect(toolNameViolations('call mcp__issuecrew__orchestrator_settings_save now')).toEqual([
       'orchestrator_settings_save',
     ])
-    expect(toolNameViolations('use orchestrator_report')).toEqual(['orchestrator_report (missing mcp__superagent__)'])
+    expect(toolNameViolations('use orchestrator_report')).toEqual(['orchestrator_report (missing mcp__issuecrew__)'])
     expect(toolNameViolations('mcp__github__get_issue')).toEqual(['mcp__github__get_issue'])
-    expect(MCP_TOOL_PREFIX).toBe('mcp__superagent__')
+    expect(MCP_TOOL_PREFIX).toBe('mcp__issuecrew__')
   })
 
   it('defines 11 router and 11 worker tools, 21 unique', () => {
@@ -96,19 +96,19 @@ describe('ported prompt and skill assets', () => {
   it('restores delivery and review-thread guidance on the host tools', () => {
     const delivery = body(read('prompts/team/delivery.md'))
     for (const token of [
-      'mcp__superagent__orchestrator_publish',
+      'mcp__issuecrew__orchestrator_publish',
       'coAuthors',
-      'mcp__superagent__orchestrator_pr_auto_merge',
-      'mcp__superagent__orchestrator_pr_close',
+      'mcp__issuecrew__orchestrator_pr_auto_merge',
+      'mcp__issuecrew__orchestrator_pr_close',
     ]) {
       expect(delivery, token).toContain(token)
     }
-    expect(body(read('prompts/team/communication.md'))).toContain('mcp__superagent__orchestrator_review_reply')
+    expect(body(read('prompts/team/communication.md'))).toContain('mcp__issuecrew__orchestrator_review_reply')
     const skill = body(read('skills/github.md'))
     for (const token of [
-      'mcp__superagent__orchestrator_review_reply',
-      'mcp__superagent__orchestrator_publish',
-      'mcp__superagent__orchestrator_pr_close',
+      'mcp__issuecrew__orchestrator_review_reply',
+      'mcp__issuecrew__orchestrator_publish',
+      'mcp__issuecrew__orchestrator_pr_close',
     ]) {
       expect(skill, token).toContain(token)
     }
@@ -118,8 +118,8 @@ describe('ported prompt and skill assets', () => {
     const delivery = body(read('prompts/team/delivery.md'))
     for (const token of [
       'published: false',
-      'mcp__superagent__orchestrator_publish',
-      'mcp__superagent__orchestrator_report',
+      'mcp__issuecrew__orchestrator_publish',
+      'mcp__issuecrew__orchestrator_report',
       'state: blocked',
       'write access',
     ]) {
@@ -134,7 +134,7 @@ describe('ported prompt and skill assets', () => {
   })
 
   it('worker prompt points to the GitHub skill resource', () => {
-    expect(body(read('prompts/worker.md'))).toContain('mcp__superagent__orchestrator_read skill/github')
+    expect(body(read('prompts/worker.md'))).toContain('mcp__issuecrew__orchestrator_read skill/github')
   })
 
   it('the worker prompt renames a changed ticket, waits for host push retries and limits changes to the request', () => {
@@ -226,7 +226,7 @@ describe('reviewer prompt', () => {
     expect(toolNameViolations(text)).toEqual([])
     for (const pattern of FORBIDDEN) expect(text.match(pattern), String(pattern)).toBeNull()
     for (const token of [
-      'mcp__superagent__git_inspect',
+      'mcp__issuecrew__git_inspect',
       'Read',
       'Glob',
       'Grep',
@@ -244,7 +244,7 @@ describe('reviewer prompt', () => {
     const worker = body(read('prompts/worker.md'))
     for (const token of [
       'review_required',
-      'superagent-reviewer',
+      'issuecrew-reviewer',
       'original request',
       'human constraints',
       'only its bug and missing findings',

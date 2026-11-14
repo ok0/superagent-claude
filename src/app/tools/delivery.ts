@@ -40,7 +40,7 @@ export interface DeliveryHost {
 }
 
 const REVIEW_REASON =
-  'Run the superagent-reviewer subagent before publishing, give it the original request and the human constraints, apply only bug and missing-requirement findings, then call orchestrator_publish again'
+  'Run the issuecrew-reviewer subagent before publishing, give it the original request and the human constraints, apply only bug and missing-requirement findings, then call orchestrator_publish again'
 
 export interface DeliveryToolsHost {
   engine(): Pick<EngineForExecutor, 'bindThread' | 'report'>
@@ -124,7 +124,7 @@ export function deliveryTools(host: DeliveryToolsHost, ticketId: string): ToolSp
     tool({
       name: 'orchestrator_publish',
       description:
-        "Push this ticket's commits and open its pull request, or reuse the open one for the branch; never force-pushes. Binds the PR thread to this ticket. Returns published: false, pushing nothing, when the agent account has no write access to the repository. Returns published: false with review_required, pushing nothing, when the host requires a review first: run the superagent-reviewer subagent, then publish again. Returns published: false, pushing nothing, when the configured target branch is missing on the remote.",
+        "Push this ticket's commits and open its pull request, or reuse the open one for the branch; never force-pushes. Binds the PR thread to this ticket. Returns published: false, pushing nothing, when the agent account has no write access to the repository. Returns published: false with review_required, pushing nothing, when the host requires a review first: run the issuecrew-reviewer subagent, then publish again. Returns published: false, pushing nothing, when the configured target branch is missing on the remote.",
       schema: z
         .object({
           title: z.string().trim().min(1).max(256),

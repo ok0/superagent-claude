@@ -1,5 +1,5 @@
 /**
- * Live Claude contract cases against the real SDK, gated by SUPERAGENT_CLAUDE_LIVE=1 and an auth mode;
+ * Live Claude contract cases against the real SDK, gated by ISSUECREW_LIVE=1 and an auth mode;
  * they are skipped otherwise.
  */
 import { mkdtempSync } from 'node:fs'
@@ -12,11 +12,11 @@ import { ClaudeRuntime } from '../../src/runtimes/claude/runtime.ts'
 import { sleep } from '../fixtures/async.ts'
 import { runtimeContract, type ContractCase } from '../fixtures/runtime-contract.ts'
 
-const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
+const LIVE = process.env.ISSUECREW_LIVE === '1'
 const mode: AuthMode | undefined =
-  (process.env.SUPERAGENT_CLAUDE_LIVE_AUTH as AuthMode | undefined) ??
+  (process.env.ISSUECREW_LIVE_AUTH as AuthMode | undefined) ??
   (process.env.CLAUDE_CODE_OAUTH_TOKEN ? 'subscription' : process.env.ANTHROPIC_API_KEY ? 'api-key' : undefined)
-const model = process.env.SUPERAGENT_CLAUDE_LIVE_MODEL ?? 'haiku'
+const model = process.env.ISSUECREW_LIVE_MODEL ?? 'haiku'
 
 const LIVE_CASES: ContractCase[] = [
   'steer joins the running turn',

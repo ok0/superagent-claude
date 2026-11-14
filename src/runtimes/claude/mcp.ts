@@ -1,4 +1,4 @@
-/** Exposes the host ToolSpecs as an in-process SDK MCP server named `superagent`, so names and validation match. */
+/** Exposes the host ToolSpecs as an in-process SDK MCP server named `issuecrew`, so names and validation match. */
 import {
   createSdkMcpServer,
   tool,
@@ -8,7 +8,7 @@ import {
 import { z } from 'zod'
 import type { ToolSpec } from '../../executor/contract.ts'
 
-export const MCP_SERVER = 'superagent'
+export const MCP_SERVER = 'issuecrew'
 export const mcpToolName = (name: string): string => `mcp__${MCP_SERVER}__${name}`
 
 export type ToolCallResult = { content: { type: 'text'; text: string }[]; isError?: boolean }

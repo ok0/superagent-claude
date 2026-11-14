@@ -1,6 +1,6 @@
 /**
- * Live private repository worktree preparation with the host token, gated by SUPERAGENT_CLAUDE_LIVE=1 and
- * SUPERAGENT_CLAUDE_GITHUB_TOKEN; never prints the token.
+ * Live private repository worktree preparation with the host token, gated by ISSUECREW_LIVE=1 and
+ * ISSUECREW_GITHUB_TOKEN; never prints the token.
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -15,7 +15,7 @@ import { Commands } from '../../src/infra/commands.ts'
 
 const TARGET = liveTarget()
 const LIVE = liveEnabled()
-const TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
+const TOKEN = process.env.ISSUECREW_GITHUB_TOKEN?.trim()
 const REPO = TARGET ? assertAllowedRepo(TARGET.repo) : ''
 
 describe.skipIf(!LIVE || !TOKEN)('live private workspace', () => {

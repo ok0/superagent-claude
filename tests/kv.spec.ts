@@ -10,7 +10,7 @@ import { Versions } from '../src/app/versions.ts'
 
 let directory: string
 beforeEach(() => {
-  directory = mkdtempSync(join(tmpdir(), 'superagent-claude-kv-'))
+  directory = mkdtempSync(join(tmpdir(), 'issuecrew-kv-'))
 })
 afterEach(() => {
   rmSync(directory, { recursive: true, force: true })

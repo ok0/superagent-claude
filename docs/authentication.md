@@ -18,13 +18,13 @@ Set `auth.mode` to `vertex`. Set `CLOUD_ML_REGION`, `ANTHROPIC_VERTEX_PROJECT_ID
 
 Set `auth.mode` to `subscription`. Set `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`.
 
-This mode runs the agent on a Claude subscription. Automated use is a gray area of the subscription terms, and superagent-claude prints a warning on every start.
+This mode runs the agent on a Claude subscription. Automated use is a gray area of the subscription terms, and issuecrew prints a warning on every start.
 
-Owner-only use means `auth.owner` is set and `policy.allowed` is exactly `[auth.owner]`. Any other allowlist is shared use. Shared use is a ToS risk, and superagent-claude refuses to start unless `auth.acceptSubscriptionSharedUseRisk` is `true`. The consent (its time and the allowed list hash) is logged and shown by `superagent-claude status`.
+Owner-only use means `auth.owner` is set and `policy.allowed` is exactly `[auth.owner]`. Any other allowlist is shared use. Shared use is a ToS risk, and issuecrew refuses to start unless `auth.acceptSubscriptionSharedUseRisk` is `true`. The consent (its time and the allowed list hash) is logged and shown by `issuecrew status`.
 
 ## Start refusals
 
-superagent-claude refuses to start when:
+issuecrew refuses to start when:
 
 - the credential for `auth.mode` is missing
 - `policy.allowed` is empty
@@ -33,8 +33,8 @@ superagent-claude refuses to start when:
 - the subscription is shared and no consent is given
 - `auto` is set without a sandbox, unless `security.allowUnsandboxed` is set
 - no repository is accessible
-- `SUPERAGENT_CLAUDE_GITHUB_TOKEN` is missing
-- the agent account cannot be read with `SUPERAGENT_CLAUDE_GITHUB_TOKEN`
+- `ISSUECREW_GITHUB_TOKEN` is missing
+- the agent account cannot be read with `ISSUECREW_GITHUB_TOKEN`
 
 ## Next
 

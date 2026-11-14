@@ -1,4 +1,4 @@
-# superagent-claude image. No secrets are built in; credentials come from the environment at run time.
+# issuecrew image. No secrets are built in; credentials come from the environment at run time.
 FROM node:24-bookworm-slim AS build
 ENV CI=true
 RUN npm install -g pnpm@11.28.11
@@ -13,21 +13,21 @@ FROM node:24-bookworm-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git bubblewrap socat ripgrep ca-certificates tini \
  && rm -rf /var/lib/apt/lists/*
-RUN groupadd --gid 10001 superagent \
- && useradd --uid 10001 --gid 10001 --home-dir /var/lib/superagent-claude --no-create-home --shell /usr/sbin/nologin superagent \
- && mkdir -p /var/lib/superagent-claude /etc/superagent-claude \
- && chown 10001:10001 /var/lib/superagent-claude
-WORKDIR /opt/superagent-claude
+RUN groupadd --gid 10001 issuecrew \
+ && useradd --uid 10001 --gid 10001 --home-dir /var/lib/issuecrew --no-create-home --shell /usr/sbin/nologin issuecrew \
+ && mkdir -p /var/lib/issuecrew /etc/issuecrew \
+ && chown 10001:10001 /var/lib/issuecrew
+WORKDIR /opt/issuecrew
 COPY --from=build /src/package.json ./
 COPY --from=build /src/node_modules ./node_modules
 COPY --from=build /src/lib ./lib
 COPY prompts ./prompts
 COPY skills ./skills
 COPY LICENSE NOTICE README.md ./
-RUN ln -s /opt/superagent-claude/lib/cli.js /usr/local/bin/superagent-claude
-ENV HOME=/var/lib/superagent-claude NODE_ENV=production
+RUN ln -s /opt/issuecrew/lib/cli.js /usr/local/bin/issuecrew
+ENV HOME=/var/lib/issuecrew NODE_ENV=production
 USER 10001:10001
-WORKDIR /var/lib/superagent-claude
-VOLUME /var/lib/superagent-claude
-ENTRYPOINT ["/usr/bin/tini", "--", "superagent-claude"]
-CMD ["start", "--config", "/etc/superagent-claude/superagent-claude.json"]
+WORKDIR /var/lib/issuecrew
+VOLUME /var/lib/issuecrew
+ENTRYPOINT ["/usr/bin/tini", "--", "issuecrew"]
+CMD ["start", "--config", "/etc/issuecrew/issuecrew.json"]

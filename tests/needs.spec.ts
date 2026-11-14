@@ -22,7 +22,7 @@ function tempDir(): string {
 }
 
 function io(dir: string) {
-  return cliIo(dir, cliEnv(dir, { SUPERAGENT_CLAUDE_GITHUB_TOKEN: TOKEN }))
+  return cliIo(dir, cliEnv(dir, { ISSUECREW_GITHUB_TOKEN: TOKEN }))
 }
 
 describe('needs', () => {

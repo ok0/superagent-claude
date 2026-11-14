@@ -17,7 +17,7 @@ import { fileGh, NOW, type FileGh } from './fixtures/file-gh.ts'
 
 const A = 'acme/widgets'
 const ISSUE_PATH = 'issues/1/comments'
-const MARKER = /<!-- superagent-claude:(.+?) -->/
+const MARKER = /<!-- issuecrew:(.+?) -->/
 const poll = (check: () => boolean, timeout: number): Promise<void> =>
   vi.waitFor(
     () => {
@@ -60,7 +60,7 @@ function setup(): Setup {
     },
   }
   const gh = fileGh(dir, script)
-  const cfg = join(dir, 'superagent-claude.json')
+  const cfg = join(dir, 'issuecrew.json')
   writeFileSync(
     cfg,
     JSON.stringify({
@@ -74,7 +74,7 @@ function setup(): Setup {
 }
 
 function entry(): string {
-  return process.env.SUPERAGENT_CLAUDE_CLI ?? fileURLToPath(new URL('../src/cli/bin.ts', import.meta.url))
+  return process.env.ISSUECREW_CLI ?? fileURLToPath(new URL('../src/cli/bin.ts', import.meta.url))
 }
 
 function daemon(t: Setup, extra: Record<string, string> = {}): Daemon {
@@ -151,7 +151,7 @@ function runningTicket(dir: string): { ticket: Ticket; running: string } | undef
 describe('daemon SIGTERM stop', () => {
   it('a daemon stopped by SIGTERM while its Assignment runs exits 0 within 15 seconds and the restart resumes it once', async () => {
     const t = setup()
-    const d1 = daemon(t, { SUPERAGENT_CLAUDE_FAKE_HOLD: '1' })
+    const d1 = daemon(t, { ISSUECREW_FAKE_HOLD: '1' })
     await poll(() => runningTicket(t.dir) !== undefined, 60_000)
     const { ticket: seen, running: runningId } = runningTicket(t.dir)!
     const ticketId = seen.id
@@ -188,7 +188,7 @@ describe('daemon SIGTERM stop', () => {
     const d2 = daemon(t)
     await poll(() => d2.exited || (tickets(t.dir)[0]?.ended !== undefined && delivered(t)), 60_000)
     expect(d2.exited, d2.err).toBe(false)
-    expect(d2.err).not.toContain('Another superagent-claude process')
+    expect(d2.err).not.toContain('Another issuecrew process')
     d2.child.kill('SIGTERM')
     await poll(() => d2.exited, 15_000)
     expect(d2.code, d2.err).toBe(0)

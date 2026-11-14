@@ -1,19 +1,19 @@
 {
-  "name": "superagent-claude",
+  "name": "issuecrew",
   "version": "0.5.2",
   "description": "A proactive agent for GitHub repositories. Powered by Claude.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ok0/superagent-claude.git"
+    "url": "git+https://github.com/ok0/issuecrew.git"
   },
-  "homepage": "https://github.com/ok0/superagent-claude#readme",
+  "homepage": "https://github.com/ok0/issuecrew#readme",
   "bugs": {
-    "url": "https://github.com/ok0/superagent-claude/issues"
+    "url": "https://github.com/ok0/issuecrew/issues"
   },
   "type": "module",
   "bin": {
-    "superagent-claude": "lib/cli.js"
+    "issuecrew": "lib/cli.js"
   },
   "files": [
     "lib",
@@ -31,7 +31,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:live": "vitest run --config vitest.live.config.ts",
-    "test:seed": "SUPERAGENT_CLAUDE_SEED_INSTALL=1 vitest run tests/live-ui-scenarios.spec.ts tests/live-extended-scenarios.spec.ts",
+    "test:seed": "ISSUECREW_SEED_INSTALL=1 vitest run tests/live-ui-scenarios.spec.ts tests/live-extended-scenarios.spec.ts",
     "format": "prettier --write \"**/*.ts\"",
     "format:check": "prettier --check \"**/*.ts\"",
     "check": "pnpm typecheck && pnpm format:check && pnpm test && pnpm build",

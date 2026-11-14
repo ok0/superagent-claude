@@ -2,8 +2,8 @@
  * Live conversation run against the playground repository: the daemon started through the CLI in auto mode with
  * subscription OAuth. A mention that asks for something outside the repository gets one refusal on its issue, also
  * after a daemon restart. A pull request whose ticket is ready keeps that report when a CI event arrives after a
- * handed-back comment. Evidence is read from the store, GitHub and the logs. Gated by SUPERAGENT_CLAUDE_LIVE=1, a
- * configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token.
+ * handed-back comment. Evidence is read from the store, GitHub and the logs. Gated by ISSUECREW_LIVE=1, a
+ * configured ISSUECREW_LIVE_REPO with its login settings, and the three tokens; never prints a token.
  */
 import { EventEmitter } from 'node:events'
 import {
@@ -30,16 +30,16 @@ import { liveEnabled, liveTarget, renderLiveText } from './target.ts'
 
 const TARGET = liveTarget()
 const LIVE = liveEnabled()
-const AGENT_TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
-const OWNER_TOKEN = process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN?.trim()
+const AGENT_TOKEN = process.env.ISSUECREW_GITHUB_TOKEN?.trim()
+const OWNER_TOKEN = process.env.ISSUECREW_LIVE_OWNER_TOKEN?.trim()
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
 const REPO = TARGET ? assertAllowedRepo(TARGET.repo) : ''
 const AGENT = TARGET?.agentLogin ?? ''
 const OWNER = TARGET?.ownerLogin ?? ''
 const text = (value: string): string => (TARGET ? renderLiveText(value, TARGET) : value)
 const LIMITS = { max: 1, maxTurns: 40, maxBudgetUsd: 1 }
-const MARKER = /<!--\s*superagent-claude:(.+?)\s*-->/
-const STRIP = /<!--\s*superagent-claude:.*?-->/g
+const MARKER = /<!--\s*issuecrew:(.+?)\s*-->/
+const STRIP = /<!--\s*issuecrew:.*?-->/g
 const REFUSAL_PREFIX = "I can't take this on here: "
 const DINNER_TITLE = 'Dinner reservation for Friday'
 const DINNER_BODY = text('@{{agent}} please book a table for two at a restaurant near the office for Friday evening.')
@@ -121,7 +121,7 @@ async function until<T>(
 
 function markerId(body: string): string {
   const match = MARKER.exec(body)
-  if (!match) throw new Error('no superagent-claude marker in comment')
+  if (!match) throw new Error('no issuecrew marker in comment')
   return match[1]!
 }
 
@@ -246,7 +246,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
 
   beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), 'sac-live-conv-'))
-    configPath = join(dir, 'superagent-claude.json')
+    configPath = join(dir, 'issuecrew.json')
     config = {
       repositories: [REPO],
       policy: { allowed: [OWNER], acceptMode: 'auto' },
@@ -297,7 +297,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live conversat
           }
         }
       }
-      const badRouterTools = [...routerTools].filter(name => !name.startsWith('mcp__superagent__'))
+      const badRouterTools = [...routerTools].filter(name => !name.startsWith('mcp__issuecrew__'))
       expect(badRouterTools).toEqual([])
       expect(workerPermissionModes.has('bypassPermissions')).toBe(false)
       evidence.transcripts = {

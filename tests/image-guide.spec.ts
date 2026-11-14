@@ -78,7 +78,7 @@ describe('deploy and README sections', () => {
   it('explains FROM and the environment note', () => {
     const s = section(deploy, '## Extending the image')
     expect(s).toContain('`FROM`')
-    expect(s).toContain('ghcr.io/ok0/superagent-claude')
+    expect(s).toContain('ghcr.io/ok0/issuecrew')
     expect(s).toContain('deploy/docker/Dockerfile.toolchain')
     expect(s).toContain('environment note')
     expect(s).toContain('](configuration.md#environment-notes)')
@@ -93,7 +93,7 @@ describe('deploy and README sections', () => {
 
   it('describes running multiple accounts and projects', () => {
     const s = section(deploy, '## Running multiple accounts/projects')
-    expect(s).toContain('its own config file, its own `stateDir` and its own `SUPERAGENT_CLAUDE_GITHUB_TOKEN`')
+    expect(s).toContain('its own config file, its own `stateDir` and its own `ISSUECREW_GITHUB_TOKEN`')
     expect(s).toContain('A second `start` with the same `stateDir` is refused')
     expect(s).toContain('one instance per repository')
     expect(s).toContain('Nothing detects two instances that watch the same repository')

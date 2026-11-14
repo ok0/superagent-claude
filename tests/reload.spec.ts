@@ -31,7 +31,7 @@ let runtime: Runtime | undefined
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'reload-'))
-  path = join(dir, 'superagent-claude.json')
+  path = join(dir, 'issuecrew.json')
 })
 
 afterEach(async () => {

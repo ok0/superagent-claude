@@ -33,9 +33,9 @@ describe('deploy and container docs', () => {
     for (const text of [
       '## Docker',
       '## Sandbox in containers',
-      'docker build -t superagent-claude:local .',
-      '/var/lib/superagent-claude',
-      '/etc/superagent-claude/superagent-claude.json',
+      'docker build -t issuecrew:local .',
+      '/var/lib/issuecrew',
+      '/etc/issuecrew/issuecrew.json',
       'weakerNestedSandbox',
     ])
       expect(deploy).toContain(text)

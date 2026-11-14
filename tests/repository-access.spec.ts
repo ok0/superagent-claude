@@ -6,7 +6,7 @@ import { Commands } from '../src/infra/commands.ts'
 
 describe('repository access', () => {
   it('authenticates clone and fetch through env-scoped config and never puts the token in the remote', () => {
-    const a = repositoryAccess({ SUPERAGENT_CLAUDE_GITHUB_TOKEN: ' tok123 ' })
+    const a = repositoryAccess({ ISSUECREW_GITHUB_TOKEN: ' tok123 ' })
     const encoded = Buffer.from('x-access-token:tok123').toString('base64')
     expect(a.remote('o/r')).toBe('https://github.com/o/r.git')
     expect(a.env('o/r')).toEqual({
@@ -27,7 +27,7 @@ describe('repository access', () => {
   it('installedSources provides the repository access', () => {
     const sources = installedSources(
       ConfigSchema.parse({ repositories: ['o/r'], policy: { allowed: ['alice'] } }),
-      { SUPERAGENT_CLAUDE_GITHUB_TOKEN: 't' },
+      { ISSUECREW_GITHUB_TOKEN: 't' },
       { commands: new Commands({ baseEnv: {} }) },
     )
     expect(sources.access.remote('o/r')).toBe('https://github.com/o/r.git')

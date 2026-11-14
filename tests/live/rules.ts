@@ -104,24 +104,20 @@ export function preflight(input: {
     actions.push(
       'Make sure the empty private repository ' +
         t.repo +
-        ' exists and that SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN can read and write it.',
+        ' exists and that ISSUECREW_LIVE_OWNER_TOKEN can read and write it.',
     )
   }
   if (input.archived) {
     missing.push('repo-archived')
-    actions.push(t.repo + ' is archived. Point SUPERAGENT_CLAUDE_LIVE_REPO at an active repository.')
+    actions.push(t.repo + ' is archived. Point ISSUECREW_LIVE_REPO at an active repository.')
   }
   if (!eq(input.tokenLogin, t.ownerLogin)) {
     missing.push('token-login')
-    actions.push(
-      'SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN must belong to ' + t.ownerLogin + ' (SUPERAGENT_CLAUDE_LIVE_OWNER_LOGIN).',
-    )
+    actions.push('ISSUECREW_LIVE_OWNER_TOKEN must belong to ' + t.ownerLogin + ' (ISSUECREW_LIVE_OWNER_LOGIN).')
   }
   if (input.agentTokenLogin !== undefined && !eq(input.agentTokenLogin, t.agentLogin)) {
     missing.push('agent-token-login')
-    actions.push(
-      'SUPERAGENT_CLAUDE_GITHUB_TOKEN must belong to ' + t.agentLogin + ' (SUPERAGENT_CLAUDE_LIVE_AGENT_LOGIN).',
-    )
+    actions.push('ISSUECREW_GITHUB_TOKEN must belong to ' + t.agentLogin + ' (ISSUECREW_LIVE_AGENT_LOGIN).')
   }
   if (!eq(input.localLogin, t.ownerLogin)) {
     missing.push('local-gh-account')
@@ -187,7 +183,7 @@ export function seedVersion(files: readonly SeedFile[]): string {
 }
 
 export const SEED_README_FACTS: readonly { fact: string; pattern: RegExp }[] = [
-  { fact: 'it is the test playground for superagent-claude', pattern: /\btest playground for superagent-claude\b/i },
+  { fact: 'it is the test playground for issuecrew', pattern: /\btest playground for issuecrew\b/i },
   { fact: 'it is not a real project', pattern: /\bnot a real (project|repository)\b/i },
   {
     fact: 'automated tests open and close its issues and pull requests',

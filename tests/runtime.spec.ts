@@ -131,7 +131,7 @@ it('a second Runtime on a running state directory is refused', async () => {
   const stateDir = directory()
   const { runtime } = await boot(stateDir, hold)
   expect(() => new Runtime({ config: config(stateDir), runtime: new FakeRuntime(() => ({})) })).toThrow(
-    /Another superagent-claude process/,
+    /Another issuecrew process/,
   )
   await runtime.stop()
 })

@@ -35,7 +35,7 @@ function tempDir(): string {
 }
 
 function writeConfig(dir: string, extra: Record<string, unknown> = {}): string {
-  const path = join(dir, 'superagent-claude.json')
+  const path = join(dir, 'issuecrew.json')
   writeFileSync(
     path,
     JSON.stringify({
@@ -51,17 +51,17 @@ function writeConfig(dir: string, extra: Record<string, unknown> = {}): string {
 
 function secretEnv(dir: string, extra: Record<string, string | undefined> = {}): Record<string, string | undefined> {
   const inherited: Record<string, string | undefined> = { ...process.env }
-  delete inherited.SUPERAGENT_CLAUDE_LOG_FORMAT
+  delete inherited.ISSUECREW_LOG_FORMAT
   const env: Record<string, string | undefined> = {
     ...inherited,
-    ...cliEnv(dir, { SUPERAGENT_CLAUDE_GITHUB_TOKEN: SECRET, ...extra }),
+    ...cliEnv(dir, { ISSUECREW_GITHUB_TOKEN: SECRET, ...extra }),
   }
   for (const key of Object.keys(env)) if (env[key] === undefined) delete env[key]
   return env
 }
 
 function spawnCli(args: string[], dir: string, extra: Record<string, string | undefined> = {}) {
-  const entry = process.env.SUPERAGENT_CLAUDE_CLI ?? fileURLToPath(new URL('../src/cli/bin.ts', import.meta.url))
+  const entry = process.env.ISSUECREW_CLI ?? fileURLToPath(new URL('../src/cli/bin.ts', import.meta.url))
   const gh = githubs.get(dir) ?? fileGh(dir, { repositories: { 'owner/repo': {}, 'owner/other': {} } })
   githubs.set(dir, gh)
   const child = spawn(process.execPath, [entry, ...args], {
@@ -121,9 +121,9 @@ describe('log format', () => {
   it('chooses the format from the flag, then the env, else text', () => {
     expect(logFormat([], {})).toBe('text')
     expect(logFormat(['--log-format', 'json'], {})).toBe('json')
-    expect(logFormat([], { SUPERAGENT_CLAUDE_LOG_FORMAT: 'json' })).toBe('json')
-    expect(logFormat(['--log-format', 'text'], { SUPERAGENT_CLAUDE_LOG_FORMAT: 'json' })).toBe('text')
-    expect(logFormat([], { SUPERAGENT_CLAUDE_LOG_FORMAT: '' })).toBe('text')
+    expect(logFormat([], { ISSUECREW_LOG_FORMAT: 'json' })).toBe('json')
+    expect(logFormat(['--log-format', 'text'], { ISSUECREW_LOG_FORMAT: 'json' })).toBe('text')
+    expect(logFormat([], { ISSUECREW_LOG_FORMAT: '' })).toBe('text')
     expect(logFormat(['--log-format', 'yaml'], {})).toBeUndefined()
     expect(logFormat(['--log-format'], {})).toBeUndefined()
     expect(logFormat(['--config', '--log-format'], {})).toBe('text')
@@ -135,7 +135,7 @@ describe('log format', () => {
       line => {
         lines.push(line)
       },
-      { SUPERAGENT_CLAUDE_GITHUB_TOKEN: SECRET },
+      { ISSUECREW_GITHUB_TOKEN: SECRET },
     )
     log({ level: 'info', at: 'x', event: 'e', detail: `a ${SECRET} b ghp_${'a'.repeat(20)} c` } as Parameters<
       typeof log
@@ -209,7 +209,7 @@ describe('log format', () => {
   it('the env variable selects json as well', async () => {
     const dir = tempDir()
     const state = await runDaemon(['start', '--fake', '--config', writeConfig(dir)], dir, {
-      SUPERAGENT_CLAUDE_LOG_FORMAT: 'json',
+      ISSUECREW_LOG_FORMAT: 'json',
     })
     expect(state.err).toBe('')
     expect(jsonOnly(state.out)).toBe(true)
@@ -220,7 +220,7 @@ describe('log format', () => {
     const dir = tempDir()
     const state = await runDaemon(['start', '--fake', '--config', writeConfig(dir)], dir)
     expect(state.code).toBe(0)
-    expect(state.err).toContain(`superagent-claude: warning: ${UNSANDBOXED_WARNING}\n`)
+    expect(state.err).toContain(`issuecrew: warning: ${UNSANDBOXED_WARNING}\n`)
     expect(jsonOnly(state.out)).toBe(true)
     expect(records(state.out).map(record => record.event)).not.toContain('startup.warning')
     expect(state.out).not.toContain(SECRET)

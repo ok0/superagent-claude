@@ -1,5 +1,5 @@
 /**
- * superagent-claude status and needs: read the state database opened read-only (no lock, no HTTP server), so they
+ * issuecrew status and needs: read the state database opened read-only (no lock, no HTTP server), so they
  * answer while the daemon runs.
  */
 import { existsSync } from 'node:fs'
@@ -11,8 +11,8 @@ import { openReadOnly, writerActive, type StoreReader } from '../app/store-read.
 import type { CliIo } from './main.ts'
 
 export const EXIT_NO_STATE = 3
-export const STATUS_USAGE = 'Usage: superagent-claude status [--config <path>]\n'
-export const NEEDS_USAGE = 'Usage: superagent-claude needs [--all] [--config <path>]\n'
+export const STATUS_USAGE = 'Usage: issuecrew status [--config <path>]\n'
+export const NEEDS_USAGE = 'Usage: issuecrew needs [--all] [--config <path>]\n'
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -37,7 +37,7 @@ function readState(
     if (arg === '--config') {
       const value = argv[i + 1]
       if (value === undefined) {
-        io.err(`superagent-claude: option '--config' needs a path\n` + usage)
+        io.err(`issuecrew: option '--config' needs a path\n` + usage)
         return 2
       }
       configArg = value
@@ -45,7 +45,7 @@ function readState(
     } else if (arg === '--all' && allowAll) {
       all = true
     } else {
-      io.err(`superagent-claude: unknown option '${arg}'\n` + usage)
+      io.err(`issuecrew: unknown option '${arg}'\n` + usage)
       return 2
     }
   }
@@ -56,7 +56,7 @@ function readState(
     config = loadConfig(path, io.env)
   } catch (error) {
     if (error instanceof StartupRefused) {
-      io.err(`superagent-claude: ${error.message}\n`)
+      io.err(`issuecrew: ${error.message}\n`)
       return 2
     }
     throw error
@@ -64,7 +64,7 @@ function readState(
 
   const db = databasePath(config.stateDir)
   if (!existsSync(db)) {
-    io.err(`superagent-claude: no state database at ${db}; superagent-claude has not started with this config\n`)
+    io.err(`issuecrew: no state database at ${db}; issuecrew has not started with this config\n`)
     return EXIT_NO_STATE
   }
 
@@ -72,14 +72,14 @@ function readState(
   try {
     reader = openReadOnly(db)
   } catch (error) {
-    io.err(`superagent-claude: cannot read the state database ${db}: ${firstLine(messageOf(error))}\n`)
+    io.err(`issuecrew: cannot read the state database ${db}: ${firstLine(messageOf(error))}\n`)
     return EXIT_NO_STATE
   }
   let text: string
   try {
     text = render(reader, config, db, all)
   } catch (error) {
-    io.err(`superagent-claude: cannot read the state database ${db}: ${firstLine(messageOf(error))}\n`)
+    io.err(`issuecrew: cannot read the state database ${db}: ${firstLine(messageOf(error))}\n`)
     return EXIT_NO_STATE
   } finally {
     reader.close()

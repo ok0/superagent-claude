@@ -15,7 +15,7 @@ export const IDS = {
 }
 
 export function writeStateConfig(dir: string, extra?: Record<string, unknown>): string {
-  const path = join(dir, 'superagent-claude.json')
+  const path = join(dir, 'issuecrew.json')
   writeFileSync(
     path,
     JSON.stringify({

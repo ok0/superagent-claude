@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="330" viewBox="0 0 960 330" role="img" aria-labelledby="t d">
-  <title id="t">superagent-claude-planner and superagent-claude</title>
-  <desc id="d">Two tools side by side, each complete on its own. superagent-claude-planner turns one change into an approved plan and publishes one GitHub issue per repository. superagent-claude takes an issue or mention from an allowed person, works in its own worktree, and replies or opens a pull request. An optional dashed link through GitHub issues shows that the planner's issues can feed the agent.</desc>
+  <title id="t">issuecrew-planner and issuecrew</title>
+  <desc id="d">Two tools side by side, each complete on its own. issuecrew-planner turns one change into an approved plan and publishes one GitHub issue per repository. issuecrew takes an issue or mention from an allowed person, works in its own worktree, and replies or opens a pull request. An optional dashed link through GitHub issues shows that the planner's issues can feed the agent.</desc>
   <style>
     :root {
       --bg: #fbfaf8; --lane: #f3f1ed; --node: #ffffff;
@@ -45,7 +45,7 @@
 
   <!-- Planner lane -->
   <rect class="lane" x="16" y="16" width="400" height="298" rx="4"/>
-  <text class="lh" x="40" y="44">superagent-claude-planner</text>
+  <text class="lh" x="40" y="44">issuecrew-planner</text>
   <text class="ls" x="40" y="62">Plans one change across repositories</text>
 
   <rect class="node" x="40" y="84" width="352" height="44" rx="4"/>
@@ -66,7 +66,7 @@
 
   <!-- Agent lane -->
   <rect class="lane" x="544" y="16" width="400" height="298" rx="4"/>
-  <text class="lh" x="568" y="44">superagent-claude</text>
+  <text class="lh" x="568" y="44">issuecrew</text>
   <text class="ls" x="568" y="62">Does the work in each repository</text>
 
   <rect class="node" x="568" y="84" width="352" height="44" rx="4"/>

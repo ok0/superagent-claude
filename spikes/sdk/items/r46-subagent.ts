@@ -13,7 +13,7 @@ const META = {
   id: 'subagent',
   req: 'subagent',
   title: 'subagent hook agent_id, foreground forcing, built-in types, cost',
-  repro: 'SUPERAGENT_CLAUDE_LIVE=1 node spikes/sdk/items/r46-subagent.ts',
+  repro: 'ISSUECREW_LIVE=1 node spikes/sdk/items/r46-subagent.ts',
 }
 const AGENT = 'Agent'
 const ALLOWLIST_CANDIDATES = ['general-purpose', 'Explore', 'Plan']

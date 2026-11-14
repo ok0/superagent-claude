@@ -82,13 +82,13 @@ export function workflowProblems(text: string): string[] {
 
   const imageSection = jobSection(text, 'image')
   if (imageSection !== undefined) {
-    if (!/^\s+- run: docker build -t superagent-claude:ci \.$/m.test(imageSection)) {
-      problems.push('image job missing: docker build -t superagent-claude:ci .')
+    if (!/^\s+- run: docker build -t issuecrew:ci \.$/m.test(imageSection)) {
+      problems.push('image job missing: docker build -t issuecrew:ci .')
     }
   }
 
   if (SECRETS_CONTEXT.test(text)) problems.push('forbidden: ${{ secrets }} reference')
-  const forbidden = ['test:live', 'SUPERAGENT_CLAUDE_LIVE', 'docker push', 'push: true', 'docker login']
+  const forbidden = ['test:live', 'ISSUECREW_LIVE', 'docker push', 'push: true', 'docker login']
   for (const word of forbidden) {
     if (text.includes(word)) problems.push(`forbidden: ${word}`)
   }
@@ -112,7 +112,7 @@ describe('ci workflow', () => {
   })
 
   it('flags only ${{ secrets }} references, not file names', () => {
-    const script = real + '      - run: bash scripts/check-image-secrets.sh superagent-claude:ci\n'
+    const script = real + '      - run: bash scripts/check-image-secrets.sh issuecrew:ci\n'
     expect(workflowProblems(script).filter(p => p.includes('secrets'))).toEqual([])
     const secret = real + '      - run: echo ${{ secrets.X }}\n'
     expect(workflowProblems(secret).filter(p => p.includes('secrets'))).toHaveLength(1)
@@ -121,14 +121,14 @@ describe('ci workflow', () => {
   it.each<[string, (text: string) => string]>([
     ['secrets reference', t => t + '      - run: echo ${{ secrets.X }}\n'],
     ['live test run', t => t.replace('run: pnpm test\n', 'run: pnpm test:live\n')],
-    ['docker push', t => t + '      - run: docker push superagent-claude:ci\n'],
+    ['docker push', t => t + '      - run: docker push issuecrew:ci\n'],
     ['non-actions action', t => t.replace('actions/checkout@v5', 'pnpm/action-setup@v4')],
     ['pull_request_target trigger', t => t.replace('  pull_request:\n', '  pull_request_target:\n')],
     ['extra permission', t => t.replace('  contents: read\n', '  contents: read\n  pull-requests: write\n')],
     ['missing fetch-depth', t => t.replace('          fetch-depth: 0\n', '')],
     ['missing format:check step', t => t.replace('      - run: pnpm format:check\n', '')],
     ['missing image job', t => t.slice(0, t.indexOf('\n  image:'))],
-    ['live env flag', t => t + '      - run: SUPERAGENT_CLAUDE_LIVE=1 pnpm test\n'],
+    ['live env flag', t => t + '      - run: ISSUECREW_LIVE=1 pnpm test\n'],
     ['non-GitHub token', t => t + '    env:\n      NPM_TOKEN: x\n'],
     ['push true', t => t + '          push: true\n'],
     ['docker login', t => t + '      - run: docker login ghcr.io\n'],

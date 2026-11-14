@@ -2,10 +2,10 @@ import { vi } from 'vitest'
 import { LIVE_TARGET_ENV, type LiveTarget } from '../live/target.ts'
 
 export const EXAMPLE_TARGET_ENV = {
-  SUPERAGENT_CLAUDE_LIVE_REPO: 'example/playground',
-  SUPERAGENT_CLAUDE_LIVE_REPORT_REPO: 'example/main',
-  SUPERAGENT_CLAUDE_LIVE_OWNER_LOGIN: 'example-owner',
-  SUPERAGENT_CLAUDE_LIVE_AGENT_LOGIN: 'example-agent',
+  ISSUECREW_LIVE_REPO: 'example/playground',
+  ISSUECREW_LIVE_REPORT_REPO: 'example/main',
+  ISSUECREW_LIVE_OWNER_LOGIN: 'example-owner',
+  ISSUECREW_LIVE_AGENT_LOGIN: 'example-agent',
 } as const
 
 export const EXAMPLE_TARGET: LiveTarget = {

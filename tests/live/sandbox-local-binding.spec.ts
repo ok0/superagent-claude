@@ -17,17 +17,17 @@ import { waitUntil } from '../fixtures/async.ts'
 import { bindVerdict, deniedAttempt, parseBindOutput, SHADOW_CODE, shadowHits, toolUses } from './local-binding.ts'
 import { transcriptFiles } from './review-evidence.ts'
 
-const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
+const LIVE = process.env.ISSUECREW_LIVE === '1'
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
 const TOKENS = [
-  process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN,
-  process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN,
+  process.env.ISSUECREW_GITHUB_TOKEN,
+  process.env.ISSUECREW_LIVE_OWNER_TOKEN,
   process.env.CLAUDE_CODE_OAUTH_TOKEN,
   process.env.ANTHROPIC_API_KEY,
 ]
   .map(token => token?.trim())
   .filter((token): token is string => Boolean(token))
-const model = process.env.SUPERAGENT_CLAUDE_LIVE_MODEL ?? 'haiku'
+const model = process.env.ISSUECREW_LIVE_MODEL ?? 'haiku'
 const GIT = ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false']
 const BIND_SCRIPT = `const http = require('node:http')
 const server = http.createServer((req, res) => res.end('ok'))

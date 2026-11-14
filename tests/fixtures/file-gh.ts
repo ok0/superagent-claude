@@ -19,7 +19,7 @@ export interface FileGhState {
   kill?: KillRule
   killed?: KillRule & { at: string }
 }
-export const STATE_ENV = 'SUPERAGENT_CLAUDE_TEST_GITHUB_STATE'
+export const STATE_ENV = 'ISSUECREW_TEST_GITHUB_STATE'
 const PRELOAD = fileURLToPath(new URL('./file-github-preload.ts', import.meta.url))
 
 export interface FileGh {

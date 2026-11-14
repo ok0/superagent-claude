@@ -12,11 +12,11 @@ import { ClaudeRuntime } from '../../src/runtimes/claude/runtime.ts'
 import { waitUntil } from '../fixtures/async.ts'
 import { contractSpec } from '../fixtures/runtime-contract.ts'
 
-const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
+const LIVE = process.env.ISSUECREW_LIVE === '1'
 const mode: AuthMode | undefined =
-  (process.env.SUPERAGENT_CLAUDE_LIVE_AUTH as AuthMode | undefined) ??
+  (process.env.ISSUECREW_LIVE_AUTH as AuthMode | undefined) ??
   (process.env.CLAUDE_CODE_OAUTH_TOKEN ? 'subscription' : process.env.ANTHROPIC_API_KEY ? 'api-key' : undefined)
-const model = process.env.SUPERAGENT_CLAUDE_LIVE_MODEL ?? 'haiku'
+const model = process.env.ISSUECREW_LIVE_MODEL ?? 'haiku'
 
 function watch(session: AgentSession): RuntimeEvent[] {
   const events: RuntimeEvent[] = []

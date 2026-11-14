@@ -26,7 +26,7 @@ function tempDir(): string {
 }
 
 function io(dir: string) {
-  return cliIo(dir, cliEnv(dir, { SUPERAGENT_CLAUDE_GITHUB_TOKEN: TOKEN }))
+  return cliIo(dir, cliEnv(dir, { ISSUECREW_GITHUB_TOKEN: TOKEN }))
 }
 
 describe('status', () => {
@@ -148,7 +148,7 @@ describe('status', () => {
     const dir = tempDir()
     const missing = io(dir)
     expect(await main(['status', '--config', join(dir, 'missing.json')], missing.io)).toBe(2)
-    expect(missing.err.join('')).toContain('superagent-claude:')
+    expect(missing.err.join('')).toContain('issuecrew:')
     const unknown = io(dir)
     expect(await main(['status', '--bogus'], unknown.io)).toBe(2)
     expect(unknown.err.join('')).toContain("unknown option '--bogus'")
@@ -192,7 +192,7 @@ describe('HealthRecorder', () => {
 
 describe('redact', () => {
   it('masks secret env values, token literals, and access-token URLs, and keeps short values', () => {
-    const env = { SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'secret-value-123', API_KEY: 'short' }
+    const env = { ISSUECREW_GITHUB_TOKEN: 'secret-value-123', API_KEY: 'short' }
     expect(redact('a secret-value-123 b', env)).toBe('a *** b')
     expect(redact(TOKEN, {})).toBe('***')
     expect(redact('fine_pat_' + 'A1b2C3d4E5f6G7h8', {})).toBe('***')

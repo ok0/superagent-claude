@@ -19,7 +19,7 @@ const FULL_ENV: Record<string, string> = {
   CLOUD_ML_REGION: 'r2',
   ANTHROPIC_VERTEX_PROJECT_ID: 'proj',
   GOOGLE_APPLICATION_CREDENTIALS: '/adc.json',
-  SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'k-gh',
+  ISSUECREW_GITHUB_TOKEN: 'k-gh',
   GH_TOKEN: 'k-gh2',
   DAEMON_SECRET: 'k-d',
   PATH: '/bin',
@@ -40,7 +40,7 @@ describe('credentials', () => {
     const env = runtimeEnv(resolveCredential(mode, FULL_ENV))
     const others = MODES.filter(other => other !== mode).flatMap(other => AUTH_ENV[other])
     for (const key of Object.keys(env)) expect(AUTH_ENV[mode]).toContain(key)
-    for (const key of [...others, 'SUPERAGENT_CLAUDE_GITHUB_TOKEN', 'GH_TOKEN', 'DAEMON_SECRET', 'PATH'])
+    for (const key of [...others, 'ISSUECREW_GITHUB_TOKEN', 'GH_TOKEN', 'DAEMON_SECRET', 'PATH'])
       expect(env).not.toHaveProperty(key)
     if (mode === 'bedrock') expect(env).toMatchObject({ CLAUDE_CODE_USE_BEDROCK: '1', AWS_REGION: 'r' })
     if (mode === 'vertex')

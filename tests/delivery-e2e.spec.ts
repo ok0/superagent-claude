@@ -156,7 +156,7 @@ function start(
   const clock = new ManualClock(START)
   const sources = installedSources(
     config,
-    { SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'test-token' },
+    { ISSUECREW_GITHUB_TOKEN: 'test-token' },
     { commands: gh.commands, timers: clock, now: clock.now },
   )
   const worker = workerScript(env)
@@ -261,7 +261,7 @@ it('publish twice opens one PR bound to the ticket, and a PR follow-up resumes t
   expect(gh.requests.filter(r => r.method === 'PATCH' || r.method === 'PUT')).toHaveLength(0)
   expect(gh.graphql.length).toBe(graphqlBefore)
   const markers = gh.posted
-    .map(post => /<!-- superagent-claude:(.+) -->/.exec(post.body)?.[1])
+    .map(post => /<!-- issuecrew:(.+) -->/.exec(post.body)?.[1])
     .filter((id): id is string => id !== undefined)
   expect(new Set(markers).size).toBe(markers.length)
   expect(gh.requests.find(r => r.method === 'POST' && r.path === 'repos/acme/widgets/pulls')!.fields.body).toBe(

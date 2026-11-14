@@ -35,8 +35,8 @@ it('posts each reply to the repository its address names', async () => {
   expect(await adapter.send(message('m1', A, 5, 'one', issueUrl(A, 5)))).toBe('sent')
   expect(await adapter.send(message('m2', B, 5, 'two', issueUrl(B, 5)))).toBe('sent')
   expect(gh.posted).toEqual([
-    { repository: A, path: 'issues/5/comments', body: 'one\n\n<!-- superagent-claude:m1 -->' },
-    { repository: B, path: 'issues/5/comments', body: 'two\n\n<!-- superagent-claude:m2 -->' },
+    { repository: A, path: 'issues/5/comments', body: 'one\n\n<!-- issuecrew:m1 -->' },
+    { repository: B, path: 'issues/5/comments', body: 'two\n\n<!-- issuecrew:m2 -->' },
   ])
 })
 
@@ -111,6 +111,6 @@ it('replies in a review thread', async () => {
   const adapter = githubChannelAdapter({ commands: gh.commands, repositories: [A, B], login: () => AGENT })
   expect(await adapter.send(message('m12', A, 9, 'reply', url))).toBe('sent')
   expect(gh.posted).toEqual([
-    { repository: A, path: 'pulls/9/comments/12/replies', body: 'reply\n\n<!-- superagent-claude:m12 -->' },
+    { repository: A, path: 'pulls/9/comments/12/replies', body: 'reply\n\n<!-- issuecrew:m12 -->' },
   ])
 })

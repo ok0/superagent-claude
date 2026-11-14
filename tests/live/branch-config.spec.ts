@@ -2,8 +2,8 @@
  * Live branch config check against the playground repository: the daemon started through the CLI in auto mode with a
  * repository entry whose pullRequestTo is dev, then restarted with the same state directory and a pullRequestTo branch
  * that does not exist. The pull request opens against dev and nothing is pushed to dev; the missing branch blocks the
- * ticket with no pull request and one reason comment from the agent account. Gated by SUPERAGENT_CLAUDE_LIVE=1, a
- * configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens; never prints a token. Closes this
+ * ticket with no pull request and one reason comment from the agent account. Gated by ISSUECREW_LIVE=1, a
+ * configured ISSUECREW_LIVE_REPO with its login settings, and the three tokens; never prints a token. Closes this
  * run's pull requests, agent branches and issues at the end and keeps dev.
  */
 import { EventEmitter } from 'node:events'
@@ -34,8 +34,8 @@ import { LIVE_TARGET_ENV, liveEnabled, liveTarget, renderLiveText } from './targ
 
 const TARGET = liveTarget()
 const LIVE = liveEnabled()
-const AGENT_TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
-const OWNER_TOKEN = process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN?.trim()
+const AGENT_TOKEN = process.env.ISSUECREW_GITHUB_TOKEN?.trim()
+const OWNER_TOKEN = process.env.ISSUECREW_LIVE_OWNER_TOKEN?.trim()
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
 const REPO = TARGET ? assertAllowedRepo(TARGET.repo) : ''
 const AGENT = TARGET?.agentLogin ?? ''
@@ -55,7 +55,7 @@ const BLOCK_BODY = text(
 )
 const BRANCH_WORDS = /\b(branch|base|dev|main|master|no-such-branch|pullRequestTo|branchFrom)\b/i
 const RUN_MARKER = '\n\n<!-- live-test ' + RUN + ' -->'
-const MARKER_STRIP = /<!--\s*superagent-claude:.*?-->/g
+const MARKER_STRIP = /<!--\s*issuecrew:.*?-->/g
 function stripMarker(body: string): string {
   return body.replace(MARKER_STRIP, '').trim()
 }
@@ -505,7 +505,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live branch co
       devSha,
     }
     dir = mkdtempSync(join(tmpdir(), 'sac-branch-config-'))
-    configPath = join(dir, 'superagent-claude.json')
+    configPath = join(dir, 'issuecrew.json')
     await start(DEV)
   }, 180_000)
 

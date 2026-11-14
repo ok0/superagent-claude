@@ -1,6 +1,6 @@
 # Releasing
 
-This guide is for maintainers. A release publishes one version to four places: a git tag, the npm package `superagent-claude`, the container image `ghcr.io/ok0/superagent-claude` and a GitHub Release. You prepare the release on your machine. The release workflow (`.github/workflows/release.yml`) checks it and publishes it when you push the tag.
+This guide is for maintainers. A release publishes one version to four places: a git tag, the npm package `issuecrew`, the container image `ghcr.io/ok0/issuecrew` and a GitHub Release. You prepare the release on your machine. The release workflow (`.github/workflows/release.yml`) checks it and publishes it when you push the tag.
 
 **Contents**
 
@@ -34,15 +34,15 @@ The workflow publishes to npm only with trusted publishing (OpenID Connect), wit
 
 - npm CLI 11.5.1 or later. The workflow installs a fixed npm version that meets this.
 - The repository is public, and `repository` in `package.json` points to it.
-- The trusted publisher below is registered on the `superagent-claude` package. Before each release, check on the package settings page on npmjs.com that it is still there.
+- The trusted publisher below is registered on the `issuecrew` package. Before each release, check on the package settings page on npmjs.com that it is still there.
 
 Register the trusted publisher:
 
-1. Sign in to npmjs.com and open the `superagent-claude` package page.
+1. Sign in to npmjs.com and open the `issuecrew` package page.
 2. Open **Settings**.
 3. Under **Trusted Publisher**, choose **GitHub Actions**.
 4. Organization or user: `ok0`.
-5. Repository: `superagent-claude`.
+5. Repository: `issuecrew`.
 6. Workflow filename: `release.yml` (the file name with its extension, no path).
 7. Environment name: leave it empty.
 8. Save the connection.
@@ -51,10 +51,10 @@ npm does not check these values when you save them. The connection is kept only 
 
 ### Container image visibility
 
-The first push creates the `superagent-claude` package on ghcr.io as private. The image carries the label `org.opencontainers.image.source=https://github.com/ok0/superagent-claude`, which links the package to this repository.
+The first push creates the `issuecrew` package on ghcr.io as private. The image carries the label `org.opencontainers.image.source=https://github.com/ok0/issuecrew`, which links the package to this repository.
 
-1. Before you change the visibility, check the image: run `docker login ghcr.io` with your GitHub user name and a personal access token with `read:packages` as the password, then `docker pull ghcr.io/ok0/superagent-claude:<version>`.
-2. On GitHub, open your profile → **Packages** → `superagent-claude` → **Package settings**.
+1. Before you change the visibility, check the image: run `docker login ghcr.io` with your GitHub user name and a personal access token with `read:packages` as the password, then `docker pull ghcr.io/ok0/issuecrew:<version>`.
+2. On GitHub, open your profile → **Packages** → `issuecrew` → **Package settings**.
 3. Under **Danger Zone**, choose **Change visibility** → **Public** and confirm.
 
 This is needed once. Later pushes keep the package public.
@@ -91,21 +91,21 @@ The workflow has four jobs. Each job starts only after the jobs before it succee
 
 1. `verify` checks everything and publishes nothing: the tag matches `package.json`, the tagged commit is on `main`, CI succeeded for that commit (it waits up to 30 minutes for a CI run that is still going), `pnpm check:all` passes, the npm package contains only allowed files, the `CHANGELOG.md` section for the version is not empty, and the container image builds, runs as a non-root user and contains no secrets.
 2. `npm` publishes the package with provenance under the dist-tag for the version, in the `publish (oidc)` step, then checks that the dist-tag points to the version. If the version is already on npm, it skips the publish and only checks the dist-tag.
-3. `image` builds the image and pushes each image tag to `ghcr.io/ok0/superagent-claude`.
+3. `image` builds the image and pushes each image tag to `ghcr.io/ok0/issuecrew`.
 4. `release` creates the GitHub Release from the tag, with the `CHANGELOG.md` section as notes. A pre-release is marked as a pre-release and a stable release is marked as latest. If the Release already exists, it skips.
 
 If `verify` fails, nothing is published anywhere. Fix the problem, delete the tag (`git push origin :refs/tags/v<version>` and `git tag -d v<version>`), and tag again.
 
 ## Check the release
 
-- `npm view superagent-claude@<version> version` prints the version.
-- `npm view superagent-claude dist-tags` shows `next` (pre-release) or `latest` (stable) at the version.
+- `npm view issuecrew@<version> version` prints the version.
+- `npm view issuecrew dist-tags` shows `next` (pre-release) or `latest` (stable) at the version.
 - `gh release view v<version>` shows the Release, marked as a pre-release or as latest.
-- `docker pull ghcr.io/ok0/superagent-claude:<version>` works, and `docker image inspect --format '{{.Config.User}}' ghcr.io/ok0/superagent-claude:<version>` prints `10001:10001` (a non-root user).
+- `docker pull ghcr.io/ok0/issuecrew:<version>` works, and `docker image inspect --format '{{.Config.User}}' ghcr.io/ok0/issuecrew:<version>` prints `10001:10001` (a non-root user).
 
 ## Recovery
 
-- **Wrong dist-tag.** If the `verify dist-tag` step fails, fix the tag from your machine while logged in to npm: `npm dist-tag add superagent-claude@<version> <tag>`. The workflow does not change dist-tags itself.
+- **Wrong dist-tag.** If the `verify dist-tag` step fails, fix the tag from your machine while logged in to npm: `npm dist-tag add issuecrew@<version> <tag>`. The workflow does not change dist-tags itself.
 - **The npm publish failed.** If `publish (oidc)` fails, for example because the trusted publisher is missing, nothing was published to npm and the later jobs did not run. The workflow has no other publish path. Fix the cause, then open the Actions run and choose **Re-run failed jobs**.
 - **A later job failed.** If `npm` succeeded but `image` or `release` failed, the channels disagree until you fix it. Open the Actions run and choose **Re-run failed jobs**. Each publish step skips what is already published, so a re-run does not publish twice.
 - **A wrong version was published.** npm does not accept the same version twice, so do not try to publish it again. Fix the problem and release the next patch version, for example `0.3.1`.

@@ -30,8 +30,8 @@ export function resolveAuth(env: Record<string, string | undefined>): AuthResolu
   }
 
   const problems: string[] = []
-  if (env['SUPERAGENT_CLAUDE_LIVE'] !== '1') {
-    problems.push('SUPERAGENT_CLAUDE_LIVE=1 is not set')
+  if (env['ISSUECREW_LIVE'] !== '1') {
+    problems.push('ISSUECREW_LIVE=1 is not set')
   }
 
   let mode: AuthMode | undefined
@@ -82,7 +82,7 @@ export function buildSdkEnv(
 export const SUPPLY_HINT = [
   'Supply the credential only through the shell environment, for example:',
   '  read -rs ANTHROPIC_API_KEY && export ANTHROPIC_API_KEY',
-  '  SUPERAGENT_CLAUDE_LIVE=1 pnpm spike:sdk',
+  '  ISSUECREW_LIVE=1 pnpm spike:sdk',
   'Subscription mode needs CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`.',
   'The existing claude login (keychain or the user config dir) is deliberately not used.',
   'SPIKE_AUTH_MODE selects the mode when both variables are set.',

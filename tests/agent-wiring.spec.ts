@@ -35,7 +35,7 @@ const ALL: Record<string, string> = {
   CLOUD_ML_REGION: 'c',
   ANTHROPIC_VERTEX_PROJECT_ID: 'v',
   GOOGLE_APPLICATION_CREDENTIALS: '/g',
-  SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'gh',
+  ISSUECREW_GITHUB_TOKEN: 'gh',
 }
 
 const MODES: AuthMode[] = ['api-key', 'subscription', 'bedrock', 'vertex']
@@ -88,7 +88,7 @@ describe('agent wiring', () => {
     if (mode === 'bedrock') expect(env.CLAUDE_CODE_USE_BEDROCK).toBe('1')
     if (mode === 'vertex') expect(env.CLAUDE_CODE_USE_VERTEX).toBe('1')
     for (const key of others) expect(env[key]).toBeUndefined()
-    expect(env.SUPERAGENT_CLAUDE_GITHUB_TOKEN).toBeUndefined()
+    expect(env.ISSUECREW_GITHUB_TOKEN).toBeUndefined()
 
     const sdk = stubSdk()
     const agent = createAgent({ config: cfg(mode), credential, env: ALL, query: sdk.query })
@@ -96,7 +96,7 @@ describe('agent wiring', () => {
     const sdkEnv = sdk.queries[0]!.options.env as Record<string, string | undefined>
     for (const key of AUTH_ENV[mode]) if (key in ALL) expect(sdkEnv[key]).toBe(ALL[key])
     for (const key of others) expect(sdkEnv[key]).toBeUndefined()
-    expect(sdkEnv.SUPERAGENT_CLAUDE_GITHUB_TOKEN).toBeUndefined()
+    expect(sdkEnv.ISSUECREW_GITHUB_TOKEN).toBeUndefined()
     await session.close()
   })
 
@@ -233,7 +233,7 @@ describe('agent wiring', () => {
     )
   })
 
-  it('worker sessions expose the executor tools through the superagent MCP server', async () => {
+  it('worker sessions expose the executor tools through the issuecrew MCP server', async () => {
     dir = mkdtempSync(join(tmpdir(), 'agent-wiring-'))
     const sdk = stubSdk()
     const config = { ...cfg('api-key'), models: { worker: 'claude-test-model' } }
@@ -249,12 +249,12 @@ describe('agent wiring', () => {
     chat.emit(trigger('1', { addressed: 'mention', meta: { repository: 'owner/repo' } }))
     await waitUntil(() => sdk.queries.length === 1)
     const options = sdk.queries[0]!.options
-    expect(Object.keys(options.mcpServers!)).toEqual(['superagent'])
+    expect(Object.keys(options.mcpServers!)).toEqual(['issuecrew'])
     expect(options.allowedTools!.filter(t => t.startsWith(MCP_TOOL_PREFIX)).sort()).toEqual(
       WORKER_TOOLS.map(n => MCP_TOOL_PREFIX + n).sort(),
     )
     expect(options.model).toBe('claude-test-model')
-    expect((options.env as Record<string, string | undefined>).SUPERAGENT_CLAUDE_GITHUB_TOKEN).toBeUndefined()
+    expect((options.env as Record<string, string | undefined>).ISSUECREW_GITHUB_TOKEN).toBeUndefined()
   })
 
   it('the Claude start opens the Router session with the Router tools and no stand-in', async () => {
@@ -296,7 +296,7 @@ describe('agent wiring', () => {
       .filter(key => !AUTH_ENV.subscription.includes(key))
     for (const key of AUTH_ENV.subscription) if (key in ALL) expect(env[key]).toBe(ALL[key])
     for (const key of others) expect(env[key]).toBeUndefined()
-    expect(env.SUPERAGENT_CLAUDE_GITHUB_TOKEN).toBeUndefined()
+    expect(env.ISSUECREW_GITHUB_TOKEN).toBeUndefined()
 
     chat.emit(trigger('1', { addressed: 'mention', meta: { repository: 'owner/repo' } }))
     await waitUntil(() => router.received.length >= 1)

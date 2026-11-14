@@ -46,7 +46,7 @@ describe('config file', () => {
       retention: { endedTicketDays: 14 },
       models: {},
       review: { enabled: true, minChangedLines: 50, maxPerTicket: 3 },
-      stateDir: '/home/test/.superagent-claude',
+      stateDir: '/home/test/.issuecrew',
     })
   })
 

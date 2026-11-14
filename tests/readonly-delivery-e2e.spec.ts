@@ -136,7 +136,7 @@ function start(
   const clock = new ManualClock(START)
   const sources = installedSources(
     config,
-    { SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'test-token' },
+    { ISSUECREW_GITHUB_TOKEN: 'test-token' },
     { commands: gh.commands, timers: clock, now: clock.now },
   )
   const workerTurns = worker(env, gh)

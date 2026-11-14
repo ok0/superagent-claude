@@ -13,14 +13,14 @@ import type { AuthMode } from '../../src/runtimes/claude/options.ts'
 import { ClaudeRuntime, type ToolDenial } from '../../src/runtimes/claude/runtime.ts'
 import { waitUntil } from '../fixtures/async.ts'
 
-const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
+const LIVE = process.env.ISSUECREW_LIVE === '1'
 const mode: AuthMode | undefined =
-  (process.env.SUPERAGENT_CLAUDE_LIVE_AUTH as AuthMode | undefined) ??
+  (process.env.ISSUECREW_LIVE_AUTH as AuthMode | undefined) ??
   (process.env.CLAUDE_CODE_OAUTH_TOKEN ? 'subscription' : process.env.ANTHROPIC_API_KEY ? 'api-key' : undefined)
-const model = process.env.SUPERAGENT_CLAUDE_LIVE_MODEL ?? 'haiku'
+const model = process.env.ISSUECREW_LIVE_MODEL ?? 'haiku'
 const TOKENS = [
-  process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN,
-  process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN,
+  process.env.ISSUECREW_GITHUB_TOKEN,
+  process.env.ISSUECREW_LIVE_OWNER_TOKEN,
   process.env.CLAUDE_CODE_OAUTH_TOKEN,
   process.env.ANTHROPIC_API_KEY,
 ]

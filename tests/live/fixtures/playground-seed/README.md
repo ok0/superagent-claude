@@ -1,6 +1,6 @@
 # Task tracker
 
-This repository is the test playground for superagent-claude. It is not a real project: its issues and pull requests are opened and closed by automated tests, and nothing here is used in production.
+This repository is the test playground for issuecrew. It is not a real project: its issues and pull requests are opened and closed by automated tests, and nothing here is used in production.
 
 ## Layout
 

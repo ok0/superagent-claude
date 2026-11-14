@@ -147,8 +147,7 @@ export function agentQuestion(
 function agentReplies(comments: readonly IssueComment[], agent: string): IssueComment[] {
   return comments.filter(
     c =>
-      c.user.login.toLowerCase() === agent.toLowerCase() &&
-      !(c.body ?? '').trimStart().startsWith('<!-- superagent-claude:'),
+      c.user.login.toLowerCase() === agent.toLowerCase() && !(c.body ?? '').trimStart().startsWith('<!-- issuecrew:'),
   )
 }
 

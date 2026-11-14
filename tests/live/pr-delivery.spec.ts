@@ -2,7 +2,7 @@
  * Live PR delivery run against the playground repository: the daemon started through the CLI in auto mode with
  * subscription OAuth, an owner issue becomes one pull request by the agent account, and a follow-up PR comment adds a
  * commit in the same ticket, worktree and session. Evidence is read from the store, GitHub and the logs. Gated by
- * SUPERAGENT_CLAUDE_LIVE=1, a configured SUPERAGENT_CLAUDE_LIVE_REPO with its login settings, and the three tokens;
+ * ISSUECREW_LIVE=1, a configured ISSUECREW_LIVE_REPO with its login settings, and the three tokens;
  * never prints a token; the PR body closes the issue, `status` shows the idle session as idle, and the follow-up result
  * goes to the PR, not the issue.
  */
@@ -32,16 +32,16 @@ import { liveEnabled, liveTarget, renderLiveText } from './target.ts'
 
 const TARGET = liveTarget()
 const LIVE = liveEnabled()
-const AGENT_TOKEN = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
-const OWNER_TOKEN = process.env.SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN?.trim()
+const AGENT_TOKEN = process.env.ISSUECREW_GITHUB_TOKEN?.trim()
+const OWNER_TOKEN = process.env.ISSUECREW_LIVE_OWNER_TOKEN?.trim()
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
 const REPO = TARGET ? assertAllowedRepo(TARGET.repo) : ''
 const AGENT = TARGET?.agentLogin ?? ''
 const OWNER = TARGET?.ownerLogin ?? ''
 const text = (value: string): string => (TARGET ? renderLiveText(value, TARGET) : value)
 const LIMITS = { max: 1, maxTurns: 60, maxBudgetUsd: 3 }
-const MARKER = /<!--\s*superagent-claude:(.+?)\s*-->/
-const STRIP = /<!--\s*superagent-claude:.*?-->/g
+const MARKER = /<!--\s*issuecrew:(.+?)\s*-->/
+const STRIP = /<!--\s*issuecrew:.*?-->/g
 const ISSUE_TITLE = 'Add a USAGE file'
 const ISSUE_BODY = text(
   '@{{agent}} Please add a file named USAGE.md with one sentence saying this repository is a playground for automated agent tests, and open a pull request with the change.',
@@ -125,7 +125,7 @@ async function until<T>(
 
 function markerId(body: string): string {
   const match = MARKER.exec(body)
-  if (!match) throw new Error('no superagent-claude marker in comment')
+  if (!match) throw new Error('no issuecrew marker in comment')
   return match[1]!
 }
 
@@ -250,7 +250,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live pr delive
 
   beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), 'sac-live-pr-'))
-    configPath = join(dir, 'superagent-claude.json')
+    configPath = join(dir, 'issuecrew.json')
     config = {
       repositories: [REPO],
       policy: { allowed: [OWNER], acceptMode: 'auto' },
@@ -326,7 +326,7 @@ describe.skipIf(!LIVE || !AGENT_TOKEN || !OWNER_TOKEN || !OAUTH)('live pr delive
           }
         }
       }
-      const badRouterTools = [...routerTools].filter(name => !name.startsWith('mcp__superagent__'))
+      const badRouterTools = [...routerTools].filter(name => !name.startsWith('mcp__issuecrew__'))
       expect(badRouterTools).toEqual([])
       expect(workerPermissionModes.has('bypassPermissions')).toBe(false)
       evidence.transcripts = {

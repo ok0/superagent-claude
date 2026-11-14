@@ -29,7 +29,7 @@ export const MIN_DIST_TAG_WINDOW_SECONDS = 300
 
 const OIDC_RUN = 'npm publish --provenance --tag "$DIST_TAG" --access public'
 const DOCKER_BUILD_LINE =
-  'docker build --label org.opencontainers.image.source=https://github.com/ok0/superagent-claude --label "org.opencontainers.image.version=$VERSION"'
+  'docker build --label org.opencontainers.image.source=https://github.com/ok0/issuecrew --label "org.opencontainers.image.version=$VERSION"'
 const VERIFY_LITERALS = [
   'fetch-depth: 0',
   'pnpm install --frozen-lockfile',
@@ -299,7 +299,7 @@ export function releaseWorkflowProblems(text: string): string[] {
   if (
     /^\s*if:/m.test(dist) ||
     publishIndexes.some(index => index === -1 || index >= distIndex) ||
-    !dist.includes('npm view superagent-claude "dist-tags.$DIST_TAG"') ||
+    !dist.includes('npm view issuecrew "dist-tags.$DIST_TAG"') ||
     !dist.includes('exit 1')
   ) {
     problems.push('dist-tag check must be an unconditional final step that fails on mismatch')
@@ -315,7 +315,7 @@ export function releaseWorkflowProblems(text: string): string[] {
   }
 
   const published = stepNamed(npm, 'check published') ?? ''
-  if (!published.includes('npm view "superagent-claude@$VERSION" version')) {
+  if (!published.includes('npm view "issuecrew@$VERSION" version')) {
     problems.push('publish skip check missing')
   }
   const secretLines = text.split('\n').filter(line => SECRETS_CONTEXT.test(line))
@@ -332,14 +332,14 @@ export function releaseWorkflowProblems(text: string): string[] {
     'GITHUB_TOKEN: ${{ github.token }}',
     'docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin',
     'echo "$GITHUB_TOKEN" |',
-    'docker push "ghcr.io/ok0/superagent-claude:$tag"',
+    'docker push "ghcr.io/ok0/issuecrew:$tag"',
     DOCKER_BUILD_LINE,
   ]
   for (const literal of imageLiterals) {
     if (!image.includes(literal)) problems.push(`image missing: ${literal}`)
   }
   for (const match of text.matchAll(/ghcr\.io\/[A-Za-z0-9._/-]+/g)) {
-    if (match[0] !== 'ghcr.io/ok0/superagent-claude') problems.push(`registry target not allowed: ${match[0]}`)
+    if (match[0] !== 'ghcr.io/ok0/issuecrew') problems.push(`registry target not allowed: ${match[0]}`)
   }
   for (const word of ['docker.io', 'quay.io', '--platform', 'buildx']) {
     if (text.includes(word)) problems.push(`image forbidden: ${word}`)
@@ -450,7 +450,7 @@ const MUTATIONS: Array<{ name: string; mutate: (text: string) => string }> = [
   { name: 'publish in verify', mutate: t => replaceFirst(t, '\n  npm:\n', '\n      - run: npm publish\n\n  npm:\n') },
   {
     name: 'other registry',
-    mutate: t => replaceAllOf(t, 'ghcr.io/ok0/superagent-claude:$tag', 'ghcr.io/other/superagent-claude:$tag'),
+    mutate: t => replaceAllOf(t, 'ghcr.io/ok0/issuecrew:$tag', 'ghcr.io/other/issuecrew:$tag'),
   },
   {
     name: 'missing ci gate',
@@ -535,15 +535,11 @@ describe('release workflow', () => {
   })
 
   it('secret checks match only the ${{ secrets }} context', () => {
-    expect(SECRETS_CONTEXT.test('run: bash scripts/check-image-secrets.sh superagent-claude:release')).toBe(false)
+    expect(SECRETS_CONTEXT.test('run: bash scripts/check-image-secrets.sh issuecrew:release')).toBe(false)
     for (const ref of ['${{ secrets.X }}', '${{secrets.X}}', '${{ toJSON(secrets) }}', "${{ secrets['X'] }}"]) {
       expect(SECRETS_CONTEXT.test(ref)).toBe(true)
     }
-    const script = replaceFirst(
-      real,
-      OIDC_RUN,
-      `${OIDC_RUN} && bash scripts/check-image-secrets.sh superagent-claude:release`,
-    )
+    const script = replaceFirst(real, OIDC_RUN, `${OIDC_RUN} && bash scripts/check-image-secrets.sh issuecrew:release`)
     expect(script).not.toBe(real)
     expect(releaseWorkflowProblems(script)).toEqual([])
     const secret = replaceFirst(real, OIDC_RUN, `${OIDC_RUN} && echo \${{ secrets.X }}`)

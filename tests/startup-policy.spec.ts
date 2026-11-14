@@ -75,7 +75,7 @@ describe('startup rules', () => {
     expect(error.message).not.toMatch(/rule \d/)
 
     const dir = tempDir()
-    const path = join(dir, 'superagent-claude.json')
+    const path = join(dir, 'issuecrew.json')
     writeFileSync(path, JSON.stringify({ repositories: ['owner/repo'], policy: { allowed: [] } }))
     expect(() => loadConfig(path, {})).toThrow(ConfigError)
   })
@@ -180,7 +180,7 @@ describe('startup checks through the GitHub Source', () => {
     const gh = fakeGh(script)
     const sources = installedSources(
       config,
-      { SUPERAGENT_CLAUDE_GITHUB_TOKEN: 't' },
+      { ISSUECREW_GITHUB_TOKEN: 't' },
       { commands: gh.commands, timers: clock, now: clock.now },
     )
     return { sources, gh, clock }
@@ -250,7 +250,7 @@ describe('startup checks through the GitHub Source', () => {
 
 describe('startup refusals through the CLI', () => {
   function writeConfig(dir: string, extra: Record<string, unknown> = {}): string {
-    const path = join(dir, 'superagent-claude.json')
+    const path = join(dir, 'issuecrew.json')
     writeFileSync(
       path,
       JSON.stringify({
@@ -273,9 +273,20 @@ describe('startup refusals through the CLI', () => {
 
   it('a missing agent token exits 2 with agent-token', async () => {
     const dir = tempDir()
-    const c = cliIo(dir, cliEnv(dir, { SUPERAGENT_CLAUDE_GITHUB_TOKEN: undefined }))
+    const c = cliIo(dir, cliEnv(dir, { ISSUECREW_GITHUB_TOKEN: undefined }))
     expect(await main(['start', '--fake', '--config', writeConfig(dir)], c.io)).toBe(2)
     expect(c.err.join('')).toContain('agent-token')
+  })
+
+  it('only the old agent-token variable set exits 2 naming ISSUECREW_GITHUB_TOKEN', async () => {
+    const dir = tempDir()
+    const oldName = ['SUPER', 'AGENT', '_CLAUDE_GITHUB_TOKEN'].join('')
+    const c = cliIo(dir, cliEnv(dir, { ISSUECREW_GITHUB_TOKEN: undefined, [oldName]: 'old-token' }))
+    expect(await main(['start', '--fake', '--config', writeConfig(dir)], c.io)).toBe(2)
+    const err = c.err.join('')
+    expect(err).toContain('Startup refused (agent-token): ')
+    expect(err).toContain('ISSUECREW_GITHUB_TOKEN is not set')
+    expect(err).not.toContain(oldName)
   })
 
   it('a missing credential exits 2 with rule 1 and the variable name', async () => {

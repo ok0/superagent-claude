@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to this project are listed here. Entries are generated from Conventional Commits, versions follow Semantic Versioning, and before 1.0 breaking changes bump the MINOR version.
+All notable changes to this project are listed here. Entries are generated from Conventional Commits, versions follow Semantic Versioning, and before 1.0 breaking changes bump the MINOR version. This project was named superagent-claude before 0.6.0.
 
 ## [0.5.2] - 2026-11-13
 

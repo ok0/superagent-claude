@@ -1,5 +1,5 @@
 /**
- * `superagent-claude prompts diff`: reports built-in default changes of the team sections from the database opened
+ * `issuecrew prompts diff`: reports built-in default changes of the team sections from the database opened
  * read-only; it takes no lock and needs no running daemon.
  */
 import { existsSync } from 'node:fs'
@@ -10,11 +10,11 @@ import { databasePath } from '../app/store.ts'
 import { openReadOnly } from '../app/store-read.ts'
 import type { CliIo } from './main.ts'
 
-export const PROMPTS_USAGE = 'Usage: superagent-claude prompts diff [--config <path>]\n'
+export const PROMPTS_USAGE = 'Usage: issuecrew prompts diff [--config <path>]\n'
 
 export function promptsCommand(argv: readonly string[], io: Pick<CliIo, 'out' | 'err' | 'cwd' | 'env'>): number {
   if (argv[0] !== 'diff') {
-    io.err(`superagent-claude: unknown prompts command '${argv[0] ?? ''}'\n` + PROMPTS_USAGE)
+    io.err(`issuecrew: unknown prompts command '${argv[0] ?? ''}'\n` + PROMPTS_USAGE)
     return 2
   }
   let configArg: string | undefined
@@ -23,13 +23,13 @@ export function promptsCommand(argv: readonly string[], io: Pick<CliIo, 'out' | 
     if (arg === '--config') {
       const value = argv[i + 1]
       if (value === undefined) {
-        io.err(`superagent-claude: option '--config' needs a path\n` + PROMPTS_USAGE)
+        io.err(`issuecrew: option '--config' needs a path\n` + PROMPTS_USAGE)
         return 2
       }
       configArg = value
       i++
     } else {
-      io.err(`superagent-claude: unknown option '${arg}'\n` + PROMPTS_USAGE)
+      io.err(`issuecrew: unknown option '${arg}'\n` + PROMPTS_USAGE)
       return 2
     }
   }
@@ -40,7 +40,7 @@ export function promptsCommand(argv: readonly string[], io: Pick<CliIo, 'out' | 
     config = loadConfig(path, io.env)
   } catch (error) {
     if (error instanceof ConfigError) {
-      io.err(`superagent-claude: ${error.message}\n`)
+      io.err(`issuecrew: ${error.message}\n`)
       return 2
     }
     throw error

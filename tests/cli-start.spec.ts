@@ -28,7 +28,7 @@ function tempDir(): string {
 }
 
 function writeConfig(dir: string, extra: Record<string, unknown> = {}): string {
-  const path = join(dir, 'superagent-claude.json')
+  const path = join(dir, 'issuecrew.json')
   writeFileSync(
     path,
     JSON.stringify({
@@ -46,7 +46,7 @@ function io(cwd: string) {
 }
 
 function spawnCli(args: string[], dir: string) {
-  const entry = process.env.SUPERAGENT_CLAUDE_CLI ?? fileURLToPath(new URL('../src/cli/bin.ts', import.meta.url))
+  const entry = process.env.ISSUECREW_CLI ?? fileURLToPath(new URL('../src/cli/bin.ts', import.meta.url))
   const gh = githubs.get(dir) ?? fileGh(dir, { repositories: { 'owner/repo': {} } })
   githubs.set(dir, gh)
   const child = spawn(process.execPath, [entry, ...args], {
@@ -140,7 +140,7 @@ describe('start in process', () => {
     expect(events.at(-1)?.event).toBe('runtime.stopped')
   }, 30_000)
 
-  it('finds superagent-claude.json in the current directory', async () => {
+  it('finds issuecrew.json in the current directory', async () => {
     const dir = tempDir()
     writeConfig(dir)
     const c = io(dir)
@@ -184,7 +184,7 @@ describe('start as a child process', () => {
     const second = spawnCli(['start', '--fake', '--config', cfg], dir)
     await waitUntil(() => second.state.code !== undefined, 15_000)
     expect(second.state.code).toBe(2)
-    expect(second.state.err).toContain('Another superagent-claude process')
+    expect(second.state.err).toContain('Another issuecrew process')
 
     first.child.kill('SIGINT')
     await waitUntil(() => first.state.code !== undefined, 15_000)

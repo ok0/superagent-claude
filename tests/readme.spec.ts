@@ -107,10 +107,10 @@ describe('README and public docs', () => {
 
   it('getting-started names the start command and the read commands', () => {
     for (const text of [
-      'superagent-claude start [--config <path>]',
-      'superagent-claude status',
-      'superagent-claude needs',
-      'superagent-claude prompts diff',
+      'issuecrew start [--config <path>]',
+      'issuecrew status',
+      'issuecrew needs',
+      'issuecrew prompts diff',
     ])
       expect(gettingStarted).toContain(text)
   })
@@ -124,7 +124,7 @@ describe('README and public docs', () => {
     for (const text of [
       'Required:',
       'auth.mode',
-      'SUPERAGENT_CLAUDE_GITHUB_TOKEN',
+      'ISSUECREW_GITHUB_TOKEN',
       '`repositories`',
       '`policy.allowed`',
       'Everything else has a default.',
@@ -168,13 +168,13 @@ describe('README and public docs', () => {
   it('the quick start installs from npm and points to the published image', () => {
     const quick = readme.slice(readme.indexOf('## Quick start'), readme.indexOf('\n## Documentation'))
     for (const text of [
-      'npm i -g superagent-claude',
-      'superagent-claude start --config superagent-claude.json',
-      'ghcr.io/ok0/superagent-claude',
+      'npm i -g issuecrew',
+      'issuecrew start --config issuecrew.json',
+      'ghcr.io/ok0/issuecrew',
       '](docs/deploy.md#docker)',
       '](docs/authentication.md)',
       '](docs/getting-started.md)',
-      'SUPERAGENT_CLAUDE_GITHUB_TOKEN',
+      'ISSUECREW_GITHUB_TOKEN',
     ])
       expect(quick).toContain(text)
     expect(quick).not.toMatch(/pnpm install|pnpm build|node lib\/cli\.js/)
@@ -185,9 +185,9 @@ describe('README and public docs', () => {
       gettingStarted.indexOf('## Install'),
       gettingStarted.indexOf('\n## Agent account'),
     )
-    for (const text of ['npm i -g superagent-claude', 'pnpm install', 'pnpm build', 'lib/cli.js', 'pnpm link --global'])
+    for (const text of ['npm i -g issuecrew', 'pnpm install', 'pnpm build', 'lib/cli.js', 'pnpm link --global'])
       expect(install).toContain(text)
-    expect(install.indexOf('npm i -g superagent-claude')).toBeLessThan(install.indexOf('pnpm install'))
+    expect(install.indexOf('npm i -g issuecrew')).toBeLessThan(install.indexOf('pnpm install'))
   })
 
   it('every relative link in the README and docs resolves', () => {
@@ -263,10 +263,10 @@ describe('README and public docs', () => {
 
   it('deploy.md has a systemd unit and a launchd plist running start, with no secrets', () => {
     expect(existsSync(join(root, 'docs/deploy.md'))).toBe(true)
-    expect(deploy).toMatch(/^ExecStart=.*superagent-claude start/m)
+    expect(deploy).toMatch(/^ExecStart=.*issuecrew start/m)
     expect(deploy).toContain('[Service]')
     const plistArgs = deploy.slice(deploy.indexOf('<key>ProgramArguments</key>'))
-    expect(plistArgs.slice(0, plistArgs.indexOf('</array>'))).toContain('superagent-claude start')
+    expect(plistArgs.slice(0, plistArgs.indexOf('</array>'))).toContain('issuecrew start')
     expect(deploy).not.toMatch(/\bgh[pousr]_[A-Za-z0-9]{8,}|_pat_[A-Za-z0-9]|sk-ant-/)
     for (const match of deploy.matchAll(/^(\w*(TOKEN|KEY|SECRET)\w*)=(.*)$/gm)) expect(match[3]).toMatch(/^<[^>]+>$/)
     expect(deploy).not.toContain('.docs/')

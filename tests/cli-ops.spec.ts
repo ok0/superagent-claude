@@ -37,7 +37,7 @@ function io(dir: string) {
 }
 
 function spawnCli(args: string[], dir: string) {
-  const entry = process.env.SUPERAGENT_CLAUDE_CLI ?? fileURLToPath(new URL('../src/cli/bin.ts', import.meta.url))
+  const entry = process.env.ISSUECREW_CLI ?? fileURLToPath(new URL('../src/cli/bin.ts', import.meta.url))
   const gh = githubs.get(dir) ?? fileGh(dir, { repositories: { 'owner/repo': {}, 'owner/other': {} } })
   githubs.set(dir, gh)
   const child = spawn(process.execPath, [entry, ...args], {

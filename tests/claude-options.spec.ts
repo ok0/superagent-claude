@@ -56,7 +56,7 @@ const SOURCE_ENV: Record<string, string> = {
   USER: 'v-USER',
   SHELL: 'v-SHELL',
   TMPDIR: 'v-TMPDIR',
-  SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'v-SUPERAGENT_CLAUDE_GITHUB_TOKEN',
+  ISSUECREW_GITHUB_TOKEN: 'v-ISSUECREW_GITHUB_TOKEN',
   GITHUB_TOKEN: 'v-GITHUB_TOKEN',
   GH_TOKEN: 'v-GH_TOKEN',
   ANTHROPIC_API_KEY: 'v-ANTHROPIC_API_KEY',
@@ -122,7 +122,7 @@ describe('fixed safety defaults', () => {
     expect(none.disallowedTools).toEqual(expect.arrayContaining(['Read', 'Glob', 'Grep']))
 
     const write = sdkOptions(spec(), ctx('api-key'))
-    expect(write.allowedTools).toContain('mcp__superagent__orchestrator_report')
+    expect(write.allowedTools).toContain('mcp__issuecrew__orchestrator_report')
     expect(builtinTools({ fs: 'write', shell: true, web: false }).allowed).toEqual(
       expect.arrayContaining(['Write', 'Edit', 'NotebookEdit', 'Bash']),
     )
@@ -186,7 +186,7 @@ describe('fixed safety defaults', () => {
         expect(key in env).toBe(false)
       }
     }
-    expect('SUPERAGENT_CLAUDE_GITHUB_TOKEN' in env).toBe(false)
+    expect('ISSUECREW_GITHUB_TOKEN' in env).toBe(false)
     expect('GITHUB_TOKEN' in env).toBe(false)
     expect('GH_TOKEN' in env).toBe(false)
     expect('RANDOM_DAEMON_VAR' in env).toBe(false)
@@ -353,7 +353,7 @@ describe('fixed safety defaults', () => {
 
     const server = mcpServer(tools, signal)
     expect(server.type).toBe('sdk')
-    expect(server.name).toBe('superagent')
+    expect(server.name).toBe('issuecrew')
   })
 
   it('the shell worker allows the nine read-only git rules and no broad git or push rule', () => {
@@ -590,10 +590,10 @@ describe('subagents', () => {
     const s = spec()
     const options = sdkOptions(
       s,
-      ctx('subscription', { env: { ...SOURCE_ENV, SUPERAGENT_CLAUDE_GITHUB_TOKEN: 'ghp_x', ANTHROPIC_API_KEY: 'k' } }),
+      ctx('subscription', { env: { ...SOURCE_ENV, ISSUECREW_GITHUB_TOKEN: 'ghp_x', ANTHROPIC_API_KEY: 'k' } }),
     )
     expect(options.env).toBeDefined()
-    expect('SUPERAGENT_CLAUDE_GITHUB_TOKEN' in options.env!).toBe(false)
+    expect('ISSUECREW_GITHUB_TOKEN' in options.env!).toBe(false)
     expect('ANTHROPIC_API_KEY' in options.env!).toBe(false)
     expect(Object.keys(options).some(key => key.toLowerCase().includes('agent'))).toBe(false)
     expect(options.allowedTools!.filter(t => t !== 'Agent')).toEqual([
@@ -628,7 +628,7 @@ describe('subagents', () => {
   it('host tools are denied inside subagents only', async () => {
     const signal = new AbortController().signal
     const s = spec()
-    for (const tool of ['mcp__superagent__orchestrator_report', 'mcp__superagent__orchestrator_publish']) {
+    for (const tool of ['mcp__issuecrew__orchestrator_report', 'mcp__issuecrew__orchestrator_publish']) {
       expect(guardDecision(s, tool, { status: 'waiting', human_action: { kind: 'x' } }, 'a1')).toBe(
         'Host tools are only available to the main worker, not to subagents',
       )
@@ -638,7 +638,7 @@ describe('subagents', () => {
     const onDeny = vi.fn()
     const options = sdkOptions(s, ctx('api-key', { onDeny }))
     const out = (await hookFn(options.hooks!.PreToolUse)(
-      hookInput('mcp__superagent__orchestrator_report', {}, 'a1'),
+      hookInput('mcp__issuecrew__orchestrator_report', {}, 'a1'),
       'u',
       { signal },
     )) as {
@@ -650,7 +650,7 @@ describe('subagents', () => {
     )
     expect(onDeny).toHaveBeenCalledTimes(1)
     expect(onDeny).toHaveBeenCalledWith(
-      'mcp__superagent__orchestrator_report',
+      'mcp__issuecrew__orchestrator_report',
       'Host tools are only available to the main worker, not to subagents',
       'a1',
     )
@@ -754,7 +754,7 @@ describe('reviewer subagent', () => {
     execute: async () => ({ ok: true }),
   }
   const reviewer = (admit = vi.fn(async () => undefined), finished = vi.fn()): SubagentSpec => ({
-    name: 'superagent-reviewer',
+    name: 'issuecrew-reviewer',
     description: 'reviews',
     instructions: 'review it',
     tools: 'read',
@@ -774,7 +774,7 @@ describe('reviewer subagent', () => {
     tool_use_id: 'u',
     ...(agent_id !== undefined ? { agent_id } : {}),
   })
-  const reviewerInput = (tool_name: string, tool_input: unknown, agent_type = 'superagent-reviewer') => ({
+  const reviewerInput = (tool_name: string, tool_input: unknown, agent_type = 'issuecrew-reviewer') => ({
     ...hookInput(tool_name, tool_input, 'r1'),
     agent_type,
   })
@@ -791,8 +791,8 @@ describe('reviewer subagent', () => {
 
   it('the reviewer definition is read-only and a subset of the worker allow set', () => {
     const options = sdkOptions(withReviewer(reviewer()), ctx('api-key'))
-    const definition = options.agents!['superagent-reviewer']!
-    expect(definition.tools).toEqual(['Read', 'Glob', 'Grep', 'mcp__superagent__git_inspect'])
+    const definition = options.agents!['issuecrew-reviewer']!
+    expect(definition.tools).toEqual(['Read', 'Glob', 'Grep', 'mcp__issuecrew__git_inspect'])
     expect(definition.disallowedTools).toEqual(
       expect.arrayContaining(['Bash', 'Write', 'Edit', 'NotebookEdit', 'Agent', 'WebFetch', 'WebSearch']),
     )
@@ -800,7 +800,7 @@ describe('reviewer subagent', () => {
     expect(definition.prompt).toBe('review it')
 
     const without = sdkOptions(spec({ subagents: [reviewer()] }), ctx('api-key'))
-    expect(without.agents!['superagent-reviewer']!.tools).toEqual(['Read', 'Glob', 'Grep'])
+    expect(without.agents!['issuecrew-reviewer']!.tools).toEqual(['Read', 'Glob', 'Grep'])
 
     const router = sdkOptions(
       spec({ role: 'router', builtins: { fs: 'none', shell: false, web: false }, subagents: [reviewer()] }),
@@ -821,8 +821,8 @@ describe('reviewer subagent', () => {
       ['Edit', { file_path: '/work/t1/a.ts' }],
       ['NotebookEdit', { notebook_path: '/work/t1/a.ipynb' }],
       ['Agent', { prompt: 'p', description: 'd' }],
-      ['mcp__superagent__orchestrator_publish', {}],
-      ['mcp__superagent__orchestrator_report', {}],
+      ['mcp__issuecrew__orchestrator_publish', {}],
+      ['mcp__issuecrew__orchestrator_report', {}],
     ]
     for (const [tool, input] of denied) {
       const out = await decide(options, reviewerInput(tool, input))
@@ -838,18 +838,18 @@ describe('reviewer subagent', () => {
       ['Read', { file_path: '/work/t1/a.ts' }],
       ['Glob', { pattern: '**/*.ts' }],
       ['Grep', { pattern: 'x' }],
-      ['mcp__superagent__git_inspect', { command: 'log' }],
+      ['mcp__issuecrew__git_inspect', { command: 'log' }],
     ]
     for (const [tool, input] of allowed) expect(await decide(options, reviewerInput(tool, input))).toEqual({})
 
-    expect(guardDecision(withReviewer(reviewer()), 'Bash', { command: 'ls' }, 'r1', 'superagent-reviewer')).toBe(
+    expect(guardDecision(withReviewer(reviewer()), 'Bash', { command: 'ls' }, 'r1', 'issuecrew-reviewer')).toBe(
       READ_ONLY,
     )
   })
 
   it('another subagent type keeps the host tool ban, git_inspect included', async () => {
     const options = sdkOptions(withReviewer(reviewer()), ctx('api-key'))
-    const tool = 'mcp__superagent__git_inspect'
+    const tool = 'mcp__issuecrew__git_inspect'
     const general = await decide(options, {
       ...hookInput(tool, { command: 'log' }, 'r1'),
       agent_type: 'general-purpose',
@@ -865,7 +865,7 @@ describe('reviewer subagent', () => {
 
   it('no bare allowedTools entry gives the reviewer a tool its guard denies', async () => {
     const options = sdkOptions(withReviewer(reviewer()), ctx('api-key'))
-    const definition = options.agents!['superagent-reviewer']!
+    const definition = options.agents!['issuecrew-reviewer']!
     expect(options.allowedTools).toContain('Bash')
     const table: Record<string, unknown> = {
       Write: { file_path: '/work/t1/a.ts' },
@@ -882,7 +882,7 @@ describe('reviewer subagent', () => {
       expect(guardAllows).toBe(definition.tools!.includes(name))
       if (!guardAllows) {
         expect(definition.tools).not.toContain(name)
-        expect(definition.disallowedTools!.includes(name) || name.startsWith('mcp__superagent__')).toBe(true)
+        expect(definition.disallowedTools!.includes(name) || name.startsWith('mcp__issuecrew__')).toBe(true)
       }
     }
   })
@@ -894,7 +894,7 @@ describe('reviewer subagent', () => {
     const call = mainInput('Agent', {
       prompt: 'check it',
       description: 'd',
-      subagent_type: 'superagent-reviewer',
+      subagent_type: 'issuecrew-reviewer',
       run_in_background: true,
     })
 
@@ -924,7 +924,7 @@ describe('reviewer subagent', () => {
     )
     expect((await decide(rejecting, call)).hookSpecificOutput?.permissionDecision).toBe('deny')
 
-    const agentInput = { prompt: 'p', description: 'd', subagent_type: 'superagent-reviewer' }
+    const agentInput = { prompt: 'p', description: 'd', subagent_type: 'issuecrew-reviewer' }
     expect(guardDecision(spec(), 'Agent', agentInput)).toContain('Only these subagent types')
     expect(guardDecision(withReviewer(reviewer()), 'Agent', agentInput)).toBeUndefined()
   })
@@ -955,12 +955,12 @@ describe('reviewer subagent', () => {
         { signal },
       )
 
-    await post({ subagent_type: 'superagent-reviewer', prompt: 'p', description: 'd' })
+    await post({ subagent_type: 'issuecrew-reviewer', prompt: 'p', description: 'd' })
     expect(finished).toHaveBeenCalledTimes(1)
     expect(finished).toHaveBeenCalledWith('ok\nFINDINGS bug=1 missing=0 style=1')
 
     await post({ subagent_type: 'general-purpose', prompt: 'p', description: 'd' })
-    await post({ subagent_type: 'superagent-reviewer', prompt: 'p', description: 'd' }, 'r1')
+    await post({ subagent_type: 'issuecrew-reviewer', prompt: 'p', description: 'd' }, 'r1')
     expect(finished).toHaveBeenCalledTimes(1)
 
     expect(agentResponseText('x')).toBe('x')

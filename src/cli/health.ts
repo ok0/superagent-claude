@@ -12,7 +12,7 @@ import { openReadOnly, writerActive, type StoreReader } from '../app/store-read.
 import type { HealthSnapshot } from '../infra/health.ts'
 import type { CliIo } from './main.ts'
 
-export const HEALTH_USAGE = 'Usage: superagent-claude health --live|--ready [--config <path>]\n'
+export const HEALTH_USAGE = 'Usage: issuecrew health --live|--ready [--config <path>]\n'
 export const LIVE_SNAPSHOT_MS = 60_000
 
 function messageOf(error: unknown): string {
@@ -35,31 +35,31 @@ export function healthCommand(
     const arg = argv[i]!
     if (arg === '--live' || arg === '--ready') {
       if (mode !== undefined) {
-        io.err(`superagent-claude: choose one of --live or --ready\n` + HEALTH_USAGE)
+        io.err(`issuecrew: choose one of --live or --ready\n` + HEALTH_USAGE)
         return 2
       }
       mode = arg === '--live' ? 'live' : 'ready'
     } else if (arg === '--config') {
       const value = argv[i + 1]
       if (value === undefined) {
-        io.err(`superagent-claude: option '--config' needs a path\n` + HEALTH_USAGE)
+        io.err(`issuecrew: option '--config' needs a path\n` + HEALTH_USAGE)
         return 2
       }
       configArg = value
       i++
     } else {
-      io.err(`superagent-claude: unknown option '${arg}'\n` + HEALTH_USAGE)
+      io.err(`issuecrew: unknown option '${arg}'\n` + HEALTH_USAGE)
       return 2
     }
   }
   if (mode === undefined) {
-    io.err(`superagent-claude: health needs --live or --ready\n` + HEALTH_USAGE)
+    io.err(`issuecrew: health needs --live or --ready\n` + HEALTH_USAGE)
     return 2
   }
   const checked = mode
 
   const fail = (reason: string): number => {
-    io.err(`superagent-claude: not ${checked}: ${reason}\n`)
+    io.err(`issuecrew: not ${checked}: ${reason}\n`)
     return 1
   }
 

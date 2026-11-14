@@ -1,6 +1,6 @@
 /**
  * Linux sandbox through the adapter: a real dontAsk session with network.allow ['example.com'] fetches an allowed and a
- * disallowed domain; the result is compared with probe().sandbox. Runs only on Linux with SUPERAGENT_CLAUDE_LIVE=1 and
+ * disallowed domain; the result is compared with probe().sandbox. Runs only on Linux with ISSUECREW_LIVE=1 and
  * CLAUDE_CODE_OAUTH_TOKEN. Writes adapter.json to SANDBOX_LINUX_OUT when set. SANDBOX_WEAKER_NESTED=1 sets
  * security.weakerNestedSandbox and SANDBOX_ALLOW_UNSANDBOXED=1 sets security.allowUnsandboxed. Only counts of
  * CLAUDE_CODE_OAUTH_TOKEN are recorded, never values. A probe.sh written by the test counts, per token name, the other
@@ -16,12 +16,12 @@ import { ClaudeRuntime } from '../../src/runtimes/claude/runtime.ts'
 import { waitUntil } from '../fixtures/async.ts'
 import { contractSpec } from '../fixtures/runtime-contract.ts'
 
-const LIVE = process.env.SUPERAGENT_CLAUDE_LIVE === '1'
+const LIVE = process.env.ISSUECREW_LIVE === '1'
 const OAUTH = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
-const GITHUB = process.env.SUPERAGENT_CLAUDE_GITHUB_TOKEN?.trim()
+const GITHUB = process.env.ISSUECREW_GITHUB_TOKEN?.trim()
 const PROBE = `#!/bin/sh
 # Counts only, never values.
-for name in CLAUDE_CODE_OAUTH_TOKEN SUPERAGENT_CLAUDE_GITHUB_TOKEN; do
+for name in CLAUDE_CODE_OAUTH_TOKEN ISSUECREW_GITHUB_TOKEN; do
   n=0
   for p in /proc/[0-9]*; do
     [ "$p" = "/proc/$$" ] && continue
@@ -64,7 +64,7 @@ describe.skipIf(!LIVE || !OAUTH || process.platform !== 'linux')('linux sandbox 
       network: { allow: ['example.com'] },
       limits: { maxTurns: 6, maxBudgetUsd: 0.3 },
       env: {},
-      model: process.env.SUPERAGENT_CLAUDE_LIVE_MODEL ?? 'haiku',
+      model: process.env.ISSUECREW_LIVE_MODEL ?? 'haiku',
     })
     const session = await runtime.open(spec)
     const events: RuntimeEvent[] = []
@@ -84,7 +84,7 @@ describe.skipIf(!LIVE || !OAUTH || process.platform !== 'linux')('linux sandbox 
     const a = /A:(\d{3})/.exec(net)?.[1]
     const b = /B:(\d{3})/.exec(net)?.[1]
     const envE = /E_CLAUDE_CODE_OAUTH_TOKEN:(\d+)/.exec(net)?.[1]
-    const envG = /E_SUPERAGENT_CLAUDE_GITHUB_TOKEN:(\d+)/.exec(net)?.[1]
+    const envG = /E_ISSUECREW_GITHUB_TOKEN:(\d+)/.exec(net)?.[1]
     const envS = /S:(\d+)/.exec(net)?.[1]
     const proc = /P:(visible|hidden)/.exec(net)?.[1]
     const probeRan = /Z:done/.test(net)

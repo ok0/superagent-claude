@@ -49,7 +49,7 @@ const GOOD_DOCKERFILE = [
   'ENV CI=true',
   'FROM node:24-bookworm-slim',
   'USER 10001:10001',
-  'ENTRYPOINT ["/usr/bin/tini", "--", "superagent-claude"]',
+  'ENTRYPOINT ["/usr/bin/tini", "--", "issuecrew"]',
   'CMD ["start"]',
   '',
 ].join('\n')
@@ -61,7 +61,7 @@ describe('dockerfile', () => {
     const dockerignore = readFileSync(`${ROOT}/.dockerignore`, 'utf8')
     expect(dockerfileProblems(dockerfile, dockerignore)).toEqual([])
     expect(dockerfile).toContain('FROM node:24-bookworm-slim')
-    expect(dockerfile).toContain('VOLUME /var/lib/superagent-claude')
+    expect(dockerfile).toContain('VOLUME /var/lib/issuecrew')
     expect(dockerfile).toContain("-iname 'readme*'")
     const aptLine = dockerfile.split('\n').find(l => l.includes('apt-get install')) ?? ''
     for (const pkg of ['git', 'bubblewrap', 'socat', 'ripgrep', 'ca-certificates', 'tini']) {
@@ -76,7 +76,7 @@ describe('dockerfile', () => {
     ['no USER', GOOD_DOCKERFILE.replace('USER 10001:10001\n', ''), GOOD_DOCKERIGNORE],
     [
       'ENTRYPOINT ["node"]',
-      GOOD_DOCKERFILE.replace('ENTRYPOINT ["/usr/bin/tini", "--", "superagent-claude"]', 'ENTRYPOINT ["node"]'),
+      GOOD_DOCKERFILE.replace('ENTRYPOINT ["/usr/bin/tini", "--", "issuecrew"]', 'ENTRYPOINT ["node"]'),
       GOOD_DOCKERIGNORE,
     ],
     [
@@ -106,7 +106,7 @@ describe('dockerfile', () => {
       'FROM node:24-bookworm-slim AS build',
       'USER 10001',
       'FROM node:24-bookworm-slim',
-      'ENTRYPOINT ["/usr/bin/tini", "--", "superagent-claude"]',
+      'ENTRYPOINT ["/usr/bin/tini", "--", "issuecrew"]',
       '',
     ].join('\n')
     expect(dockerfileProblems(dockerfile, GOOD_DOCKERIGNORE)).toContain('final stage has no USER')

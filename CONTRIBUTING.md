@@ -1,6 +1,6 @@
-# Contributing to superagent-claude
+# Contributing to issuecrew
 
-Thanks for helping improve superagent-claude. This guide covers setup, the checks, and how to open a pull request.
+Thanks for helping improve issuecrew. This guide covers setup, the checks, and how to open a pull request.
 
 ## Development setup
 
@@ -8,8 +8,8 @@ Thanks for helping improve superagent-claude. This guide covers setup, the check
 - pnpm 11. The exact version is the `packageManager` field in `package.json`, for example `npm install --global pnpm@11.28.11`.
 
 ```sh
-git clone https://github.com/ok0/superagent-claude.git
-cd superagent-claude
+git clone https://github.com/ok0/issuecrew.git
+cd issuecrew
 pnpm install --frozen-lockfile
 pnpm build
 ```
@@ -17,7 +17,7 @@ pnpm build
 ## Tests
 
 - `pnpm test`: the offline suite. It needs no network, no credentials and no Docker. Every pull request must pass it.
-- `pnpm test:live`: the tests under `tests/live/` that run against real GitHub test repositories and a real model. They need credentials (`SUPERAGENT_CLAUDE_LIVE=1`, an agent token, an owner token, model auth) and are skipped without them. Run them by hand on your own machine only.
+- `pnpm test:live`: the tests under `tests/live/` that run against real GitHub test repositories and a real model. They need credentials (`ISSUECREW_LIVE=1`, an agent token, an owner token, model auth) and are skipped without them. Run them by hand on your own machine only.
 
 CI never runs the live tests.
 
@@ -33,15 +33,15 @@ The live tests write only to the repository you name. Without that setting, ever
 
 | Variable | Required | Value |
 | --- | --- | --- |
-| `SUPERAGENT_CLAUDE_LIVE` | yes | `1` |
-| `SUPERAGENT_CLAUDE_LIVE_REPO` | yes | `your-name/your-playground`, the only repository written to |
-| `SUPERAGENT_CLAUDE_LIVE_OWNER_LOGIN` | yes | the owner login, for example `your-name` |
-| `SUPERAGENT_CLAUDE_LIVE_AGENT_LOGIN` | yes | the agent login, for example `your-agent` |
-| `SUPERAGENT_CLAUDE_LIVE_OWNER_TOKEN` | yes | a token of the owner login |
-| `SUPERAGENT_CLAUDE_GITHUB_TOKEN` | yes | a token of the agent login |
+| `ISSUECREW_LIVE` | yes | `1` |
+| `ISSUECREW_LIVE_REPO` | yes | `your-name/your-playground`, the only repository written to |
+| `ISSUECREW_LIVE_OWNER_LOGIN` | yes | the owner login, for example `your-name` |
+| `ISSUECREW_LIVE_AGENT_LOGIN` | yes | the agent login, for example `your-agent` |
+| `ISSUECREW_LIVE_OWNER_TOKEN` | yes | a token of the owner login |
+| `ISSUECREW_GITHUB_TOKEN` | yes | a token of the agent login |
 | `CLAUDE_CODE_OAUTH_TOKEN` | yes | model auth |
-| `SUPERAGENT_CLAUDE_LIVE_REPORT_REPO` | no | a second repository that cleanup only reads and reports on |
-| `SUPERAGENT_CLAUDE_LIVE_SCENARIOS` | no | extra code-change scenarios, comma separated |
+| `ISSUECREW_LIVE_REPORT_REPO` | no | a second repository that cleanup only reads and reports on |
+| `ISSUECREW_LIVE_SCENARIOS` | no | extra code-change scenarios, comma separated |
 
 ## Checks
 
@@ -54,8 +54,8 @@ Code comments say why, not what. Do not refer to internal planning IDs (design r
 To check the container image locally, you need Docker. CI builds the image but never pushes it.
 
 ```sh
-docker build -t superagent-claude:local .
-bash scripts/check-image-secrets.sh superagent-claude:local
+docker build -t issuecrew:local .
+bash scripts/check-image-secrets.sh issuecrew:local
 ```
 
 ## Commit messages

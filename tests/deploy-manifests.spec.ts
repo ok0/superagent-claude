@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const read = (path: string): string => readFileSync(join(root, path), 'utf8')
-const manifest = read('deploy/k8s/superagent-claude.yaml')
+const manifest = read('deploy/k8s/issuecrew.yaml')
 const deploy = read('docs/deploy.md')
 const dockerfile = read('Dockerfile')
 
@@ -29,8 +29,8 @@ const DEPLOYMENT_REQUIRED = [
   /"--log-format", "json"/,
   /requests:/,
   /limits:/,
-  /mountPath: \/var\/lib\/superagent-claude$/m,
-  /mountPath: \/etc\/superagent-claude$/m,
+  /mountPath: \/var\/lib\/issuecrew$/m,
+  /mountPath: \/etc\/issuecrew$/m,
 ]
 
 function documentsOf(text: string): string[] {
@@ -97,21 +97,21 @@ function manifestProblems(text: string): string[] {
   for (const entry of entries) {
     if (!/^  [A-Z0-9_]+: (""|'')$/.test(entry)) problems.push(`secret value not empty: ${entry.trim()}`)
   }
-  if (!entries.some(entry => entry.startsWith('  SUPERAGENT_CLAUDE_GITHUB_TOKEN:'))) {
-    problems.push('SUPERAGENT_CLAUDE_GITHUB_TOKEN missing from secret')
+  if (!entries.some(entry => entry.startsWith('  ISSUECREW_GITHUB_TOKEN:'))) {
+    problems.push('ISSUECREW_GITHUB_TOKEN missing from secret')
   }
 
   const pvc = docs.find(doc => kindOf(doc) === 'PersistentVolumeClaim') ?? ''
   if (!/- ReadWriteOnce/.test(pvc)) problems.push('PVC is not ReadWriteOnce')
 
   const configMap = docs.find(doc => kindOf(doc) === 'ConfigMap') ?? ''
-  if (!configMap.includes('superagent-claude.json: |')) problems.push('ConfigMap lacks superagent-claude.json')
+  if (!configMap.includes('issuecrew.json: |')) problems.push('ConfigMap lacks issuecrew.json')
   if (!configMap.includes('"weakerNestedSandbox": true')) problems.push('ConfigMap lacks weakerNestedSandbox')
 
   return problems
 }
 
-describe('deploy/k8s/superagent-claude.yaml', () => {
+describe('deploy/k8s/issuecrew.yaml', () => {
   it('the manifest has no problems', () => {
     expect(manifestProblems(manifest)).toEqual([])
   })
@@ -123,7 +123,7 @@ describe('deploy/k8s/superagent-claude.yaml', () => {
       ['runAsUser: 10001', 'runAsUser: 0'],
       ['allowPrivilegeEscalation: false', 'allowPrivilegeEscalation: false\n            privileged: true'],
       ['type: RuntimeDefault', 'type: Unconfined'],
-      ['SUPERAGENT_CLAUDE_GITHUB_TOKEN: ""', 'SUPERAGENT_CLAUDE_GITHUB_TOKEN: "not-empty"'],
+      ['ISSUECREW_GITHUB_TOKEN: ""', 'ISSUECREW_GITHUB_TOKEN: "not-empty"'],
       ['terminationGracePeriodSeconds: 30', 'terminationGracePeriodSeconds: 5'],
       ['drop: ["ALL"]', 'drop: []'],
       ['periodSeconds: 10', 'periodSeconds: 5'],
@@ -155,20 +155,20 @@ describe('docs/deploy.md Kubernetes section', () => {
   it('has the Kubernetes section', () => {
     for (const text of [
       '## Kubernetes',
-      'kubectl create secret generic superagent-claude',
+      'kubectl create secret generic issuecrew',
       "-l 'app.kubernetes.io/component!=credentials'",
       'ReadWriteOnce',
       'replicas: 1',
       'strategy: Recreate',
       'exits with code 2',
-      'superagent-claude health --ready',
-      'superagent-claude health --live',
+      'issuecrew health --ready',
+      'issuecrew health --live',
       '60 seconds',
       'terminationGracePeriodSeconds: 30',
       'at most 10 seconds',
       'within 15 seconds',
       '--log-format json',
-      'SUPERAGENT_CLAUDE_LOG_FORMAT=json',
+      'ISSUECREW_LOG_FORMAT=json',
       '[redacted]',
       'RuntimeDefault',
       'weakerNestedSandbox',

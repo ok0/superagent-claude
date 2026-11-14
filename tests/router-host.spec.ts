@@ -89,8 +89,8 @@ describe('RouterHost', () => {
     for (const name of ['Bash', 'Write', 'Edit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Read', 'Glob', 'Grep']) {
       expect(options.disallowedTools).toContain(name)
     }
-    for (const name of options.allowedTools ?? []) expect(name.startsWith('mcp__superagent__')).toBe(true)
-    expect([...(options.allowedTools ?? [])].sort()).toEqual(ROUTER_TOOLS.map(n => 'mcp__superagent__' + n).sort())
+    for (const name of options.allowedTools ?? []) expect(name.startsWith('mcp__issuecrew__')).toBe(true)
+    expect([...(options.allowedTools ?? [])].sort()).toEqual(ROUTER_TOOLS.map(n => 'mcp__issuecrew__' + n).sort())
     expect(options.systemPrompt).toBe('route')
   })
 

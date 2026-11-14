@@ -9,12 +9,12 @@ import { KV } from './kv.ts'
 import { wrapExternal } from './prompts.ts'
 import type { Store } from './store.ts'
 
-export const REVIEWER = 'superagent-reviewer'
+export const REVIEWER = 'issuecrew-reviewer'
 export const REVIEW_DIFF_CHARS = 60_000
 export const REQUEST_CHARS = 3_000
 export const CONSTRAINT_CHARS = 3_000
 export const REVIEWER_DESCRIPTION =
-  'Read-only pre-publish reviewer. Start it only after mcp__superagent__orchestrator_publish returns review_required; it reports bug, missing and style findings and changes nothing.'
+  'Read-only pre-publish reviewer. Start it only after mcp__issuecrew__orchestrator_publish returns review_required; it reports bug, missing and style findings and changes nothing.'
 
 export interface ReviewConfig {
   enabled: boolean
@@ -108,7 +108,7 @@ export function reviewBrief(request: string, constraints: readonly string[], dif
     '',
     `## Host diff ${range}`,
     wrapExternal({ source: 'host-diff', text: diff.text || '(no committed changes)' }),
-    ...(diff.truncated ? ['', 'The diff above is truncated; read the rest with mcp__superagent__git_inspect.'] : []),
+    ...(diff.truncated ? ['', 'The diff above is truncated; read the rest with mcp__issuecrew__git_inspect.'] : []),
     '',
     'Report findings only; do not change files, git state or anything outside. Classify each finding as bug, missing or style, and end with one line: FINDINGS bug=<n> missing=<n> style=<n>',
   ].join('\n')
